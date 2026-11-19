@@ -1,0 +1,19 @@
+{
+  "name": "@lite-ide/plugin-preview-image",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lite-ide/kernel": "workspace:*",
+    "@lite-ide/protocol": "workspace:*",
+    "@lite-ide/workbench": "workspace:*",
+    "lucide-solid": "^1.76.0",
+    "solid-js": "^1.9.19"
+  }
+}

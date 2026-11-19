@@ -1,0 +1,30 @@
+{
+  "name": "lite-ide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @lite-ide/desktop dev",
+    "build": "pnpm --filter @lite-ide/desktop build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.6",
+    "@types/node": "^22.15.0",
+    "jsdom": "^26.1.0",
+    "solid-js": "^1.9.19",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.6",
+    "vite-plugin-solid": "^2.11.17",
+    "vitest": "^5.1.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

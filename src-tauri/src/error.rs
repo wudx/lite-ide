@@ -1,0 +1,62 @@
+use serde::Serialize;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error("project not found: {0}")]
+    ProjectNotFound(String),
+
+    #[error("invalid path: {0}")]
+    InvalidPath(String),
+
+    #[error("path traversal rejected: {0}")]
+    PathTraversal(String),
+
+    #[error("not a directory: {0}")]
+    NotDirectory(String),
+
+    #[error("not a file: {0}")]
+    NotFile(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("watch error: {0}")]
+    Watch(String),
+}
+
+#[derive(Serialize)]
+struct SerializedError<'a> {
+    code: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<&'a str>,
+}
+
+impl AppError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::ProjectNotFound(_) => "PROJECT_NOT_FOUND",
+            Self::InvalidPath(_) => "INVALID_PATH",
+            Self::PathTraversal(_) => "PATH_TRAVERSAL",
+            Self::NotDirectory(_) => "NOT_DIRECTORY",
+            Self::NotFile(_) => "NOT_FILE",
+            Self::Io(_) => "IO_ERROR",
+            Self::Watch(_) => "WATCH_ERROR",
+        }
+    }
+}
+
+impl Serialize for AppError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SerializedError {
+            code: self.code(),
+            message: self.to_string(),
+            detail: None,
+        }
+        .serialize(serializer)
+    }
+}
