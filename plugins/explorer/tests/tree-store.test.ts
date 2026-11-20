@@ -1,6 +1,7 @@
 import type { DirEntry, WorkspaceBackend } from '@lite-ide/protocol'
 import { createRoot } from 'solid-js'
 import { describe, expect, it, vi } from 'vitest'
+import { createExplorerExcludeService } from '../src/exclude-patterns'
 import { createFileTreeStore, CREATING_PLACEHOLDER_PATH } from '../src/tree-store'
 
 function makeEntry(name: string, relPath: string, isDir: boolean, ignored = false): DirEntry {
@@ -139,6 +140,65 @@ describe('FileTreeStore', () => {
       store.collapseAll()
       expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual([
         'src',
+        'README.md',
+      ])
+    } finally {
+      dispose()
+    }
+  })
+
+  it('hides entries matching global exclude patterns and reacts to rule updates', async () => {
+    const backend = createFakeBackend({
+      '': [
+        makeEntry('scene.meta', 'scene.meta', false),
+        makeEntry('assets', 'assets', true),
+        makeEntry('README.md', 'README.md', false),
+      ],
+      assets: [
+        makeEntry('logo.psd', 'assets/logo.psd', false),
+        makeEntry('logo.psd.meta', 'assets/logo.psd.meta', false),
+      ],
+    })
+    const excludes = createExplorerExcludeService()
+    excludes.setPatterns(['*.meta'])
+
+    const { store, dispose } = createRoot((d) => ({
+      store: createFileTreeStore('p1', backend, { excludes }),
+      dispose: d,
+    }))
+    try {
+      await store.ensureRootLoaded()
+      await store.expandDir('assets')
+      expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual([
+        'assets',
+        'assets/logo.psd',
+        'README.md',
+      ])
+
+      // 过滤模式下被排除的条目不会借子代匹配重新现身。
+      store.setFilterQuery('logo')
+      expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual([
+        'assets',
+        'assets/logo.psd',
+      ])
+
+      // 规则响应式更新：目录名模式立即隐藏整棵子树。
+      excludes.setPatterns(['*.meta', 'assets'])
+      store.setFilterQuery('')
+      expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual(['README.md'])
+
+      // 过滤查询也无法把被排除目录借子代匹配带回来。
+      store.setFilterQuery('logo')
+      expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual([])
+
+      // 清空规则后全部恢复。
+      store.setFilterQuery('')
+      excludes.setPatterns([])
+      expect(store.visibleNodes().map((n) => n.entry.relPath)).toEqual([
+        'scene.meta',
+        'assets',
+        'assets/logo.psd',
+        'assets/logo.psd.meta',
         'README.md',
       ])
     } finally {

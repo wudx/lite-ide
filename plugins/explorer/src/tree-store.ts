@@ -1,6 +1,7 @@
 import { createServiceKey } from '@lite-ide/kernel'
 import type { DirEntry, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
 import { createMemo, createSignal, type Accessor } from 'solid-js'
+import type { ExplorerExcludeService } from './exclude-patterns'
 
 export interface FlatTreeNode {
   entry: DirEntry
@@ -93,9 +94,15 @@ function matchesPath(target: string, relPath: string, isDir: boolean): boolean {
   return false
 }
 
+export interface FileTreeStoreOptions {
+  /** 全局排除规则（设置界面维护）；命中的条目从树中彻底隐藏，与 showIgnored 开关独立 */
+  readonly excludes?: ExplorerExcludeService
+}
+
 export function createFileTreeStore(
   projectId: string,
   backend: WorkspaceBackend,
+  options?: FileTreeStoreOptions,
 ): FileTreeStore {
   const [childrenMap, setChildrenMap] = createSignal<Map<string, DirEntry[]>>(new Map())
   const [expandedSet, setExpandedSet] = createSignal<Set<string>>(new Set())
@@ -158,6 +165,10 @@ export function createFileTreeStore(
     const expanded = expandedSet()
     const loading = loadingSet()
     const includeIgnored = showIgnored()
+    // matches 内部读取排除规则的 signal，进入本 memo 的依赖自动重算。
+    const isExcluded = options?.excludes
+      ? (entry: DirEntry) => options.excludes!.matches(entry)
+      : null
     const query = filterQuery().trim().toLowerCase()
     const pending = pendingAction()
 
@@ -168,7 +179,7 @@ export function createFileTreeStore(
       const children = map.get(dirPath)
       if (!children) return false
       for (const child of children) {
-        if (!includeIgnored && child.ignored) continue
+        if ((!includeIgnored && child.ignored) || isExcluded?.(child)) continue
         if (child.name.toLowerCase().includes(query)) return true
         if (child.isDir && hasMatchingLoadedDescendant(child.relPath)) return true
       }
@@ -204,7 +215,7 @@ export function createFileTreeStore(
       if (!entries) return
 
       for (const entry of entries) {
-        if (!includeIgnored && entry.ignored) continue
+        if ((!includeIgnored && entry.ignored) || isExcluded?.(entry)) continue
 
         const hasCreatingChild =
           pending &&

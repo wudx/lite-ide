@@ -99,6 +99,31 @@ Check out [src/kernel.ts](src/kernel.ts) to explore how plugins attach to the ke
         mime: 'text/plain',
         content: 'node_modules/\ndist/\n*.log\n',
       },
+      // 引擎资产元数据（如 Cocos Creator *.meta），供文件树排除规则演示/验收。
+      'scene.meta': {
+        mime: 'application/json',
+        content: JSON.stringify(
+          {
+            ver: '1.1.6',
+            importer: 'scene',
+            uuid: 'b7e2c4a8-9d01-4f3a-a6c5-8e9012f4d3b7',
+          },
+          null,
+          2,
+        ),
+      },
+      'assets/logo.psd.meta': {
+        mime: 'application/json',
+        content: JSON.stringify(
+          {
+            ver: '1.0.6',
+            importer: 'image',
+            uuid: 'c8f3d5b9-0e12-4a4b-b7d6-9f0123a5e4c8',
+          },
+          null,
+          2,
+        ),
+      },
       'src/kernel.ts': {
         mime: 'text/typescript',
         content: `export interface Disposable {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 // Settings dialog + multi-theme switching acceptance (mock demo project).
 const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
+const EXCLUDE_STORAGE_KEY = 'lite-ide.explorer.exclude.v1'
 const SOLARIZED_EDITOR_BG = 'rgb(253, 246, 227)' // --bg-editor #FDF6E3
 
 function trackConsoleErrors(page: Page): string[] {
@@ -149,6 +150,56 @@ test('plugin-contributed Nord theme appears in settings, applies inline variable
   }))
   expect(cleared.theme).toBe('dark')
   expect(cleared.appBg).toBe('')
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('explorer section excludes entries by glob pattern and persists across reload', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  // Demo project ships engine-style *.meta assets (e.g. Cocos Creator).
+  await expect(page.getByRole('treeitem', { name: 'scene.meta' })).toBeVisible()
+
+  await page.keyboard.press('Control+,')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '资源管理器' }).click()
+  const patterns = dialog.getByLabel('排除模式')
+  await expect(patterns).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('explorer-exclude-section.png'),
+    animations: 'disabled',
+  })
+
+  // Extension pattern hides *.meta everywhere; changes apply while typing.
+  await patterns.fill('*.meta')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('treeitem', { name: 'scene.meta' })).toHaveCount(0)
+  await expect(page.getByRole('treeitem', { name: 'package.json' })).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('explorer-excluded-meta.png'),
+    animations: 'disabled',
+  })
+
+  // Directory-name pattern hides the whole assets subtree.
+  await page.keyboard.press('Control+,')
+  await dialog.getByRole('button', { name: '资源管理器' }).click()
+  await patterns.fill('*.meta\nassets')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('treeitem', { name: 'assets' })).toHaveCount(0)
+  expect(await page.evaluate((k) => localStorage.getItem(k), EXCLUDE_STORAGE_KEY)).toBe(
+    JSON.stringify(['*.meta', 'assets']),
+  )
+
+  // Reload: rules are restored from localStorage and still hide entries.
+  await page.reload()
+  await expect(page.getByRole('treeitem', { name: 'package.json' })).toBeVisible()
+  await expect(page.getByRole('treeitem', { name: 'scene.meta' })).toHaveCount(0)
+  await expect(page.getByRole('treeitem', { name: 'assets' })).toHaveCount(0)
 
   expect(consoleErrors).toEqual([])
 })
