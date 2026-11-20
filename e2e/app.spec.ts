@@ -100,3 +100,32 @@ test('deactivated editor tab loses its border card immediately on switch', async
 
   await page.screenshot({ path: testInfo.outputPath('tab-switched.png'), animations: 'disabled' })
 })
+
+test('empty preview page hints Ctrl+P and clicking it creates an untitled file', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  // Boot: mock backend auto-opens the demo projects with no file selected, so
+  // the preview pane shows the empty state with its shortcut hints. The hidden
+  // warm project is display:none, so getByRole only sees the active one.
+  await page.goto('/')
+  const emptyPane = page.getByRole('button', { name: '点击空白处新建未命名文件' })
+  await expect(emptyPane).toBeVisible()
+  await expect(emptyPane.locator('kbd', { hasText: 'Ctrl+P' })).toBeVisible()
+  await expect(emptyPane.getByText('快速打开文件')).toBeVisible()
+  await expect(emptyPane.getByText('点击空白处新建未命名文件')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('empty-preview.png'), animations: 'disabled' })
+
+  // Clicking anywhere on the empty preview page creates a new untitled file,
+  // same as the "+" button of an open tab strip.
+  await emptyPane.click()
+  await expect(page.getByRole('tab', { name: 'Untitled-1' })).toBeVisible()
+  await expect(emptyPane).toBeHidden()
+
+  expect(consoleErrors).toEqual([])
+})

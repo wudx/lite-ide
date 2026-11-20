@@ -76,6 +76,17 @@ function parentFolderLabel(relPath: string): string {
   return idx === -1 ? '' : normalized.slice(0, idx)
 }
 
+function ShortcutHint(props: { keys: string; label: string }) {
+  return (
+    <span class="flex items-center gap-1.5">
+      <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
+        {props.keys}
+      </kbd>
+      <span>{props.label}</span>
+    </span>
+  )
+}
+
 export function PreviewHost(props: PreviewHostProps) {
   const selection = props.scope.get(ProjectSelectionKey)
   const buffers = props.scope.tryGet(EditorBufferKey)
@@ -615,7 +626,19 @@ export function PreviewHost(props: PreviewHostProps) {
         <Show
           when={selection.selectedPath()}
           fallback={
-            <div class="flex-1 flex flex-col items-center justify-center gap-4 text-[var(--text-muted)] select-none px-6 text-center animate-fade-up">
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={i18n.t('preview.empty.clickNewFile')}
+              class="group flex-1 flex flex-col items-center justify-center gap-4 text-[var(--text-muted)] select-none px-6 text-center animate-fade-up cursor-pointer"
+              onClick={() => handleNewUntitled()}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+                  e.preventDefault()
+                  handleNewUntitled()
+                }
+              }}
+            >
               <div class="w-12 h-12 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-panel)] flex items-center justify-center">
                 <FileCode2 class="w-5 h-5 text-[var(--accent)] opacity-85" />
               </div>
@@ -631,24 +654,14 @@ export function PreviewHost(props: PreviewHostProps) {
                 {props.scope.rootPath}
               </div>
               <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 pt-1 text-[11px] text-[var(--text-muted)]">
-                <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
-                    Ctrl+B
-                  </kbd>
-                  <span>{i18n.t('preview.empty.sidebar')}</span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
-                    Ctrl+O
-                  </kbd>
-                  <span>{i18n.t('preview.empty.openProject')}</span>
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
-                    Ctrl+Tab
-                  </kbd>
-                  <span>{i18n.t('preview.empty.switchProject')}</span>
-                </span>
+                <ShortcutHint keys="Ctrl+B" label={i18n.t('preview.empty.sidebar')} />
+                <ShortcutHint keys="Ctrl+P" label={i18n.t('preview.empty.openFile')} />
+                <ShortcutHint keys="Ctrl+O" label={i18n.t('preview.empty.openProject')} />
+                <ShortcutHint keys="Ctrl+Tab" label={i18n.t('preview.empty.switchProject')} />
+              </div>
+              <div class="flex items-center gap-1.5 pt-1 text-[11px] text-[var(--text-muted)] transition-colors duration-150 group-hover:text-[var(--text-secondary)]">
+                <Plus class="w-3 h-3" />
+                <span>{i18n.t('preview.empty.clickNewFile')}</span>
               </div>
             </div>
           }
