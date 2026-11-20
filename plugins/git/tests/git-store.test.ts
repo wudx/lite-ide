@@ -38,6 +38,7 @@ describe('git store (mock backend)', () => {
     expect(status?.upstream).toBe('origin/main')
     expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
+    expect(entryOf(store, 'data/metrics.csv')).toMatchObject({ x: ' ', y: 'M' })
   })
 
   it('reports folders outside version control as non-repositories', async () => {
@@ -54,7 +55,8 @@ describe('git store (mock backend)', () => {
 
     await store.stage(['src/App.tsx'])
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: 'M', y: ' ' })
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(0)
+    // Only data/metrics.csv remains unstaged.
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(1)
 
     await store.unstage(['src/App.tsx'])
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
@@ -74,8 +76,9 @@ describe('git store (mock backend)', () => {
     expect(await store.commit()).toBe(true)
     expect(store.error()).toBeNull()
     expect(store.commitMessage()).toBe('')
-    // The commit includes every staged entry (README.md and src/App.tsx).
-    expect(store.status()?.entries).toHaveLength(0)
+    // The commit includes every staged entry (README.md and src/App.tsx); the
+    // unstaged data/metrics.csv change stays behind.
+    expect(store.status()?.entries.map((e) => e.relPath)).toEqual(['data/metrics.csv'])
     expect(store.status()?.ahead).toBe(1)
   })
 
@@ -131,23 +134,23 @@ describe('git store (mock backend)', () => {
     await store.refresh()
 
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(2)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
     expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(0)
 
     // Calling stageAll again when nothing is unstaged is a safe no-op.
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(2)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
 
     await store.unstageAll()
     expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(0)
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(2)
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(3)
 
     // Calling unstageAll again when nothing is staged is a safe no-op.
     await store.unstageAll()
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(2)
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(3)
 
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(2)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
     expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(0)
   })
 
@@ -567,7 +570,8 @@ describe('git store (mock backend)', () => {
     const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
     await store.refresh()
     await store.loadStashes()
-    expect(store.status()?.entries.length).toBe(2)
+    // One staged plus two unstaged preset changes (src/App.tsx and data/metrics.csv).
+    expect(store.status()?.entries.length).toBe(3)
     const presetCount = store.stashes().length
 
     await store.stashAll()

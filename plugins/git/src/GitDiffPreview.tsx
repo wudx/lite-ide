@@ -19,6 +19,8 @@ import {
   synthesizeAddedDiff,
   type DiffRow,
 } from './diff-parse'
+import GitDiffTable from './GitDiffTable'
+import { buildTableDiff, isTabularFile } from './table-diff'
 import {
   GitBackendKey,
   GitStoreKey,
@@ -41,14 +43,15 @@ const MARKER_TONE: Record<string, string> = {
   context: 'text-transparent',
 }
 
-type DiffViewMode = 'unified' | 'split'
+type DiffViewMode = 'unified' | 'split' | 'table'
 
 const DIFF_VIEW_MODE_STORAGE_KEY = 'lite-ide:git:diff-view-mode'
 
 function readStoredDiffViewMode(): DiffViewMode {
   if (typeof localStorage === 'undefined') return 'unified'
   try {
-    return localStorage.getItem(DIFF_VIEW_MODE_STORAGE_KEY) === 'split' ? 'split' : 'unified'
+    const stored = localStorage.getItem(DIFF_VIEW_MODE_STORAGE_KEY)
+    return stored === 'split' || stored === 'table' ? stored : 'unified'
   } catch {
     return 'unified'
   }
@@ -133,6 +136,24 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   const [section, setSection] = createSignal<GitDiffSection>(initialSection())
   const [rev, setRev] = createSignal<string | null>(initialRev())
   const [viewMode, setViewMode] = createSignal<DiffViewMode>(readStoredDiffViewMode())
+  // Table mode only applies to tabular files (CSV/TSV); other files fall back
+  // to the unified view while the stored preference stays intact for reuse.
+  const tabular = createMemo(() => isTabularFile(props.file.relPath))
+  const effectiveMode = createMemo<DiffViewMode>(() => {
+    const mode = viewMode()
+    return mode === 'table' && !tabular() ? 'unified' : mode
+  })
+  const availableModes = createMemo<DiffViewMode[]>(() =>
+    tabular() ? ['unified', 'split', 'table'] : ['unified', 'split'],
+  )
+  const viewModeLabel = (mode: DiffViewMode) =>
+    i18n.t(
+      mode === 'unified'
+        ? 'git.diff.view.unified'
+        : mode === 'split'
+          ? 'git.diff.view.split'
+          : 'git.diff.view.table',
+    )
   const [rawDiff, setRawDiff] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(true)
@@ -257,7 +278,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     <div
       data-testid="git-diff-view"
       data-git-diff-section={section()}
-      data-git-diff-view-mode={viewMode()}
+      data-git-diff-view-mode={effectiveMode()}
       class="flex-1 min-h-0 flex flex-col"
     >
       {/* Toolbar: comparison switcher, +/− stats, refresh */}
@@ -339,23 +360,23 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
           aria-label={i18n.t('git.diff.switchView')}
           class="shrink-0 flex items-center gap-0.5 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]"
         >
-          <For each={['unified', 'split'] as const}>
+          <For each={availableModes()}>
             {(mode) => (
               <button
                 type="button"
                 role="tab"
                 data-testid="git-diff-view-toggle"
                 data-view={mode}
-                aria-selected={viewMode() === mode}
-                title={i18n.t(mode === 'unified' ? 'git.diff.view.unified' : 'git.diff.view.split')}
+                aria-selected={effectiveMode() === mode}
+                title={viewModeLabel(mode)}
                 class={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all duration-150 ${
-                  viewMode() === mode
+                  effectiveMode() === mode
                     ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
                 }`}
                 onClick={() => toggleViewMode(mode)}
               >
-                {i18n.t(mode === 'unified' ? 'git.diff.view.unified' : 'git.diff.view.split')}
+                {viewModeLabel(mode)}
               </button>
             )}
           </For>
@@ -420,6 +441,9 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
               <Match when={parsed()}>
                 {(diff) => (
                   <Switch>
+                    <Match when={effectiveMode() === 'table'}>
+                      <GitDiffTable model={buildTableDiff(diff())} />
+                    </Match>
                     <Match when={viewMode() === 'split'}>
                       <div
                         data-testid="git-diff-rows"

@@ -213,7 +213,7 @@ const MOCK_DEMO_LOG: MockGitCommit[] = [
           " import { createSignal } from 'solid-js'",
           '',
           ' export function Counter() {',
-          "+  // push flow demo",
+          '+  // push flow demo',
           '   const [count, setCount] = createSignal(0)',
         ].join('\n'),
       },
@@ -287,9 +287,25 @@ const MOCK_DEMO_LOG: MockGitCommit[] = [
   },
 ]
 
+// Tabular demo diff (CSV) exercising the diff preview's table view: one
+// changed cell inside the uptime row plus one added throughput row.
+const METRICS_CSV_UNSTAGED_DIFF = `diff --git a/data/metrics.csv b/data/metrics.csv
+index 4c1f9a2..7d8e5b3 100644
+--- a/data/metrics.csv
++++ b/data/metrics.csv
+@@ -1,5 +1,6 @@
+ metric,week1,week2,week3
+-uptime,99.95,99.97,99.99
++uptime,99.95,99.97,99.98
+ error_rate,0.4,0.3,0.2
+ coverage,71,74,79
++throughput,1200,1350,1480
+ build_time,42,39,31
+`
+
 const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
-  // The demo repo starts with one staged and one unstaged modification so the
-  // panel (and its e2e coverage) has meaningful state in browser mock mode.
+  // The demo repo starts with one staged and two unstaged modifications so
+  // the panel (and its e2e coverage) has meaningful state in browser mock mode.
   'mock-lite-ide': {
     repo: true,
     branch: 'main',
@@ -302,10 +318,16 @@ const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
       { name: 'origin/release', current: false, remote: true, upstream: null },
     ],
     staged: new Map([['README.md', 'M']]),
-    unstaged: new Map([['src/App.tsx', 'M']]),
+    unstaged: new Map([
+      ['src/App.tsx', 'M'],
+      ['data/metrics.csv', 'M'],
+    ]),
     untracked: new Set(),
     stagedDiffs: new Map([['README.md', README_STAGED_DIFF]]),
-    unstagedDiffs: new Map([['src/App.tsx', APP_TSX_UNSTAGED_DIFF]]),
+    unstagedDiffs: new Map([
+      ['src/App.tsx', APP_TSX_UNSTAGED_DIFF],
+      ['data/metrics.csv', METRICS_CSV_UNSTAGED_DIFF],
+    ]),
     stashes: [
       {
         message: 'WIP on main: 3d2f4a1 feat: settings dialog',

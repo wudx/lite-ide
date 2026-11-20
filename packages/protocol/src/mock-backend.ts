@@ -211,6 +211,18 @@ export function Counter() {
 }
 `,
       },
+      // Post-image of the preset unstaged diff in createMockGitBackend(): the
+      // uptime week3 cell changed to 99.98 and the throughput row was added.
+      'data/metrics.csv': {
+        mime: 'text/csv',
+        content: `metric,week1,week2,week3
+uptime,99.95,99.97,99.98
+error_rate,0.4,0.3,0.2
+coverage,71,74,79
+throughput,1200,1350,1480
+build_time,42,39,31
+`,
+      },
       'assets/architecture.svg': {
         mime: 'image/svg+xml',
         content: DEMO_SVG,
