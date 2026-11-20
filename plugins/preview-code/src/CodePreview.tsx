@@ -23,7 +23,9 @@ import {
 import type { PreviewProps } from '@lite-ide/kernel'
 import type { TextPayload } from '@lite-ide/protocol'
 import { formatBytes, WorkspaceBackendKey } from '@lite-ide/workbench'
-import { AlertTriangle, Loader2, Search } from 'lucide-solid'
+import Loader2 from 'lucide-solid/icons/loader-circle'
+import Search from 'lucide-solid/icons/search'
+import AlertTriangle from 'lucide-solid/icons/triangle-exclamation-point'
 import { createEffect, createSignal, on, onCleanup, onMount, Show } from 'solid-js'
 import { CodeStatsKey } from './stats'
 
@@ -214,8 +216,8 @@ export default function CodePreview(props: PreviewProps) {
         )}
       </Show>
 
-      {/* Subtle top-right search button & language indicator */}
-      <div class="absolute top-2 right-4 z-10 flex items-center gap-1.5">
+      {/* Subtle bottom-right search button & language indicator */}
+      <div class="absolute bottom-3 right-5 z-10 flex items-center gap-1.5">
         <button
           type="button"
           title="Find in file (Ctrl+F)"

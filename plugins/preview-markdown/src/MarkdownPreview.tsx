@@ -2,7 +2,7 @@ import type { PreviewProps } from '@lite-ide/kernel'
 import { getWorkspaceFileUrl } from '@lite-ide/protocol'
 import { ProjectSelectionKey, WorkspaceBackendKey } from '@lite-ide/workbench'
 import DOMPurify from 'dompurify'
-import { Loader2 } from 'lucide-solid'
+import Loader2 from 'lucide-solid/icons/loader-circle'
 import MarkdownIt from 'markdown-it'
 import { createEffect, createMemo, createSignal, Show } from 'solid-js'
 

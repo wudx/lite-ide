@@ -1,5 +1,6 @@
 import type { AppKernel } from '@lite-ide/kernel'
-import { FolderOpen, Layers } from 'lucide-solid'
+import FolderOpen from 'lucide-solid/icons/folder-open'
+import Layers from 'lucide-solid/icons/layers'
 
 export interface WelcomeEmptyProps {
   kernel: AppKernel

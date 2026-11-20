@@ -1,5 +1,7 @@
 import type { AppKernel, ContributionMap, PreviewProps, ProjectScope } from '@lite-ide/kernel'
-import { FileCode2, AlertTriangle, Loader2 } from 'lucide-solid'
+import FileCode2 from 'lucide-solid/icons/file-code-corner'
+import Loader2 from 'lucide-solid/icons/loader-circle'
+import AlertTriangle from 'lucide-solid/icons/triangle-exclamation-point'
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show, type Component } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { formatBytes } from '../format'
@@ -110,7 +112,7 @@ export function PreviewHost(props: PreviewHostProps) {
   })
 
   return (
-    <div class="flex-1 min-w-0 flex flex-col bg-[var(--bg-editor)]">
+    <div class="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-[var(--bg-editor)]">
       {/* File breadcrumb & previewer mode switcher */}
       <Show when={selection.selectedPath()}>
         {(relPath) => (

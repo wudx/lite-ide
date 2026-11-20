@@ -1,17 +1,15 @@
 import type { ProjectScope } from '@lite-ide/kernel'
 import { ProjectSelectionKey } from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
-import {
-  ChevronDown,
-  ChevronRight,
-  ChevronsDownUp,
-  Eye,
-  EyeOff,
-  Loader2,
-  RefreshCw,
-  Search,
-  X,
-} from 'lucide-solid'
+import ChevronDown from 'lucide-solid/icons/chevron-down'
+import ChevronRight from 'lucide-solid/icons/chevron-right'
+import ChevronsDownUp from 'lucide-solid/icons/chevrons-down-up'
+import Eye from 'lucide-solid/icons/eye'
+import EyeOff from 'lucide-solid/icons/eye-off'
+import Loader2 from 'lucide-solid/icons/loader-circle'
+import RefreshCw from 'lucide-solid/icons/refresh-cw'
+import Search from 'lucide-solid/icons/search'
+import X from 'lucide-solid/icons/x'
 import { For, onMount, Show } from 'solid-js'
 import { FileIcon } from './file-icons'
 import { FileTreeStoreKey, type FlatTreeNode } from './tree-store'
@@ -261,7 +259,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                               ignored={item().entry.ignored}
                             />
 
-                            <span class="truncate flex-1 leading-none">
+                            <span class="truncate flex-1 leading-normal">
                               {item().entry.name}
                             </span>
                           </div>

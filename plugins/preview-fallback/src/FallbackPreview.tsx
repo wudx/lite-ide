@@ -1,6 +1,6 @@
 import type { PreviewProps } from '@lite-ide/kernel'
 import { formatBytes } from '@lite-ide/workbench'
-import { FileWarning } from 'lucide-solid'
+import FileWarning from 'lucide-solid/icons/file-exclamation-point'
 
 export default function FallbackPreview(props: PreviewProps) {
   const modifiedAt = () => {

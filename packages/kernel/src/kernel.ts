@@ -1,4 +1,4 @@
-import { createMemo, createRoot, createSignal, type Accessor, type Setter } from 'solid-js'
+import { batch, createMemo, createRoot, createSignal, type Accessor, type Setter } from 'solid-js'
 import { DisposableStore, toDisposable, type Disposable } from './disposable'
 import { EventBus } from './events'
 import { ProjectScopeImpl } from './scope'
@@ -258,15 +258,31 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
         if (handle.close) {
           closeHooks.set(info.id, handle.close)
         }
-        handle.setupScope?.(scope)
 
-        setProjects((prev) => [...prev, scope])
-        touchWarmProject(scope.id)
-        setActiveProjectId(scope.id)
+        try {
+          handle.setupScope?.(scope)
 
-        for (const hook of [...projectOpenHooks]) {
-          invokeProjectHook(hook, scope)
+          for (const hook of [...projectOpenHooks]) {
+            invokeProjectHook(hook, scope)
+          }
+        } catch (err) {
+          scope.dispose()
+          closeHooks.delete(info.id)
+          if (handle.close) {
+            try {
+              await handle.close()
+            } catch {
+              // Preserve the original setup error.
+            }
+          }
+          throw err
         }
+
+        batch(() => {
+          setProjects((prev) => [...prev, scope])
+          touchWarmProject(scope.id)
+          setActiveProjectId(scope.id)
+        })
 
         events.emit('project.opened', { scope })
         events.emit('project.activated', { scope })
@@ -307,15 +323,22 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
 
       const target = current[idx]
       const nextList = current.filter((p) => p.id !== projectId)
-      setProjects(nextList)
-      setWarmProjectIds((prev) => prev.filter((id) => id !== projectId))
+      const isClosingActive = activeProjectId() === projectId
+      const fallback = isClosingActive ? (nextList[idx] ?? nextList[idx - 1] ?? null) : undefined
 
-      if (activeProjectId() === projectId) {
-        const fallback = nextList[idx] ?? nextList[idx - 1] ?? null
-        setActiveProjectId(fallback ? fallback.id : null)
-        if (fallback) {
-          touchWarmProject(fallback.id)
+      batch(() => {
+        setProjects(nextList)
+        setWarmProjectIds((prev) => prev.filter((id) => id !== projectId))
+
+        if (isClosingActive) {
+          setActiveProjectId(fallback ? fallback.id : null)
+          if (fallback) {
+            touchWarmProject(fallback.id)
+          }
         }
+      })
+
+      if (isClosingActive) {
         events.emit('project.activated', { scope: fallback ?? undefined })
       }
 

@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from 'solid-js'
+import { createEffect, createRoot, createSignal, onCleanup } from 'solid-js'
 import { describe, expect, it } from 'vitest'
 import {
   createAppKernel,
@@ -149,6 +149,49 @@ describe('AppKernel & ProjectScope', () => {
 
     await kernel.closeProject(p1.id)
     expect(kernel.activeProjectId()).toBe(p2.id)
+    kernel.dispose()
+  })
+
+  it('provides plugin services before projects/warm/active signals notify reactive UI', async () => {
+    const StoreKey = createServiceKey<string>('plugin.store')
+    const kernel = createAppKernel({ host: createMemoryHost() })
+
+    kernel.registerPlugin({
+      id: 'store-provider',
+      name: 'Store Provider',
+      activate(ctx) {
+        ctx.onProjectOpen((scope) => {
+          scope.provide(StoreKey, `store-for-${scope.name}`)
+        })
+      },
+    })
+
+    const observed: Array<{ name: string; store: string; activeId: string | null }> = []
+    const disposeObserver = createRoot((dispose) => {
+      createEffect(() => {
+        for (const scope of kernel.projects()) {
+          if (kernel.isWarm(scope.id)) {
+            observed.push({
+              name: scope.name,
+              store: scope.get(StoreKey),
+              activeId: kernel.activeProjectId(),
+            })
+          }
+        }
+      })
+      return dispose
+    })
+
+    const opened = await kernel.openProject('/repo/reactive-test')
+    expect(observed).toEqual([
+      {
+        name: 'reactive-test',
+        store: 'store-for-reactive-test',
+        activeId: opened.id,
+      },
+    ])
+
+    disposeObserver()
     kernel.dispose()
   })
 })

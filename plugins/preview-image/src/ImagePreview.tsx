@@ -1,7 +1,10 @@
 import type { PreviewProps } from '@lite-ide/kernel'
 import { getWorkspaceFileUrl } from '@lite-ide/protocol'
 import { formatBytes, WorkspaceBackendKey } from '@lite-ide/workbench'
-import { Maximize2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-solid'
+import Maximize2 from 'lucide-solid/icons/maximize-2'
+import RotateCcw from 'lucide-solid/icons/rotate-ccw'
+import ZoomIn from 'lucide-solid/icons/zoom-in'
+import ZoomOut from 'lucide-solid/icons/zoom-out'
 import { createEffect, createMemo, createSignal, on, Show } from 'solid-js'
 
 export default function ImagePreview(props: PreviewProps) {

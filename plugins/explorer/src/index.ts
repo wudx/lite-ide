@@ -1,6 +1,6 @@
 import type { Plugin } from '@lite-ide/kernel'
 import { ProjectFsEventsKey, WorkspaceBackendKey } from '@lite-ide/workbench'
-import { FolderTree } from 'lucide-solid'
+import FolderTree from 'lucide-solid/icons/folder-tree'
 import { ExplorerView } from './ExplorerView'
 import { createFileTreeStore, FileTreeStoreKey } from './tree-store'
 

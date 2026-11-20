@@ -1,5 +1,5 @@
 import type { AppKernel, ProjectScope } from '@lite-ide/kernel'
-import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { LayoutStateKey } from '../services'
 import { PreviewHost } from './PreviewHost'
@@ -73,7 +73,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
       {/* Left sidebar */}
       <Show when={layout.sidebarVisible() && sortedViews().length > 0}>
         <aside
-          class="shrink-0 flex flex-col bg-[var(--bg-sidebar)] border-r border-[var(--border-subtle)] min-h-0"
+          class="shrink-0 flex flex-col bg-[var(--bg-sidebar)] border-r border-[var(--border-subtle)] min-h-0 overflow-hidden"
           style={{ width: `${layout.sidebarWidth()}px` }}
         >
           <Show
@@ -115,7 +115,15 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
           <Show when={currentView()}>
             {(view) => (
               <div class="flex-1 min-h-0 flex flex-col">
-                <Dynamic component={view().component} scope={props.scope} />
+                <ErrorBoundary
+                  fallback={(err) => (
+                    <div class="m-3 p-3 rounded border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
+                      Sidebar view error: {err instanceof Error ? err.message : String(err)}
+                    </div>
+                  )}
+                >
+                  <Dynamic component={view().component} scope={props.scope} />
+                </ErrorBoundary>
               </div>
             )}
           </Show>

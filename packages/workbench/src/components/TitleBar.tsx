@@ -1,7 +1,13 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import { isTauriEnvironment } from '@lite-ide/protocol'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { FolderGit2, Minus, PanelLeft, Plus, Square, Copy, X } from 'lucide-solid'
+import Copy from 'lucide-solid/icons/copy'
+import FolderGit2 from 'lucide-solid/icons/folder-git-2'
+import Minus from 'lucide-solid/icons/minus'
+import PanelLeft from 'lucide-solid/icons/panel-left'
+import Plus from 'lucide-solid/icons/plus'
+import Square from 'lucide-solid/icons/square'
+import X from 'lucide-solid/icons/x'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { LayoutStateKey } from '../services'
 
@@ -73,8 +79,8 @@ export function TitleBar(props: TitleBarProps) {
           class="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold tracking-tight text-[var(--text-secondary)]"
           data-tauri-drag-region
         >
-          <span class="inline-block w-2 h-2 rounded-full bg-[var(--accent)]" />
-          <span>LiteIDE</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-[var(--accent)] pointer-events-none" />
+          <span class="pointer-events-none">LiteIDE</span>
         </div>
 
         <Show when={layout && props.kernel.projects().length > 0}>
@@ -94,7 +100,7 @@ export function TitleBar(props: TitleBarProps) {
       </div>
 
       {/* Project Tabs Strip (one tab = one project) */}
-      <div class="flex items-stretch overflow-x-auto no-scrollbar max-w-[calc(100%-220px)]">
+      <div class="flex items-stretch overflow-x-auto no-scrollbar min-w-0">
         <For each={props.kernel.projects()}>
           {(scope) => {
             const isActive = () => props.kernel.activeProjectId() === scope.id
@@ -155,7 +161,7 @@ export function TitleBar(props: TitleBarProps) {
       </div>
 
       {/* Draggable empty spacer */}
-      <div class="flex-1 min-w-[24px]" data-tauri-drag-region />
+      <div class="flex-1 min-w-[32px]" data-tauri-drag-region />
 
       {/* Native-style window controls on Windows / Linux */}
       <Show when={isTauri && !isMac}>
