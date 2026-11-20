@@ -21,11 +21,13 @@ import {
 } from './diff-parse'
 import GitDiffTable from './GitDiffTable'
 import { buildTableDiff, isTabularFile } from './table-diff'
+import { decodeSheetRows, isSpreadsheetFile, synthesizeTableDiff } from './xlsx-diff'
 import {
   GitBackendKey,
   GitStoreKey,
   hasStagedChanges,
   hasUnstagedChanges,
+  isUnmergedEntry,
   isUntrackedEntry,
   type GitDiffSection,
 } from './git-store'
@@ -136,9 +138,12 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   const [section, setSection] = createSignal<GitDiffSection>(initialSection())
   const [rev, setRev] = createSignal<string | null>(initialRev())
   const [viewMode, setViewMode] = createSignal<DiffViewMode>(readStoredDiffViewMode())
-  // Table mode only applies to tabular files (CSV/TSV); other files fall back
-  // to the unified view while the stored preference stays intact for reuse.
-  const tabular = createMemo(() => isTabularFile(props.file.relPath))
+  // Table mode only applies to tabular files (CSV/TSV) and spreadsheets;
+  // other files fall back to the unified view while the stored preference
+  // stays intact for reuse.
+  const tabular = createMemo(
+    () => isTabularFile(props.file.relPath) || isSpreadsheetFile(props.file.relPath),
+  )
   const effectiveMode = createMemo<DiffViewMode>(() => {
     const mode = viewMode()
     return mode === 'table' && !tabular() ? 'unified' : mode
@@ -216,6 +221,41 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
             props.file.relPath,
           ])
           text = files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
+        } else if (isSpreadsheetFile(props.file.relPath)) {
+          if (current && isUnmergedEntry(current)) {
+            // Conflicted workbooks have no stage-0 content to compare; reuse
+            // the combined-diff rendering path's conflict notice.
+            text = `diff --cc ${props.file.relPath}`
+          } else {
+            // git only reports "binary files differ" for workbooks; read both
+            // snapshots' bytes, align the parsed rows, and synthesize a unified
+            // diff so every renderer below works unchanged.
+            const untracked = !staged && current !== undefined && isUntrackedEntry(current)
+            const deleted = !staged && current?.y === 'D'
+            const [oldBlob, newBlob] = await Promise.all([
+              untracked
+                ? null
+                : backendRef.readBlob(
+                    props.file.projectId,
+                    staged ? 'HEAD' : ':0',
+                    props.file.relPath,
+                  ),
+              deleted
+                ? null
+                : backendRef.readBlob(
+                    props.file.projectId,
+                    staged ? ':0' : 'worktree',
+                    props.file.relPath,
+                  ),
+            ])
+            if (seq !== fetchSeq) return
+            const [oldRows, newRows] = await Promise.all([
+              oldBlob ? decodeSheetRows(oldBlob) : null,
+              newBlob ? decodeSheetRows(newBlob) : null,
+            ])
+            if (seq !== fetchSeq) return
+            text = synthesizeTableDiff(oldRows, newRows, props.file.relPath)
+          }
         } else if (fsRef && current && !staged && isUntrackedEntry(current)) {
           // Untracked paths never appear in `git diff`; render the whole file
           // as additions instead.
@@ -442,7 +482,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                 {(diff) => (
                   <Switch>
                     <Match when={effectiveMode() === 'table'}>
-                      <GitDiffTable model={buildTableDiff(diff())} />
+                      <GitDiffTable model={buildTableDiff(diff(), ',', isSpreadsheetFile(props.file.relPath) ? ',' : undefined)} />
                     </Match>
                     <Match when={viewMode() === 'split'}>
                       <div

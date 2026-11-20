@@ -14,6 +14,7 @@
     "@lite-ide/protocol": "workspace:*",
     "@lite-ide/workbench": "workspace:*",
     "lucide-solid": "^1.76.0",
-    "solid-js": "^1.9.19"
+    "solid-js": "^1.9.19",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

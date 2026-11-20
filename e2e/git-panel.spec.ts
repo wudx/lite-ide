@@ -26,7 +26,7 @@ test('git panel lists changes, stages files and commits in mock mode', async ({
   const unstagedRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
   await expect(unstagedRow).toBeVisible()
   await expect(page.getByText('已暂存的更改 (1)')).toBeVisible()
-  await expect(page.getByText('更改 (2)', { exact: true })).toBeVisible()
+  await expect(page.getByText('更改 (3)', { exact: true })).toBeVisible()
 
   // Statusbar mirrors the branch of the active project.
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('main')
@@ -39,18 +39,19 @@ test('git panel lists changes, stages files and commits in mock mode', async ({
   const restagedRow = page.locator(`[data-git-section="staged"][data-git-path="${UNSTAGED_FILE}"]`)
   await expect(restagedRow).toBeVisible()
   await expect(page.getByText('已暂存的更改 (2)', { exact: true })).toBeVisible()
-  // Only the preset data/metrics.csv change stays unstaged.
-  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(1)
+  // The preset csv/xlsx changes stay unstaged.
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(2)
   await expect(page.locator(`[data-git-section="unstaged"][data-git-path="data/metrics.csv"]`)).toBeVisible()
+  await expect(page.locator(`[data-git-section="unstaged"][data-git-path="data/metrics.xlsx"]`)).toBeVisible()
 
   // Commit the staged changes.
   await page.getByPlaceholder('输入提交信息 (Ctrl+Enter 提交)').fill('feat: demo commit')
   await page.screenshot({ path: testInfo.outputPath('git-panel-staged.png'), animations: 'disabled' })
   await page.getByTestId('git-commit-button').click()
 
-  // The commit clears the staged section; data/metrics.csv stays unstaged.
+  // The commit clears the staged section; the csv/xlsx changes stay unstaged.
   await expect(page.locator(`[data-git-section="staged"]`)).toHaveCount(0)
-  await expect(page.getByText('更改 (1)', { exact: true })).toBeVisible()
+  await expect(page.getByText('更改 (2)', { exact: true })).toBeVisible()
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('↑1')
   await page.screenshot({ path: testInfo.outputPath('git-panel-committed.png'), animations: 'disabled' })
 
@@ -130,20 +131,20 @@ test('git panel stages all and unstages all changes in mock mode', async ({
 
   await page.getByRole('button', { name: 'Git', exact: true }).click()
   await expect(page.getByText('已暂存的更改 (1)')).toBeVisible()
-  await expect(page.getByText('更改 (2)', { exact: true })).toBeVisible()
+  await expect(page.getByText('更改 (3)', { exact: true })).toBeVisible()
 
   // Stage all remaining unstaged changes via the section header button.
   await page.getByRole('button', { name: '暂存全部更改', exact: true }).click()
-  await expect(page.getByText('已暂存的更改 (3)', { exact: true })).toBeVisible()
+  await expect(page.getByText('已暂存的更改 (4)', { exact: true })).toBeVisible()
   await expect(page.locator('[data-git-section="unstaged"]')).toHaveCount(0)
-  await expect(page.locator('[data-git-section="staged"]')).toHaveCount(3)
+  await expect(page.locator('[data-git-section="staged"]')).toHaveCount(4)
   await page.screenshot({ path: testInfo.outputPath('git-panel-staged-all.png'), animations: 'disabled' })
 
   // Unstage all staged changes at once via the Staged Changes header button.
   await page.getByRole('button', { name: '取消暂存全部更改', exact: true }).click()
   await expect(page.locator('[data-git-section="staged"]')).toHaveCount(0)
-  await expect(page.getByText('更改 (3)', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-git-section="unstaged"]')).toHaveCount(3)
+  await expect(page.getByText('更改 (4)', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-git-section="unstaged"]')).toHaveCount(4)
   await page.screenshot({ path: testInfo.outputPath('git-panel-unstaged-all.png'), animations: 'disabled' })
 
   // Clicking the branch-header refresh button shows visible spin feedback even on fast backends.
@@ -154,7 +155,7 @@ test('git panel stages all and unstages all changes in mock mode', async ({
 
   // Stage all changes back into Staged Changes in one click.
   await page.getByRole('button', { name: '暂存全部更改', exact: true }).click()
-  await expect(page.getByText('已暂存的更改 (3)', { exact: true })).toBeVisible()
+  await expect(page.getByText('已暂存的更改 (4)', { exact: true })).toBeVisible()
   await expect(page.locator('[data-git-section="unstaged"]')).toHaveCount(0)
 
   expect(consoleErrors).toEqual([])
@@ -302,8 +303,8 @@ test('git panel stashes changes, restores them and manages the stash list', asyn
   const unstagedRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
   await unstagedRow.hover()
   await unstagedRow.getByRole('button', { name: `存储 ${UNSTAGED_FILE}` }).click()
-  // Only the preset data/metrics.csv change stays unstaged.
-  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(1)
+  // The preset csv/xlsx changes stay unstaged.
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(2)
   await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
   await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
 

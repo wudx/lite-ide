@@ -301,6 +301,17 @@ async fn git_show(
     git::show(&root, &sha, &paths).await
 }
 
+#[tauri::command]
+async fn git_blob(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    rev: String,
+    rel_path: String,
+) -> Result<Option<String>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::read_blob(&root, &rev, &rel_path).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 任务栏跳转列表依赖 AUMID 在首个窗口创建前声明，必须最先执行。
@@ -386,6 +397,7 @@ pub fn run() {
             git_stash_drop,
             git_log,
             git_show,
+            git_blob,
             ai_chat,
             plugins::plugin_list,
             plugins::plugin_catalog,

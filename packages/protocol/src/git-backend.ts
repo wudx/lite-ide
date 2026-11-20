@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
   GitBackend,
+  GitBlobRev,
   GitBranchInfo,
   GitCommitInfo,
   GitCommitResult,
@@ -10,7 +11,6 @@ import type {
   GitStatus,
   GitStashEntry,
 } from './types'
-
 /**
  * Desktop implementation backed by the system `git` executable. Every call is
  * scoped to the opened project's canonical root on the Rust side.
@@ -55,6 +55,10 @@ export function createTauriGitBackend(): GitBackend {
         staged: options.staged,
         paths: options.relPaths ?? [],
       })
+    },
+
+    async readBlob(projectId: string, rev: GitBlobRev, relPath: string): Promise<string | null> {
+      return invoke<string | null>('git_blob', { projectId, rev, relPath })
     },
 
     async log(projectId: string, options?: GitLogOptions): Promise<GitCommitInfo[]> {
@@ -303,6 +307,45 @@ index 4c1f9a2..7d8e5b3 100644
  build_time,42,39,31
 `
 
+// Spreadsheet demo state: same story as the CSV diff — the uptime week3 cell
+// changes and the throughput row is added, plus a date column. Blob bytes are
+// built lazily on the first readBlob call so the heavy parser never loads
+// until the spreadsheet's diff preview actually opens in mock mode; the real
+// desktop backend streams bytes from git instead. The file deliberately has
+// no mock-FS template, so only the Git panel (not the explorer) surfaces it.
+const METRICS_XLSX_PATH = 'data/metrics.xlsx'
+const METRICS_XLSX_OLD_ROWS: (string | number)[][] = [
+  ['metric', 'week1', 'week2', 'week3', 'updated'],
+  ['uptime', 99.95, 99.97, 99.99, '2025-11-14'],
+  ['error_rate', 0.4, 0.3, 0.2, '2025-11-14'],
+  ['coverage', 71, 74, 79, '2025-11-14'],
+  ['build_time', 42, 39, 31, '2025-11-14'],
+]
+const METRICS_XLSX_NEW_ROWS: (string | number)[][] = [
+  ['metric', 'week1', 'week2', 'week3', 'updated'],
+  ['uptime', 99.95, 99.97, 99.98, '2025-11-21'],
+  ['error_rate', 0.4, 0.3, 0.2, '2025-11-14'],
+  ['coverage', 71, 74, 79, '2025-11-14'],
+  ['throughput', 1200, 1350, 1480, '2025-11-21'],
+  ['build_time', 42, 39, 31, '2025-11-14'],
+]
+let metricsXlsxBlobs: { index: string; worktree: string } | null = null
+
+async function getMetricsXlsxBlobs(): Promise<{ index: string; worktree: string }> {
+  if (metricsXlsxBlobs) return metricsXlsxBlobs
+  const XLSX = await import('xlsx')
+  const build = (rows: (string | number)[][]): string => {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'metrics')
+    return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' })
+  }
+  metricsXlsxBlobs = {
+    index: build(METRICS_XLSX_OLD_ROWS),
+    worktree: build(METRICS_XLSX_NEW_ROWS),
+  }
+  return metricsXlsxBlobs
+}
+
 const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
   // The demo repo starts with one staged and two unstaged modifications so
   // the panel (and its e2e coverage) has meaningful state in browser mock mode.
@@ -321,6 +364,7 @@ const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
     unstaged: new Map([
       ['src/App.tsx', 'M'],
       ['data/metrics.csv', 'M'],
+      [METRICS_XLSX_PATH, 'M'],
     ]),
     untracked: new Set(),
     stagedDiffs: new Map([['README.md', README_STAGED_DIFF]]),
@@ -664,6 +708,19 @@ export function createMockGitBackend(): GitBackend {
         })
       }
       return files
+    },
+
+    async readBlob(projectId: string, rev: GitBlobRev, relPath: string): Promise<string | null> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      // The demo spreadsheet is the mock's only binary comparison target;
+      // every other path has no versioned snapshot in mock mode.
+      if (relPath === METRICS_XLSX_PATH) {
+        const blobs = await getMetricsXlsxBlobs()
+        if (rev === 'worktree') return blobs.worktree
+        if (rev === 'HEAD' || rev === ':0') return blobs.index
+      }
+      return null
     },
 
     async log(projectId: string, options?: GitLogOptions): Promise<GitCommitInfo[]> {

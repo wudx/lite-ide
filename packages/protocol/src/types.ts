@@ -133,6 +133,12 @@ export interface GitDiffOptions {
   relPaths?: string[]
 }
 
+/**
+ * Which snapshot a blob read targets: the HEAD commit, the index (stage 0,
+ * the "staged" content), or the worktree file on disk.
+ */
+export type GitBlobRev = 'HEAD' | ':0' | 'worktree'
+
 export interface GitBranchInfo {
   name: string
   /** True for the currently checked-out branch. */
@@ -198,6 +204,12 @@ export interface GitBackend {
   push(projectId: string): Promise<void>
   /** Unified per-file patches for staged or worktree changes (empty when clean). */
   diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>
+  /**
+   * Raw file bytes (base64) from the requested snapshot. Resolves to null
+   * when the path does not exist there (e.g. a file added in the worktree
+   * read at HEAD). Backs binary comparisons such as spreadsheet diffs.
+   */
+  readBlob(projectId: string, rev: GitBlobRev, relPath: string): Promise<string | null>
   /**
    * Recent commits on the current branch, newest first. A folder outside
    * version control — or a repository without any commits yet — resolves to

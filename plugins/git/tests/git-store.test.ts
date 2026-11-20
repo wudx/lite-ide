@@ -39,6 +39,7 @@ describe('git store (mock backend)', () => {
     expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
     expect(entryOf(store, 'data/metrics.csv')).toMatchObject({ x: ' ', y: 'M' })
+    expect(entryOf(store, 'data/metrics.xlsx')).toMatchObject({ x: ' ', y: 'M' })
   })
 
   it('reports folders outside version control as non-repositories', async () => {
@@ -55,8 +56,8 @@ describe('git store (mock backend)', () => {
 
     await store.stage(['src/App.tsx'])
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: 'M', y: ' ' })
-    // Only data/metrics.csv remains unstaged.
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(1)
+    // Only the preset csv/xlsx changes remain unstaged.
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(2)
 
     await store.unstage(['src/App.tsx'])
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
@@ -77,8 +78,11 @@ describe('git store (mock backend)', () => {
     expect(store.error()).toBeNull()
     expect(store.commitMessage()).toBe('')
     // The commit includes every staged entry (README.md and src/App.tsx); the
-    // unstaged data/metrics.csv change stays behind.
-    expect(store.status()?.entries.map((e) => e.relPath)).toEqual(['data/metrics.csv'])
+    // unstaged csv/xlsx changes stay behind.
+    expect(store.status()?.entries.map((e) => e.relPath)).toEqual([
+      'data/metrics.csv',
+      'data/metrics.xlsx',
+    ])
     expect(store.status()?.ahead).toBe(1)
   })
 
@@ -134,23 +138,23 @@ describe('git store (mock backend)', () => {
     await store.refresh()
 
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(4)
     expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(0)
 
     // Calling stageAll again when nothing is unstaged is a safe no-op.
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(4)
 
     await store.unstageAll()
     expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(0)
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(3)
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(4)
 
     // Calling unstageAll again when nothing is staged is a safe no-op.
     await store.unstageAll()
-    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(3)
+    expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(4)
 
     await store.stageAll()
-    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(3)
+    expect(store.status()?.entries.filter(hasStagedChanges)).toHaveLength(4)
     expect(store.status()?.entries.filter(hasUnstagedChanges)).toHaveLength(0)
   })
 
@@ -197,6 +201,7 @@ describe('git store (mock backend)', () => {
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
 
     const store = createGitStore('custom', fakeBackend)
@@ -257,6 +262,7 @@ describe('git store (mock backend)', () => {
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
 
     const store = createGitStore('slow', slowBackend)
@@ -339,6 +345,7 @@ describe('git store (mock backend)', () => {
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
 
     const store = createGitStore('race', racyBackend)
@@ -420,6 +427,7 @@ describe('git store (mock backend)', () => {
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
 
     const store = createGitStore('coalesce', slowBackend)
@@ -470,6 +478,7 @@ describe('git store (mock backend)', () => {
         stashDrop: async () => {},
         log: async () => [],
         show: async () => [],
+        readBlob: async () => null,
       }
 
       const store = createGitStore('delta-filter', backend)
@@ -544,6 +553,7 @@ describe('git store (mock backend)', () => {
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
     const failingStore = createGitStore('fail-push', failingBackend)
     await failingStore.refresh()
@@ -570,8 +580,8 @@ describe('git store (mock backend)', () => {
     const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
     await store.refresh()
     await store.loadStashes()
-    // One staged plus two unstaged preset changes (src/App.tsx and data/metrics.csv).
-    expect(store.status()?.entries.length).toBe(3)
+    // One staged plus three unstaged preset changes (App.tsx, csv, xlsx).
+    expect(store.status()?.entries.length).toBe(4)
     const presetCount = store.stashes().length
 
     await store.stashAll()
@@ -668,6 +678,7 @@ describe('git store (mock backend)', () => {
       stashDrop: stashDropSpy,
       log: async () => [],
       show: async () => [],
+      readBlob: async () => null,
     }
 
     const store = createGitStore('stash-project', fakeBackend)
@@ -776,6 +787,7 @@ describe('git store history pagination', () => {
         return commits.slice(skip, skip + (options?.limit ?? 50))
       },
       show: async () => [],
+      readBlob: async () => null,
     }
   }
 

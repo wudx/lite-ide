@@ -13,7 +13,7 @@ use serde::Serialize;
 use tokio::process::Command;
 
 use crate::error::AppError;
-use crate::project::validate_rel_segments;
+use crate::project::{resolve_safe_path, validate_rel_segments};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +107,14 @@ pub struct GitCommitInfo {
 
 /// Runs `git` in the project root and returns stdout on success.
 async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
+    let stdout = run_git_raw(root, args).await?;
+    Ok(String::from_utf8_lossy(&stdout).into_owned())
+}
+
+/// Runs `git` in the project root and returns raw stdout bytes. Binary-safe
+/// for blob reads; callers check `status` themselves when they need to
+/// distinguish expected git failures (missing paths) from real errors.
+async fn spawn_git(root: &Path, args: &[&str]) -> Result<std::process::Output, AppError> {
     let mut cmd = Command::new("git");
     cmd.current_dir(root)
         .args(args)
@@ -127,17 +135,22 @@ async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = cmd.output().await.map_err(|e| {
+    cmd.output().await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::Git("git executable not found in PATH".into())
         } else {
             AppError::Git(format!("failed to spawn git: {e}"))
         }
-    })?;
+    })
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+/// Like [`spawn_git`], but maps a non-zero exit to an `AppError` carrying
+/// git's stderr (or stdout) detail.
+async fn run_git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>, AppError> {
+    let output = spawn_git(root, args).await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let detail = if stderr.trim().is_empty() {
             stdout.trim()
         } else {
@@ -146,7 +159,7 @@ async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
         let verb = args.first().copied().unwrap_or("git");
         return Err(AppError::Git(format!("git {verb}: {detail}")));
     }
-    Ok(stdout)
+    Ok(output.stdout)
 }
 
 fn is_not_a_repository(detail: &str) -> bool {
@@ -381,6 +394,102 @@ fn truncate_at_char_boundary(s: &str, max_chars: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+/// Base64-encoded raw file bytes for the spreadsheet diff preview; `None`
+/// when the path does not exist in the requested snapshot (e.g. a file added
+/// in the worktree read at HEAD).
+pub async fn read_blob(
+    canonical_root: &Path,
+    rev: &str,
+    rel_path: &str,
+) -> Result<Option<String>, AppError> {
+    use base64::Engine as _;
+
+    // Hard cap for preview payloads: the bytes are base64-expanded (×1.33) and
+    // shipped over IPC, so a giant workbook must fail loudly instead of
+    // ballooning memory.
+    const MAX_BLOB_BYTES: usize = 32 * 1024 * 1024;
+
+    if !is_repo_root(canonical_root).await? {
+        return Ok(None);
+    }
+    validate_rel_segments(rel_path)?;
+    match rev {
+        // Index stages 0-3 exist during merges; the UI only asks for stage 0.
+        "HEAD" | ":0" | ":1" | ":2" | ":3" => {}
+        "worktree" => {
+            // resolve_safe_path canonicalizes the target, so an absent file
+            // surfaces as NotFound before the read itself; both mean "no
+            // content here" and resolve to None like the git-side misses.
+            let path = match resolve_safe_path(canonical_root, rel_path) {
+                Ok(path) => path,
+                Err(AppError::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(None);
+                }
+                Err(err) => return Err(err),
+            };
+            // Guard before reading so oversized files never reach memory.
+            match tokio::fs::metadata(&path).await {
+                Ok(meta) if meta.len() as usize > MAX_BLOB_BYTES => {
+                    return Err(AppError::Git(format!(
+                        "{rel_path} is too large for the diff preview ({} MiB)",
+                        meta.len() as usize / (1024 * 1024)
+                    )));
+                }
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(err) => return Err(AppError::Git(format!("stat {rel_path}: {err}"))),
+            }
+            match tokio::fs::read(&path).await {
+                Ok(bytes) => return Ok(Some(base64::engine::general_purpose::STANDARD.encode(&bytes))),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(err) => {
+                    return Err(AppError::Git(format!("read {rel_path}: {err}")));
+                }
+            }
+        }
+        other => return Err(AppError::Git(format!("invalid revision: '{other}'"))),
+    }
+
+    // `cat-file blob <rev>:<path>` streams the object bytes verbatim (no diff
+    // text conversion), which keeps binary blobs intact end to end. The size
+    // cap applies after buffering (git itself buffers the object); the worktree
+    // path above stats first to avoid that cost.
+    let output = spawn_git(
+        canonical_root,
+        &[
+            "-c",
+            "core.quotepath=false",
+            "cat-file",
+            "blob",
+            &format!("{rev}:{rel_path}"),
+        ],
+    )
+    .await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let normalized = stderr.to_ascii_lowercase();
+        // Unborn branches ("invalid object name 'HEAD'"), index stages missing
+        // during merges ("not at stage 0"-adjacent wording varies) and files
+        // absent from the requested snapshot all mean "no content here", not
+        // an error.
+        if normalized.contains("does not exist")
+            || normalized.contains("not a valid object name")
+            || normalized.contains("invalid object name")
+        {
+            return Ok(None);
+        }
+        return Err(AppError::Git(format!("git cat-file: {}", stderr.trim())));
+    }
+
+    if output.stdout.len() > MAX_BLOB_BYTES {
+        return Err(AppError::Git(format!(
+            "{rel_path} is too large for the diff preview ({} MiB)",
+            output.stdout.len() / (1024 * 1024)
+        )));
+    }
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(&output.stdout)))
 }
 
 pub async fn push(canonical_root: &Path) -> Result<(), AppError> {
@@ -1414,6 +1523,56 @@ mod repo_tests {
             .unwrap()
             .is_empty());
         assert!(diff(&root, true, &["".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn reads_blobs_from_head_index_and_worktree() {
+        use base64::Engine as _;
+
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+
+        // The committed blob contains binary-safe bytes (0xFF must survive).
+        let committed: &[u8] = b"\x00\xFFbinarypayload";
+        std::fs::write(root.join("book.xlsx"), committed).unwrap();
+        git_ok(&root, &["add", "--", "book.xlsx"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        let head = read_blob(&root, "HEAD", "book.xlsx").await.unwrap().unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(&head).unwrap(),
+            committed
+        );
+
+        // Staged (index) content differs from HEAD after staging a change.
+        std::fs::write(root.join("book.xlsx"), b"worktree bytes").unwrap();
+        git_ok(&root, &["add", "--", "book.xlsx"]).await;
+        let index = read_blob(&root, ":0", "book.xlsx").await.unwrap().unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(&index).unwrap(),
+            b"worktree bytes"
+        );
+
+        let worktree = read_blob(&root, "worktree", "book.xlsx")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(&worktree).unwrap(),
+            b"worktree bytes"
+        );
+
+        // A path absent from a snapshot resolves to None, not an error.
+        assert!(read_blob(&root, "HEAD", "missing.xlsx").await.unwrap().is_none());
+        assert!(read_blob(&root, ":0", "missing.xlsx").await.unwrap().is_none());
+        assert!(read_blob(&root, "worktree", "missing.xlsx").await.unwrap().is_none());
+
+        // The revision allow-list rejects anything else.
+        let err = read_blob(&root, "HEAD~1", "book.xlsx").await.unwrap_err();
+        assert!(err.to_string().contains("invalid revision"));
     }
 
     #[tokio::test]

@@ -150,10 +150,16 @@ function toRecord(row: DiffRow | null, delimiter: string): TableRecord | null {
  * Builds the table-view model from a parsed unified diff: records keep their
  * side-by-side pairing, cells align into a shared grid, and pairs get their
  * kind plus per-cell change indexes for the renderer to highlight.
+ * `forceDelimiter` skips sniffing for producers that own their serialization
+ * (the spreadsheet path always emits comma-separated records).
  */
-export function buildTableDiff(parsed: ParsedDiff, fallbackDelimiter = ','): TableDiffModel {
+export function buildTableDiff(
+  parsed: ParsedDiff,
+  fallbackDelimiter = ',',
+  forceDelimiter?: string,
+): TableDiffModel {
   const rowTexts = parsed.hunks.flatMap((hunk) => hunk.rows.filter(isRecordRow).map((row) => row.text))
-  const delimiter = sniffTabularDelimiter(rowTexts, fallbackDelimiter)
+  const delimiter = forceDelimiter ?? sniffTabularDelimiter(rowTexts, fallbackDelimiter)
 
   const groups: TableHunkGroup[] = []
   let columnCount = 1
