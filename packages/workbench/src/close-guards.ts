@@ -1,9 +1,153 @@
 import type { AppKernel, ProjectScope } from '@lite-ide/kernel'
 import { ConfirmDialogKey } from './dialogs'
-import { EditorBufferKey } from './editor-buffers'
-import { ProjectSelectionKey } from './services'
+import {
+  EditorBufferKey,
+  isUntitledPath,
+  untitledDisplayNameOf,
+} from './editor-buffers'
+import { ProjectSelectionKey, WorkspaceBackendKey } from './services'
 
 const MAX_DETAIL_ITEMS = 5
+
+export interface SaveAsResult {
+  ok: boolean
+  error: string | null
+}
+
+/**
+ * Parses a user-typed save target relative to the project root. Accepts a
+ * plain file name ("notes.md") or a nested path ("src/components/notes.md");
+ * backslashes and duplicated separators are normalized to "/". Returns the
+ * { dir, name } split, or an error message when any segment is invalid.
+ */
+export function parseSaveTarget(rawName: string): { dir: string; name: string } | string {
+  const cleaned = rawName.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/')
+  if (!cleaned || cleaned === '/') {
+    return 'Name cannot be empty.'
+  }
+  if (cleaned.startsWith('/')) {
+    return 'Use a path relative to the project root.'
+  }
+
+  const idx = cleaned.lastIndexOf('/')
+  const dir = idx === -1 ? '' : cleaned.slice(0, idx)
+  const name = cleaned.slice(idx + 1)
+
+  for (const seg of [...(dir ? dir.split('/') : []), name]) {
+    if (!seg || seg === '.' || seg === '..') {
+      return 'Path cannot contain empty, "." or ".." segments.'
+    }
+    // eslint-disable-next-line no-control-regex
+    if (/[<>:"|?*\x00-\x1f]/.test(seg)) {
+      return 'Contains invalid characters: < > : " | ? *'
+    }
+  }
+  return { dir, name }
+}
+
+/**
+ * Saves an untitled buffer under a user-chosen path inside the project.
+ * Missing parent directories are created best-effort; the backend createFile
+ * remains the source of truth and surfaces real failures. On save failure the
+ * buffer and tab roll back to the untitled path so the popover stays usable.
+ */
+export async function saveUntitledAs(
+  kernel: AppKernel,
+  scope: ProjectScope,
+  untitledRelPath: string,
+  rawName: string,
+): Promise<SaveAsResult> {
+  const buffers = scope.tryGet(EditorBufferKey)
+  if (!buffers || !isUntitledPath(untitledRelPath)) {
+    return { ok: false, error: 'Not an untitled buffer.' }
+  }
+  if (!buffers.getBuffer(untitledRelPath)) {
+    return { ok: false, error: 'Untitled buffer no longer exists.' }
+  }
+
+  const parsed = parseSaveTarget(rawName)
+  if (typeof parsed === 'string') {
+    return { ok: false, error: parsed }
+  }
+  const targetRel = parsed.dir ? `${parsed.dir}/${parsed.name}` : parsed.name
+  return saveUntitledToRelPath(kernel, scope, untitledRelPath, targetRel)
+}
+
+/** Core save routine for an already-validated project-relative target path. */
+async function saveUntitledToRelPath(
+  kernel: AppKernel,
+  scope: ProjectScope,
+  untitledRelPath: string,
+  targetRel: string,
+): Promise<SaveAsResult> {
+  const buffers = scope.tryGet(EditorBufferKey)
+  const selection = scope.get(ProjectSelectionKey)
+  if (!buffers || !isUntitledPath(untitledRelPath)) {
+    return { ok: false, error: 'Not an untitled buffer.' }
+  }
+  if (!buffers.getBuffer(untitledRelPath)) {
+    return { ok: false, error: 'Untitled buffer no longer exists.' }
+  }
+
+  const backend = kernel.get(WorkspaceBackendKey)
+  try {
+    const dir = targetRel.includes('/') ? targetRel.slice(0, targetRel.lastIndexOf('/')) : ''
+    if (dir) {
+      // Create missing parents one level at a time; both backends only
+      // create a single level. AlreadyExists-style failures are fine here —
+      // createFile below is the authoritative check.
+      let cursor = ''
+      for (const seg of dir.split('/')) {
+        cursor = cursor ? `${cursor}/${seg}` : seg
+        await backend.createDir(scope.id, cursor).catch(() => {})
+      }
+    }
+    await backend.createFile(scope.id, targetRel)
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  buffers.renamePaths(untitledRelPath, targetRel, false)
+  await selection.renamePaths(untitledRelPath, targetRel, false)
+
+  const ok = await buffers.saveBuffer(targetRel)
+  if (!ok) {
+    buffers.renamePaths(targetRel, untitledRelPath, false)
+    await selection.renamePaths(targetRel, untitledRelPath, false)
+    const saveError = buffers.getBuffer(untitledRelPath)?.saveError
+    return { ok: false, error: saveError ?? 'Failed to save the file.' }
+  }
+  return { ok: true, error: null }
+}
+
+/**
+ * Entry point for saving an untitled buffer. On desktop (where the backend
+ * offers a native save dialog) this behaves like VSCode: the OS file picker
+ * opens rooted at the project folder and the chosen location is saved to.
+ * In the browser (mock backend) it falls back to the inline save-as popover.
+ * Returns whether the buffer was actually saved.
+ */
+export async function requestUntitledSave(
+  kernel: AppKernel,
+  scope: ProjectScope,
+  untitledRelPath: string,
+): Promise<boolean> {
+  const backend = kernel.get(WorkspaceBackendKey)
+  const selection = scope.get(ProjectSelectionKey)
+
+  if (backend.pickSavePath) {
+    const picked = await backend.pickSavePath(scope.id, untitledDisplayNameOf(untitledRelPath))
+    if (!picked) return false
+    const result = await saveUntitledToRelPath(kernel, scope, untitledRelPath, picked)
+    if (result.ok) return true
+    // Surface the failure in the inline popover so the user can retry.
+    selection.requestSaveAs(untitledRelPath, result.error)
+    return false
+  }
+
+  selection.requestSaveAs(untitledRelPath)
+  return false
+}
 
 function baseNameOf(relPath: string): string {
   const normalized = relPath.replace(/\\/g, '/')
@@ -59,7 +203,7 @@ async function confirmAndCloseTabs(
     if (choice === 'cancel') return false
     if (choice === 'save' && buffers) {
       for (const path of dirtyTargets) {
-        const ok = await buffers.saveBuffer(path)
+        const ok = await requestSaveFile(kernel, scope, path)
         if (!ok) {
           await selection.selectFile(path)
           return false
@@ -90,6 +234,13 @@ export async function requestSaveFile(
   const buf = buffers?.getBuffer(relPath)
   if (!buf || !buffers || buf.readOnly || buf.saving) {
     return false
+  }
+
+  // Untitled buffers need a file name before anything can be written; open
+  // the native save dialog (desktop) or the save-as popover and report "not
+  // saved" so close flows abort cleanly.
+  if (isUntitledPath(relPath)) {
+    return requestUntitledSave(kernel, scope, relPath)
   }
 
   if (buf.conflict === 'none') {
@@ -127,7 +278,7 @@ export async function requestRevertFile(
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
   const buf = buffers?.getBuffer(relPath)
-  if (!buf || !buffers || !buf.dirty) {
+  if (!buf || !buffers || !buf.dirty || isUntitledPath(relPath)) {
     return false
   }
 
@@ -173,7 +324,7 @@ export async function requestCloseTab(
 
     if (choice === 'cancel') return false
     if (choice === 'save') {
-      const ok = await buffers.saveBuffer(relPath)
+      const ok = await requestSaveFile(kernel, scope, relPath)
       if (!ok) return false
     }
   }
@@ -229,6 +380,14 @@ export async function requestCloseProject(
 
     if (choice === 'cancel') return false
     if (choice === 'save' && buffers) {
+      // Untitled buffers need a user-chosen name; open the native save dialog
+      // (or popover) for each and abort the close instead of dropping changes.
+      for (;;) {
+        const untitledDirty = [...buffers.dirtyPaths()].find((p) => isUntitledPath(p))
+        if (!untitledDirty) break
+        const saved = await requestUntitledSave(kernel, scope, untitledDirty)
+        if (!saved) return false
+      }
       const ok = await buffers.saveAllDirty()
       if (!ok) return false
     }
@@ -270,6 +429,12 @@ export async function requestCloseWindow(kernel: AppKernel): Promise<boolean> {
     for (const scope of kernel.projects()) {
       const buffers = scope.tryGet(EditorBufferKey)
       if (!buffers || !buffers.hasDirtyFiles()) continue
+      for (;;) {
+        const untitledDirty = [...buffers.dirtyPaths()].find((p) => isUntitledPath(p))
+        if (!untitledDirty) break
+        const saved = await requestUntitledSave(kernel, scope, untitledDirty)
+        if (!saved) return false
+      }
       const ok = await buffers.saveAllDirty()
       if (!ok) return false
     }

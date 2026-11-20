@@ -2,8 +2,10 @@ import type { AppKernel, ContributionMap, PreviewProps, ProjectScope } from '@li
 import Check from 'lucide-solid/icons/check'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
 import FileCode2 from 'lucide-solid/icons/file-code-corner'
+import Folder from 'lucide-solid/icons/folder'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Lock from 'lucide-solid/icons/lock'
+import Plus from 'lucide-solid/icons/plus'
 import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import Save from 'lucide-solid/icons/save'
 import AlertTriangle from 'lucide-solid/icons/triangle-exclamation-point'
@@ -25,9 +27,10 @@ import {
   requestCloseTab,
   requestRevertFile,
   requestSaveFile,
+  saveUntitledAs,
 } from '../close-guards'
 import { copyTextToClipboard } from '../clipboard'
-import { EditorBufferKey } from '../editor-buffers'
+import { EditorBufferKey, untitledDisplayNameOf } from '../editor-buffers'
 import { formatBytes } from '../format'
 import { joinNativePath } from '../paths'
 import { ProjectSelectionKey } from '../services'
@@ -130,6 +133,17 @@ export function PreviewHost(props: PreviewHostProps) {
     x: number
     y: number
   } | null>(null)
+  const [saveAsName, setSaveAsName] = createSignal('')
+  const [saveAsError, setSaveAsError] = createSignal<string | null>(null)
+  const [savingUntitled, setSavingUntitled] = createSignal(false)
+  // Live directory part of the typed save target, e.g. "src/components" from
+  // "src/components/notes.md"; empty means the project root.
+  const saveAsDir = createMemo(() => {
+    const cleaned = saveAsName().trim().replace(/\\/g, '/')
+    const idx = cleaned.lastIndexOf('/')
+    return idx === -1 ? '' : cleaned.slice(0, idx)
+  })
+  let saveAsInput: HTMLInputElement | undefined
   let loadSeq = 0
 
   const matchedLoadedView = createMemo(() => {
@@ -146,6 +160,28 @@ export function PreviewHost(props: PreviewHostProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setTabMenu(null)
+      }
+    }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', onKeyDown)
+    onCleanup(() => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', onKeyDown)
+    })
+  })
+
+  createEffect(() => {
+    const target = selection.pendingSaveAs()
+    if (!target) return
+
+    setSaveAsName(untitledDisplayNameOf(target))
+    setSaveAsError(selection.pendingSaveAsError())
+    saveAsInput?.focus()
+    saveAsInput?.select()
+    const close = () => selection.cancelSaveAs()
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        selection.cancelSaveAs()
       }
     }
     window.addEventListener('pointerdown', close)
@@ -208,15 +244,37 @@ export function PreviewHost(props: PreviewHostProps) {
     await copyTextToClipboard(text)
   }
 
+  function handleNewUntitled() {
+    if (!buffers) return
+    const buf = buffers.createUntitled()
+    selection.openUntitledTab(buf.relPath, untitledDisplayNameOf(buf.relPath))
+  }
+
+  async function handleSaveUntitledAs() {
+    const target = selection.pendingSaveAs()
+    if (!target || savingUntitled()) return
+
+    setSavingUntitled(true)
+    setSaveAsError(null)
+    const result = await saveUntitledAs(props.kernel, props.scope, target, saveAsName())
+    setSavingUntitled(false)
+    if (result.ok) {
+      selection.cancelSaveAs()
+    } else if (result.error) {
+      setSaveAsError(result.error)
+    }
+  }
+
   return (
     <div class="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col rounded-xl bg-[var(--bg-editor)] panel-card relative">
       {/* Multi-file Editor Tab Bar (integrated document tabs) */}
       <Show when={selection.openTabs().length > 0}>
-        <div
-          role="tablist"
-          class="h-[38px] shrink-0 px-2 pt-1.5 flex items-end gap-1 bg-[var(--bg-editor-chrome)] border-b border-[var(--border-subtle)] overflow-x-auto no-scrollbar select-none"
-        >
-          <For each={selection.openTabs()}>
+        <div class="h-[38px] shrink-0 flex items-end bg-[var(--bg-editor-chrome)] border-b border-[var(--border-subtle)] select-none">
+          <div
+            role="tablist"
+            class="flex-1 min-w-0 h-full px-2 pt-1.5 flex items-end gap-1 overflow-x-auto no-scrollbar"
+          >
+            <For each={selection.openTabs()}>
             {(tab) => {
               const isActive = () => selection.selectedPath() === tab.relPath
               const isDirty = () => buffers?.isDirty(tab.relPath) ?? false
@@ -296,8 +354,69 @@ export function PreviewHost(props: PreviewHostProps) {
                 </div>
               )
             }}
-          </For>
+            </For>
+          </div>
+
+          {/* New-file "+" button, kept outside the scrollable tab strip */}
+          <div class="shrink-0 h-full flex items-center pb-0.5 pr-1.5">
+            <button
+              type="button"
+              title="New Untitled File"
+              class="p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150"
+              onClick={() => handleNewUntitled()}
+            >
+              <Plus class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
+      </Show>
+
+      {/* Save-as popover for untitled buffers */}
+      <Show when={selection.pendingSaveAs()}>
+        {(target) => (
+          <div
+            class="absolute right-2 top-[42px] z-30 w-64 p-2 rounded-xl glass-surface animate-popover-in text-xs text-[var(--text-primary)]"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleSaveUntitledAs()
+              }}
+            >
+              <div class="px-0.5 pb-1.5 text-[10.5px] font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Save {untitledDisplayNameOf(target())}
+              </div>
+              <input
+                ref={(el) => (saveAsInput = el)}
+                value={saveAsName()}
+                onInput={(e) => setSaveAsName(e.currentTarget.value)}
+                placeholder="notes.md or src/notes.md"
+                spellcheck={false}
+                disabled={savingUntitled()}
+                class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent-border)] transition-colors disabled:opacity-60"
+              />
+              <div class="mt-1.5 px-0.5 min-h-[16px] flex items-center">
+                <Show
+                  when={saveAsError()}
+                  fallback={
+                    <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-muted)] min-w-0">
+                      <Folder class="w-3 h-3 shrink-0" />
+                      <span class="truncate">
+                        {saveAsDir() ? `${saveAsDir()}/` : 'Project root'}
+                        <span class="opacity-60"> · Enter to save</span>
+                      </span>
+                    </span>
+                  }
+                >
+                  {(err) => (
+                    <span class="text-[10.5px] text-[var(--danger-text)] truncate">{err()}</span>
+                  )}
+                </Show>
+              </div>
+            </form>
+          </div>
+        )}
       </Show>
 
       {/* File breadcrumb, save controls & previewer mode switcher */}
@@ -380,7 +499,7 @@ export function PreviewHost(props: PreviewHostProps) {
               <Show when={currentBuffer()}>
                 {(buf) => (
                   <div class="flex items-center gap-1.5">
-                    <Show when={buf().dirty}>
+                    <Show when={buf().dirty && !buf().untitled}>
                       <button
                         type="button"
                         title="Revert unsaved changes"

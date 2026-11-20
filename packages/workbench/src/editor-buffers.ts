@@ -8,6 +8,19 @@ const WRITABLE_ENCODINGS = new Set(['', 'utf-8', 'utf-8-bom', 'utf-16le', 'utf-1
 
 export type BufferConflict = 'none' | 'modified' | 'deleted'
 
+// Virtual namespace for in-memory unsaved buffers ("Untitled-N" tabs). The
+// prefix is unreachable from real relative paths and must never hit the
+// backend (statPreview/readText/writeText would fail or escape the project).
+export const UNTITLED_PREFIX = 'untitled:'
+
+export function isUntitledPath(relPath: string): boolean {
+  return relPath.startsWith(UNTITLED_PREFIX)
+}
+
+export function untitledDisplayNameOf(relPath: string): string {
+  return `Untitled-${relPath.slice(UNTITLED_PREFIX.length)}`
+}
+
 export interface DocumentBuffer {
   relPath: string
   content: string
@@ -26,6 +39,8 @@ export interface DocumentBuffer {
   diskRevision: number
   readOnly: boolean
   readOnlyReason: string | null
+  /** In-memory only buffer not yet backed by a file on disk. */
+  untitled: boolean
 }
 
 export interface EditorBufferEvents {
@@ -49,6 +64,7 @@ export interface EditorBufferService {
     maxBytes?: number,
     knownModifiedMs?: number,
   ): Promise<DocumentBuffer>
+  createUntitled(): DocumentBuffer
   reloadBuffer(relPath: string, maxBytes?: number): Promise<DocumentBuffer>
   updateContent(relPath: string, content: string, lineCount: number): void
   saveBuffer(relPath: string): Promise<boolean>
@@ -185,12 +201,13 @@ export function createEditorBufferService(
       diskRevision,
       readOnly: ro.readOnly,
       readOnlyReason: ro.readOnlyReason,
+      untitled: false,
     }
   }
 
   async function saveBufferInternal(relPath: string): Promise<boolean> {
     const buf = buffers().get(relPath)
-    if (!buf || buf.readOnly || buf.saving) {
+    if (!buf || buf.readOnly || buf.saving || buf.untitled) {
       return false
     }
 
@@ -301,6 +318,41 @@ export function createEditorBufferService(
       }
     },
 
+    createUntitled(): DocumentBuffer {
+      const existing = new Set(buffers().keys())
+      let n = 1
+      while (existing.has(`${UNTITLED_PREFIX}${n}`)) {
+        n += 1
+      }
+      const relPath = `${UNTITLED_PREFIX}${n}`
+      const buf: DocumentBuffer = {
+        relPath,
+        content: '',
+        savedContent: '',
+        encoding: '',
+        diskModifiedMs: 0,
+        totalBytes: 0,
+        loadedBytes: 0,
+        truncated: false,
+        maxBytes: DEFAULT_BUFFER_MAX_BYTES,
+        lineCount: 0,
+        dirty: true,
+        saving: false,
+        saveError: null,
+        conflict: 'none',
+        diskRevision: 0,
+        readOnly: false,
+        readOnlyReason: null,
+        untitled: true,
+      }
+      setBuffers((prev) => {
+        const next = new Map(prev)
+        next.set(relPath, buf)
+        return next
+      })
+      return buf
+    },
+
     async reloadBuffer(
       relPath: string,
       maxBytes?: number,
@@ -333,7 +385,9 @@ export function createEditorBufferService(
         ...prev,
         content,
         lineCount,
-        dirty: content !== prev.savedContent,
+        // Untitled buffers stay dirty until they are saved to a real file,
+        // even if the text is emptied back out.
+        dirty: prev.untitled || content !== prev.savedContent,
         saveError: null,
       }))
     },
@@ -372,8 +426,10 @@ export function createEditorBufferService(
     },
 
     async saveAllDirty(): Promise<boolean> {
+      // Untitled buffers cannot be written without a user-chosen file name;
+      // callers route them through the save-as flow instead.
       const targets = [...buffers().values()]
-        .filter((b) => b.dirty && !b.readOnly)
+        .filter((b) => b.dirty && !b.readOnly && !b.untitled)
         .map((b) => b.relPath)
 
       let allOk = true
@@ -406,7 +462,14 @@ export function createEditorBufferService(
           if (mapped && mapped !== path) {
             changed = true
             recentSelfWrites.set(mapped, now)
-            next.set(mapped, { ...buf, relPath: mapped, conflict: 'none' })
+            next.set(mapped, {
+              ...buf,
+              relPath: mapped,
+              conflict: 'none',
+              // Saving an untitled buffer under a real path turns it into a
+              // regular file-backed buffer.
+              untitled: isUntitledPath(mapped),
+            })
           } else {
             next.set(path, buf)
           }
@@ -467,7 +530,7 @@ export function createEditorBufferService(
       const candidates = new Set<string>()
       if (delta.overflow) {
         for (const path of currentBuffers.keys()) {
-          if (!isSuppressed(path)) {
+          if (!isSuppressed(path) && !isUntitledPath(path)) {
             candidates.add(path)
           }
         }

@@ -66,5 +66,12 @@ export interface WorkspaceBackend {
   renamePath(projectId: string, oldRelPath: string, newRelPath: string): Promise<DirEntry>
   deletePath(projectId: string, relPath: string): Promise<void>
   pickFolder(): Promise<string | null>
+  /**
+   * Desktop-only: opens a native save dialog rooted at the project folder and
+   * resolves to the chosen location relative to the project root, or null when
+   * the user cancels (or picks a path outside the project). Browser backends
+   * omit this capability; callers fall back to inline path entry.
+   */
+  pickSavePath?(projectId: string, suggestedName: string): Promise<string | null>
   resolveFileUrl?(projectId: string, relPath: string): string
 }

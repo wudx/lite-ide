@@ -3,11 +3,14 @@ import type { DirEntry, FileMeta, FsDelta, TextPayload, WorkspaceBackend, WriteT
 import { createRoot } from 'solid-js'
 import { describe, expect, it } from 'vitest'
 import {
+  parseSaveTarget,
   requestCloseAllTabs,
   requestCloseOtherTabs,
   requestCloseProject,
   requestCloseTab,
   requestCloseWindow,
+  requestSaveFile,
+  saveUntitledAs,
 } from '../src/close-guards'
 import { ConfirmDialogKey, createConfirmDialogService } from '../src/dialogs'
 import { createEditorBufferService, EditorBufferKey } from '../src/editor-buffers'
@@ -24,8 +27,19 @@ function createControllableBackend(initialFiles: Record<string, TestFileRecord>)
   const files = new Map<string, TestFileRecord>(
     Object.entries(initialFiles).map(([k, v]) => [k, { ...v }]),
   )
+  const dirs = new Set<string>()
   let fsListener: ((delta: FsDelta) => void) | null = null
   let clock = 1000
+
+  function dirExists(dirPath: string): boolean {
+    if (dirPath === '') return true
+    if (dirs.has(dirPath)) return true
+    // Mirrors the mock backend: any file under the prefix implies the folder.
+    for (const filePath of files.keys()) {
+      if (filePath.startsWith(`${dirPath}/`)) return true
+    }
+    return false
+  }
 
   function makeMeta(projectId: string, relPath: string, rec: TestFileRecord): FileMeta {
     const name = relPath.split('/').pop() ?? relPath
@@ -96,13 +110,36 @@ function createControllableBackend(initialFiles: Record<string, TestFileRecord>)
       }
     },
     async createFile(projectId, relPath): Promise<FileMeta> {
+      const parent = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : ''
+      if (!dirExists(parent)) {
+        throw new Error(`Parent directory does not exist: ${parent}`)
+      }
+      if (files.has(relPath)) {
+        throw new Error(`Path already exists: ${relPath}`)
+      }
       clock += 10
       const rec: TestFileRecord = { content: '', modifiedMs: clock }
       files.set(relPath, rec)
       return makeMeta(projectId, relPath, rec)
     },
-    async createDir(): Promise<DirEntry> {
-      throw new Error('not needed')
+    async createDir(_projectId, relPath): Promise<DirEntry> {
+      const parent = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : ''
+      if (!dirExists(parent)) {
+        throw new Error(`Parent directory does not exist: ${parent}`)
+      }
+      if (dirs.has(relPath) || files.has(relPath)) {
+        throw new Error(`Path already exists: ${relPath}`)
+      }
+      dirs.add(relPath)
+      return {
+        name: relPath.split('/').pop() ?? relPath,
+        relPath,
+        isDir: true,
+        size: 0,
+        modifiedMs: clock,
+        ignored: false,
+        hidden: false,
+      }
     },
     async renamePath(_projectId, oldRelPath, newRelPath): Promise<DirEntry> {
       const rec = files.get(oldRelPath)
@@ -130,6 +167,7 @@ function createControllableBackend(initialFiles: Record<string, TestFileRecord>)
   return {
     backend,
     files,
+    dirs,
     externalModify(relPath: string, content: string) {
       clock += 100
       const rec = files.get(relPath)
@@ -276,6 +314,67 @@ describe('EditorBufferService', () => {
       dispose()
     }
   })
+
+  it('supports untitled buffers: unique names, sticky dirty, no direct save, rename-to-file', async () => {
+    const env = createControllableBackend({})
+
+    const { buffers, dispose } = createRoot((d) => ({
+      buffers: createEditorBufferService('p1', env.backend),
+      dispose: d,
+    }))
+
+    try {
+      const untitled1 = buffers.createUntitled()
+      expect(untitled1.relPath).toBe('untitled:1')
+      expect(untitled1.untitled).toBe(true)
+      expect(untitled1.dirty).toBe(true)
+      expect(untitled1.content).toBe('')
+      expect(untitled1.readOnly).toBe(false)
+
+      // Names increment without reusing numbers still open in buffers.
+      const untitled2 = buffers.createUntitled()
+      expect(untitled2.relPath).toBe('untitled:2')
+
+      // Emptying an untitled buffer keeps it dirty until saved to a real file.
+      buffers.updateContent('untitled:1', 'draft text', 1)
+      expect(buffers.isDirty('untitled:1')).toBe(true)
+      buffers.updateContent('untitled:1', '', 0)
+      expect(buffers.isDirty('untitled:1')).toBe(true)
+
+      // Untitled buffers must never be written to their virtual path.
+      expect(await buffers.saveBuffer('untitled:1')).toBe(false)
+      expect(await buffers.saveAllDirty()).toBe(true)
+      expect(env.files.size).toBe(0)
+
+      // Overflow deltas scan all buffers; untitled paths must be excluded so
+      // they are never stat'ed on the backend (which would throw).
+      await buffers.handleFsDelta({
+        projectId: 'p1',
+        affectedDirs: [],
+        affectedPaths: [],
+        overflow: true,
+      })
+      expect(buffers.getBuffer('untitled:1')?.conflict).toBe('none')
+
+      // Saving under a real name converts the buffer to a regular file-backed one.
+      await env.backend.createFile('p1', 'notes.md')
+      buffers.updateContent('untitled:1', '# Draft', 1)
+      buffers.renamePaths('untitled:1', 'notes.md', false)
+      expect(buffers.getBuffer('notes.md')?.untitled).toBe(false)
+      expect(buffers.getBuffer('notes.md')?.content).toBe('# Draft')
+
+      const saved = await buffers.saveBuffer('notes.md')
+      expect(saved).toBe(true)
+      expect(buffers.isDirty('notes.md')).toBe(false)
+      expect(env.files.get('notes.md')?.content).toBe('# Draft')
+      expect(buffers.hasBuffer('untitled:1')).toBe(false)
+
+      // untitled:2 remains untouched and still dirty.
+      expect(buffers.isDirty('untitled:2')).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
 })
 
 describe('ProjectSelectionService tabs & close-guards', () => {
@@ -384,6 +483,159 @@ describe('ProjectSelectionService tabs & close-guards', () => {
     expect(sel2.openTabs().length).toBe(0)
 
     kernel.dispose()
+  })
+
+  it('routes untitled saves through the save-as popover and keeps close flows honest', async () => {
+    const env = createControllableBackend({})
+    const kernel = createWorkbenchKernel(env.backend)
+    const dialogs = kernel.get(ConfirmDialogKey)
+    const scope = await kernel.openProject('/test-untitled')
+    const selection = scope.get(ProjectSelectionKey)
+    const buffers = scope.get(EditorBufferKey)
+
+    // "+" flow: untitled buffer opens a synthesized tab without touching disk.
+    const untitled = buffers.createUntitled()
+    selection.openUntitledTab(untitled.relPath, 'Untitled-1')
+    expect(selection.selectedPath()).toBe('untitled:1')
+    expect(selection.fileMeta()?.name).toBe('Untitled-1')
+    expect(selection.error()).toBeNull()
+
+    // Editing keeps it dirty; Ctrl+S opens the save-as popover, not a disk write.
+    buffers.updateContent('untitled:1', 'hello world', 1)
+    expect(await requestSaveFile(kernel, scope, 'untitled:1')).toBe(false)
+    expect(selection.pendingSaveAs()).toBe('untitled:1')
+    expect(env.files.size).toBe(0)
+    selection.cancelSaveAs()
+
+    // Closing a dirty untitled tab with "Save" opens save-as and aborts the close.
+    const closePromise = requestCloseTab(kernel, scope, 'untitled:1')
+    expect(dialogs.current()?.request.title).toBe('Unsaved Changes')
+    dialogs.dismiss('save')
+    expect(await closePromise).toBe(false)
+    expect(selection.pendingSaveAs()).toBe('untitled:1')
+    expect(selection.openTabs().map((t) => t.relPath)).toEqual(['untitled:1'])
+    selection.cancelSaveAs()
+
+    // "Don't Save" discards the untitled buffer and closes the tab.
+    const discardPromise = requestCloseTab(kernel, scope, 'untitled:1')
+    dialogs.dismiss('discard')
+    expect(await discardPromise).toBe(true)
+    expect(selection.openTabs().length).toBe(0)
+    expect(buffers.hasBuffer('untitled:1')).toBe(false)
+
+    // Selecting an untitled path re-activates its tab without a stat error.
+    buffers.createUntitled()
+    await selection.selectFile('untitled:2')
+    expect(selection.selectedPath()).toBe('untitled:2')
+    expect(selection.error()).toBeNull()
+    expect(selection.fileMeta()?.mime).toBe('text/plain')
+
+    kernel.dispose()
+  })
+
+  it('saves untitled buffers into user-chosen folders, creating missing parents', async () => {
+    const env = createControllableBackend({
+      'src/exists.md': { content: 'taken', modifiedMs: 100 },
+    })
+    const kernel = createWorkbenchKernel(env.backend)
+    const scope = await kernel.openProject('/test-save-as')
+    const selection = scope.get(ProjectSelectionKey)
+    const buffers = scope.get(EditorBufferKey)
+
+    const untitled = buffers.createUntitled()
+    selection.openUntitledTab(untitled.relPath, 'Untitled-1')
+    buffers.updateContent('untitled:1', '# nested draft', 1)
+
+    // Invalid targets are rejected before touching the backend.
+    expect(parseSaveTarget('  ')).toBe('Name cannot be empty.')
+    expect(parseSaveTarget('/abs/path.md')).toBe('Use a path relative to the project root.')
+    expect(parseSaveTarget('a/../b.md')).toBe('Path cannot contain empty, "." or ".." segments.')
+    expect(parseSaveTarget('a/b<c.md')).toContain('invalid characters')
+
+    // Nested save creates missing parents and writes buffered content.
+    const result = await saveUntitledAs(kernel, scope, 'untitled:1', 'deep\\nested\\notes.md')
+    expect(result).toEqual({ ok: true, error: null })
+    expect(env.dirs.has('deep')).toBe(true)
+    expect(env.dirs.has('deep/nested')).toBe(true)
+    expect(env.files.get('deep/nested/notes.md')?.content).toBe('# nested draft')
+    expect(buffers.hasBuffer('untitled:1')).toBe(false)
+    expect(buffers.getBuffer('deep/nested/notes.md')?.untitled).toBe(false)
+    expect(buffers.isDirty('deep/nested/notes.md')).toBe(false)
+    expect(selection.selectedPath()).toBe('deep/nested/notes.md')
+    expect(selection.openTabs().map((t) => t.relPath)).toEqual(['deep/nested/notes.md'])
+    expect(selection.pendingSaveAs()).toBeNull()
+
+    // Saving onto an existing file fails and rolls the buffer back to untitled.
+    // createUntitled reuses the freed "untitled:1" slot, so use the returned path.
+    const second = buffers.createUntitled()
+    selection.openUntitledTab(second.relPath, 'Untitled-1')
+    buffers.updateContent(second.relPath, 'keep me', 1)
+
+    const conflict = await saveUntitledAs(kernel, scope, second.relPath, 'src/exists.md')
+    expect(conflict.ok).toBe(false)
+    expect(conflict.error).toContain('already exists')
+    expect(buffers.getBuffer(second.relPath)?.content).toBe('keep me')
+    expect(buffers.getBuffer(second.relPath)?.untitled).toBe(true)
+    expect(env.files.get('src/exists.md')?.content).toBe('taken')
+    expect(selection.openTabs().map((t) => t.relPath)).toEqual([
+      'deep/nested/notes.md',
+      second.relPath,
+    ])
+
+    kernel.dispose()
+  })
+
+  it('saves untitled files through the native save dialog when the backend offers one', async () => {
+    const env = createControllableBackend({})
+    let pickedSuggestedName = ''
+    const dialogBackend: WorkspaceBackend = {
+      ...env.backend,
+      // Desktop-like backend: requestSaveFile must prefer the dialog over the popover.
+      pickSavePath: async (_projectId, suggestedName) => {
+        pickedSuggestedName = suggestedName
+        return 'reports/summary.md'
+      },
+    }
+    const kernel = createWorkbenchKernel(dialogBackend)
+    const scope = await kernel.openProject('/test-dialog-save')
+    const selection = scope.get(ProjectSelectionKey)
+    const buffers = scope.get(EditorBufferKey)
+
+    const untitled = buffers.createUntitled()
+    selection.openUntitledTab(untitled.relPath, 'Untitled-1')
+    buffers.updateContent('untitled:1', 'dialog save body', 1)
+
+    // Ctrl+S / Save routes through the dialog and completes the save.
+    expect(await requestSaveFile(kernel, scope, 'untitled:1')).toBe(true)
+    expect(pickedSuggestedName).toBe('Untitled-1')
+    expect(env.files.get('reports/summary.md')?.content).toBe('dialog save body')
+    expect(buffers.hasBuffer('untitled:1')).toBe(false)
+    expect(buffers.getBuffer('reports/summary.md')?.untitled).toBe(false)
+    expect(buffers.isDirty('reports/summary.md')).toBe(false)
+    expect(selection.selectedPath()).toBe('reports/summary.md')
+    expect(selection.pendingSaveAs()).toBeNull()
+
+    // Dialog cancel keeps the buffer untitled and dirty.
+    const cancelBackend: WorkspaceBackend = {
+      ...env.backend,
+      pickSavePath: async () => null,
+    }
+    const kernel2 = createWorkbenchKernel(cancelBackend)
+    const scope2 = await kernel2.openProject('/test-dialog-cancel')
+    const selection2 = scope2.get(ProjectSelectionKey)
+    const buffers2 = scope2.get(EditorBufferKey)
+    const untitled2 = buffers2.createUntitled()
+    selection2.openUntitledTab(untitled2.relPath, 'Untitled-1')
+    buffers2.updateContent('untitled:1', 'unsaved', 1)
+
+    expect(await requestSaveFile(kernel2, scope2, 'untitled:1')).toBe(false)
+    expect(selection2.pendingSaveAs()).toBeNull()
+    expect(buffers2.getBuffer('untitled:1')?.untitled).toBe(true)
+    expect(buffers2.isDirty('untitled:1')).toBe(true)
+    expect(env.files.size).toBe(1)
+
+    kernel.dispose()
+    kernel2.dispose()
   })
 
   it('suppresses FsDelta false deleted conflict during open-file rename', async () => {

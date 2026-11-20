@@ -9,7 +9,12 @@ import {
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
 import { createSignal, type Accessor } from 'solid-js'
 import { ConfirmDialogKey, createConfirmDialogService } from './dialogs'
-import { createEditorBufferService, EditorBufferKey } from './editor-buffers'
+import {
+  createEditorBufferService,
+  EditorBufferKey,
+  isUntitledPath,
+  untitledDisplayNameOf,
+} from './editor-buffers'
 
 export interface EditorTab {
   relPath: string
@@ -24,11 +29,18 @@ export interface ProjectSelectionService {
   readonly loading: Accessor<boolean>
   readonly error: Accessor<string | null>
   readonly preferredPreviewerId: Accessor<string | null>
+  /** Untitled buffer path awaiting a file name in the save-as popover. */
+  readonly pendingSaveAs: Accessor<string | null>
+  /** Error to surface in the save-as popover when it opens. */
+  readonly pendingSaveAsError: Accessor<string | null>
   setPreferredPreviewerId(id: string | null): void
   selectFile(
     relPath: string,
     options?: { preferredPreviewerId?: string | null },
   ): Promise<void>
+  openUntitledTab(relPath: string, name: string): void
+  requestSaveAs(relPath: string, presetError?: string | null): void
+  cancelSaveAs(): void
   syncFileMeta(meta: FileMeta): void
   refreshCurrentFile(): Promise<void>
   closeTab(relPath: string): Promise<void>
@@ -98,6 +110,8 @@ export function createProjectSelection(
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [preferredPreviewerId, setPreferredPreviewerIdState] = createSignal<string | null>(null)
+  const [pendingSaveAs, setPendingSaveAs] = createSignal<string | null>(null)
+  const [pendingSaveAsError, setPendingSaveAsError] = createSignal<string | null>(null)
 
   let requestSeq = 0
 
@@ -108,6 +122,30 @@ export function createProjectSelection(
     setError(null)
     setLoading(false)
     setPreferredPreviewerIdState(null)
+  }
+
+  function openUntitledTabImpl(relPath: string, name: string) {
+    setOpenTabs((prev) =>
+      prev.some((t) => t.relPath === relPath)
+        ? prev
+        : [...prev, { relPath, name, preferredPreviewerId: null }],
+    )
+    requestSeq += 1
+    setSelectedPath(relPath)
+    setPreferredPreviewerIdState(null)
+    setFileMeta({
+      projectId,
+      relPath,
+      name,
+      ext: '',
+      size: 0,
+      modifiedMs: Date.now(),
+      mime: 'text/plain',
+      isBinary: false,
+      encoding: '',
+    })
+    setError(null)
+    setLoading(false)
   }
 
   async function loadMeta(relPath: string, nextPreferred: string | null) {
@@ -139,6 +177,8 @@ export function createProjectSelection(
     loading,
     error,
     preferredPreviewerId,
+    pendingSaveAs,
+    pendingSaveAsError,
 
     setPreferredPreviewerId(id: string | null) {
       setPreferredPreviewerIdState(id)
@@ -152,6 +192,12 @@ export function createProjectSelection(
     },
 
     async selectFile(relPath: string, options?: { preferredPreviewerId?: string | null }) {
+      // Untitled buffers have no disk file to stat; activate their tab directly.
+      if (isUntitledPath(relPath)) {
+        openUntitledTabImpl(relPath, untitledDisplayNameOf(relPath))
+        return
+      }
+
       const tabs = openTabs()
       const existing = tabs.find((t) => t.relPath === relPath)
       const explicitPref = options?.preferredPreviewerId
@@ -187,6 +233,20 @@ export function createProjectSelection(
       await loadMeta(relPath, targetPreferred)
     },
 
+    openUntitledTab(relPath: string, name: string) {
+      openUntitledTabImpl(relPath, name)
+    },
+
+    requestSaveAs(relPath: string, presetError?: string | null) {
+      setPendingSaveAsError(presetError ?? null)
+      setPendingSaveAs(relPath)
+    },
+
+    cancelSaveAs() {
+      setPendingSaveAs(null)
+      setPendingSaveAsError(null)
+    },
+
     syncFileMeta(meta: FileMeta) {
       if (selectedPath() === meta.relPath) {
         setFileMeta(meta)
@@ -195,7 +255,7 @@ export function createProjectSelection(
 
     async refreshCurrentFile() {
       const current = selectedPath()
-      if (!current) return
+      if (!current || isUntitledPath(current)) return
       await loadMeta(current, preferredPreviewerId())
     },
 

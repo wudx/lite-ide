@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
+import { join } from '@tauri-apps/api/path'
+import { message, open, save } from '@tauri-apps/plugin-dialog'
 import type {
   DirEntry,
   FileMeta,
@@ -10,7 +11,29 @@ import type {
   WriteTextResult,
 } from './types'
 
+/**
+ * Maps an absolute path chosen in a native dialog onto a workspace-relative
+ * path. Returns null when the path lies outside (or equals) the project root.
+ * Comparison is separator- and case-insensitive so Windows drives and mixed
+ * separators from the dialog are handled.
+ */
+export function toProjectRelPath(root: string, absPath: string): string | null {
+  const normalize = (p: string) => {
+    const unified = p.replace(/\//g, '\\')
+    return unified.length > 1 && unified.endsWith('\\') ? unified.slice(0, -1) : unified
+  }
+  const rootNorm = normalize(root)
+  const absNorm = normalize(absPath)
+  const rootLower = rootNorm.toLowerCase()
+  const absLower = absNorm.toLowerCase()
+  if (absLower === rootLower) return null
+  if (!absLower.startsWith(`${rootLower}\\`)) return null
+  return absNorm.slice(rootNorm.length + 1).replace(/\\/g, '/')
+}
+
 export function createTauriBackend(): WorkspaceBackend {
+  const projectRoots = new Map<string, string>()
+
   return {
     kind: 'tauri',
 
@@ -19,13 +42,16 @@ export function createTauriBackend(): WorkspaceBackend {
       channel.onmessage = (delta) => {
         onFsEvent(delta)
       }
-      return invoke<ProjectInfo>('project_open', {
+      const info = await invoke<ProjectInfo>('project_open', {
         path,
         onFsEvent: channel,
       })
+      projectRoots.set(info.id, info.rootPath)
+      return info
     },
 
     async closeProject(projectId: string): Promise<void> {
+      projectRoots.delete(projectId)
       await invoke<void>('project_close', { projectId })
     },
 
@@ -85,6 +111,27 @@ export function createTauriBackend(): WorkspaceBackend {
         return selected
       }
       return null
+    },
+
+    async pickSavePath(projectId: string, suggestedName: string): Promise<string | null> {
+      const root = projectRoots.get(projectId)
+      if (!root) return null
+
+      const selected = await save({
+        title: 'Save Untitled File',
+        defaultPath: await join(root, suggestedName),
+      })
+      if (!selected) return null
+
+      const relPath = toProjectRelPath(root, selected)
+      if (!relPath) {
+        await message('Please choose a location inside the project folder.', {
+          title: 'LiteIDE',
+          kind: 'warning',
+        })
+        return null
+      }
+      return relPath
     },
   }
 }
