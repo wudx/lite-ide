@@ -65,3 +65,38 @@ test('explorer and editor-tab context menus copy absolute and relative paths', a
 
   expect(consoleErrors).toEqual([])
 })
+
+test('deactivated editor tab loses its border card immediately on switch', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  // Open two files so both editor tabs exist, then make the first one active.
+  await page.getByRole('treeitem', { name: 'package.json' }).click()
+  await page.getByRole('treeitem', { name: FILE_NAME }).click()
+  await expect(page.getByRole('tab', { name: FILE_NAME })).toBeVisible()
+  await page.getByRole('tab', { name: FILE_NAME }).click()
+  await page.waitForTimeout(300) // let the activation transition settle
+
+  // Switch away: the old tab must drop its 1px border card and inset shadow
+  // on the very next frame — only colors may keep fading (no ghost outline).
+  await page.getByRole('tab', { name: 'package.json' }).click()
+  const oldTabStyle = await page.getByRole('tab', { name: FILE_NAME }).evaluate((el) => {
+    const s = getComputedStyle(el)
+    return {
+      borderTopWidth: s.borderTopWidth,
+      borderLeftWidth: s.borderLeftWidth,
+      boxShadow: s.boxShadow,
+      transitionProperty: s.transitionProperty,
+    }
+  })
+  // Only colors may keep fading; geometry (border width) and shadow must snap.
+  expect(oldTabStyle.transitionProperty).not.toContain('all')
+  expect(oldTabStyle.transitionProperty).not.toContain('box-shadow')
+  expect(parseFloat(oldTabStyle.borderTopWidth)).toBe(0)
+  expect(parseFloat(oldTabStyle.borderLeftWidth)).toBe(0)
+  expect(oldTabStyle.boxShadow).toBe('none')
+
+  await page.screenshot({ path: testInfo.outputPath('tab-switched.png'), animations: 'disabled' })
+})

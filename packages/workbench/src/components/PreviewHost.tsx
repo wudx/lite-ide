@@ -285,7 +285,7 @@ export function PreviewHost(props: PreviewHostProps) {
                   role="tab"
                   aria-selected={isActive()}
                   title={tab.relPath}
-                  class={`group relative flex items-center gap-1.5 min-w-[96px] max-w-[220px] text-xs transition-all duration-150 shrink-0 ${
+                  class={`group relative flex items-center gap-1.5 min-w-[96px] max-w-[220px] text-xs transition-colors duration-150 shrink-0 ${
                     isActive()
                       ? 'h-[32px] rounded-t-lg px-3 bg-[var(--bg-editor)] text-[var(--text-primary)] border-t border-x border-[var(--border-subtle)] -mb-px z-10 shadow-[var(--shadow-tab-doc)]'
                       : 'h-[29px] mb-[2px] rounded-lg px-2.5 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
