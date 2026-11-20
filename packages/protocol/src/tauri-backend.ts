@@ -5,6 +5,8 @@ import type {
   DirEntry,
   FileMeta,
   FsDelta,
+  PickFolderOptions,
+  PickSavePathOptions,
   ProjectInfo,
   TextPayload,
   WorkspaceBackend,
@@ -101,11 +103,11 @@ export function createTauriBackend(): WorkspaceBackend {
       await invoke<void>('fs_delete_path', { projectId, relPath })
     },
 
-    async pickFolder(): Promise<string | null> {
+    async pickFolder(options?: PickFolderOptions): Promise<string | null> {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Open Project Folder',
+        title: options?.title ?? 'Open Project Folder',
       })
       if (typeof selected === 'string' && selected.length > 0) {
         return selected
@@ -113,22 +115,29 @@ export function createTauriBackend(): WorkspaceBackend {
       return null
     },
 
-    async pickSavePath(projectId: string, suggestedName: string): Promise<string | null> {
+    async pickSavePath(
+      projectId: string,
+      suggestedName: string,
+      options?: PickSavePathOptions,
+    ): Promise<string | null> {
       const root = projectRoots.get(projectId)
       if (!root) return null
 
       const selected = await save({
-        title: 'Save Untitled File',
+        title: options?.title ?? 'Save Untitled File',
         defaultPath: await join(root, suggestedName),
       })
       if (!selected) return null
 
       const relPath = toProjectRelPath(root, selected)
       if (!relPath) {
-        await message('Please choose a location inside the project folder.', {
-          title: 'LiteIDE',
-          kind: 'warning',
-        })
+        await message(
+          options?.outsideProjectMessage ?? 'Please choose a location inside the project folder.',
+          {
+            title: 'LiteIDE',
+            kind: 'warning',
+          },
+        )
         return null
       }
       return relPath

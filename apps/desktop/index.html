@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en-US" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,7 +7,8 @@
     <title>LiteIDE</title>
     <script>
       ;(function () {
-        // Keep in sync with THEME_DEFINITIONS in packages/workbench/src/services.ts.
+        // Keep in sync with THEME_DEFINITIONS in packages/workbench/src/services.ts
+        // and resolveSystemLocale in packages/workbench/src/i18n.ts.
         // Plugin-contributed theme ids are unknown at this stage: they boot as
         // dark and get their inline variables once ThemeState applies the
         // registered theme after plugin registration.
@@ -18,9 +19,26 @@
           document.documentElement.dataset.theme = mode
           document.documentElement.classList.toggle('dark', mode === 'dark')
           document.documentElement.classList.toggle('light', mode !== 'dark')
+          var locPref = localStorage.getItem('lite-ide.locale.v1')
+          var nav = (
+            navigator.language ||
+            (navigator.languages && navigator.languages[0]) ||
+            ''
+          )
+            .trim()
+            .toLowerCase()
+            .replace(/_/g, '-')
+          var resolvedLang =
+            locPref && locPref !== 'system' && /^[\w-]+$/.test(locPref)
+              ? locPref
+              : nav === 'zh' || nav.indexOf('zh-') === 0
+                ? 'zh-CN'
+                : 'en-US'
+          document.documentElement.lang = resolvedLang
         } catch (e) {
           document.documentElement.dataset.theme = 'dark'
           document.documentElement.classList.add('dark')
+          document.documentElement.lang = 'en-US'
         }
       })()
     </script>

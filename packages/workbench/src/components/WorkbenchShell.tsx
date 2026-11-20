@@ -9,11 +9,13 @@ import {
   requestSaveFile,
 } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
+import { getI18n } from '../i18n'
 import { SettingsDialogKey } from '../dialogs'
 import { LayoutStateKey, ProjectSelectionKey, ThemeStateKey } from '../services'
 import { QuickOpenKey } from '../quick-open'
 import { AppearanceSettings } from './AppearanceSettings'
 import { ConfirmDialog } from './ConfirmDialog'
+import { GeneralSettings } from './GeneralSettings'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { QuickOpenDialog } from './QuickOpenDialog'
 import { SettingsDialog } from './SettingsDialog'
@@ -35,9 +37,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.openProject',
         title: 'Open Project Folder',
+        titleKey: 'command.openProject',
         shortcut: 'Mod+O',
         run: async ({ kernel }) => {
-          await kernel.openProjectWithDialog()
+          const i18n = getI18n(kernel)
+          await kernel.openProjectWithDialog({ title: i18n.t('command.openProject') })
         },
       }),
     )
@@ -46,6 +50,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.saveFile',
         title: 'Save Active File',
+        titleKey: 'command.saveFile',
         shortcut: 'Mod+S',
         run: async ({ kernel, activeProject }) => {
           if (!activeProject) return
@@ -61,6 +66,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.saveAllFiles',
         title: 'Save All Dirty Files',
+        titleKey: 'command.saveAllFiles',
         shortcut: 'Mod+Shift+S',
         run: async ({ activeProject }) => {
           if (!activeProject) return
@@ -74,6 +80,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.closeTab',
         title: 'Close Active Editor Tab',
+        titleKey: 'command.closeTab',
         shortcut: 'Mod+W',
         run: async ({ kernel, activeProject }) => {
           if (!activeProject) return
@@ -92,6 +99,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.closeProject',
         title: 'Close Active Project',
+        titleKey: 'command.closeProject',
         shortcut: 'Mod+Shift+W',
         run: async ({ kernel, activeProject }) => {
           if (activeProject) {
@@ -105,6 +113,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.quickOpen',
         title: 'Quick Open File by Name',
+        titleKey: 'command.quickOpen',
         shortcut: 'Mod+P',
         run: ({ kernel }) => {
           kernel.tryGet(QuickOpenKey)?.open()
@@ -116,6 +125,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.toggleSidebar',
         title: 'Toggle Sidebar',
+        titleKey: 'command.toggleSidebar',
         shortcut: 'Mod+B',
         run: () => {
           layout.toggleSidebar()
@@ -129,6 +139,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.toggleTheme',
         title: 'Cycle Color Theme',
+        titleKey: 'command.toggleTheme',
         run: ({ kernel }) => {
           kernel.tryGet(ThemeStateKey)?.toggleTheme()
         },
@@ -139,6 +150,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.openSettings',
         title: 'Open Settings',
+        titleKey: 'command.openSettings',
         shortcut: 'Mod+,',
         run: ({ kernel }) => {
           kernel.tryGet(SettingsDialogKey)?.open()
@@ -151,8 +163,20 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('settings.section', {
         id: 'workbench.appearance',
         title: '外观',
+        titleKey: 'settings.section.appearance',
         order: 0,
         component: AppearanceSettings,
+      }),
+    )
+
+    // Built-in general section: display language selector.
+    disposables.add(
+      props.kernel.contribute('settings.section', {
+        id: 'workbench.general',
+        title: '通用',
+        titleKey: 'settings.section.general',
+        order: 5,
+        component: GeneralSettings,
       }),
     )
 
@@ -169,6 +193,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.nextProject',
         title: 'Next Project Tab',
+        titleKey: 'command.nextProject',
         shortcut: 'Ctrl+Tab',
         run: () => cycleProject(1),
       }),
@@ -178,6 +203,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.prevProject',
         title: 'Previous Project Tab',
+        titleKey: 'command.prevProject',
         shortcut: 'Ctrl+Shift+Tab',
         run: () => cycleProject(-1),
       }),
@@ -187,6 +213,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.nextTab',
         title: 'Next File Tab',
+        titleKey: 'command.nextTab',
         shortcut: 'Ctrl+PageDown',
         run: async ({ activeProject }) => {
           const selection = activeProject?.tryGet(ProjectSelectionKey)
@@ -199,6 +226,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       props.kernel.contribute('command', {
         id: 'workbench.prevTab',
         title: 'Previous File Tab',
+        titleKey: 'command.prevTab',
         shortcut: 'Ctrl+PageUp',
         run: async ({ activeProject }) => {
           const selection = activeProject?.tryGet(ProjectSelectionKey)

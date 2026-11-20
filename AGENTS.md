@@ -22,7 +22,7 @@ LiteIDE 是基于 **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4** 的轻量跨�
 
 ## 核心架构与扩展约定
 
-- **插件扩展机制**：新功能实现为独立插件，在 `apps/desktop/src/main.tsx` 通过 `kernel.registerPlugin(...)` 注册。内核提供 6 个贡献点：`sidebar.view`、`previewer.provider`（需用动态 `load: () => import(...)` 实现按需分包）、`command`、`statusbar.item`、`settings.section`、`theme`，以及项目生命周期钩子 `ctx.onProjectOpen(scope => ...)`。`theme` 贡献点供插件注册自定义配色主题（`{ id, label, appearance, variables }`），`ThemeStateKey` 服务响应式聚合内置与插件主题并负责行内变量注入/清除；新增主题插件后在设置对话框"外观"区自动出现。
+- **插件扩展机制**：新功能实现为独立插件，在 `apps/desktop/src/main.tsx` 通过 `kernel.registerPlugin(...)` 注册。内核提供 7 个贡献点：`sidebar.view`、`previewer.provider`（需用动态 `load: () => import(...)` 实现按需分包）、`command`、`statusbar.item`、`settings.section`、`theme`、`i18n`，以及项目生命周期钩子 `ctx.onProjectOpen(scope => ...)`。`theme` 贡献点供插件注册自定义配色主题（`{ id, label, appearance, variables }`），`ThemeStateKey` 服务响应式聚合内置与插件主题并负责行内变量注入/清除；`i18n` 贡献点供插件补充词条或注册新语言（`{ locale, label?, messages }`），`I18nStateKey` 服务响应式驱动全工作台多语言与设置对话框"通用"区语言切换（支持跟随系统、`zh-CN`、`en-US`）。
 - **多项目隔离与生命周期**：顶部 1 个 Tab 对应 1 个 `ProjectScope`（内含独立 SolidJS `createRoot`）。`openProject` 必须先执行 `setupScope` 和全部 `onProjectOpen` 钩子，再在 `batch(...)` 中更新 `projects` / `warmProjectIds` / `activeProjectId`，保证组件同步挂载时所有项目级服务已就绪；非活跃的热项目（默认 LRU 上限 5 个）以 `display: none` 保活 DOM 与滚动状态。
 - **双运行模式（Tauri + Mock）**：`createDefaultBackend()` 检测 `window.__TAURI_INTERNALS__`，桌面端走 Tauri IPC，纯浏览器（`pnpm dev`）自动降级为 `createMockBackend()` 并预载两个示例项目（`lite-ide-demo`、`rust-core-sample`）。改动 UI 或插件时保持两种模式均可用。
 - **Rust 安全与错误边界**：所有文件读写与自定义协议请求均须通过 `resolve_safe_path` 校验路径位于项目 `canonical_root` 之内；错误统一走 `AppError` 序列化为 `{ code, message }`。

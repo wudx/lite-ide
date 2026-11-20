@@ -1,5 +1,6 @@
 import { createServiceKey } from '@lite-ide/kernel'
 import type { DirEntry, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
+import type { TranslateFn } from '@lite-ide/workbench'
 import { createMemo, createSignal, type Accessor } from 'solid-js'
 import type { ExplorerExcludeService } from './exclude-patterns'
 
@@ -59,20 +60,24 @@ export function parentDirOf(relPath: string): string {
   return idx === -1 ? '' : normalized.slice(0, idx)
 }
 
-export function validateEntryName(rawName: string): string | null {
+export function validateEntryName(rawName: string, t?: TranslateFn): string | null {
   const name = rawName.trim()
   if (!name) {
-    return 'Name cannot be empty.'
+    return t ? t('explorer.validation.empty') : 'Name cannot be empty.'
   }
   if (name === '.' || name === '..') {
-    return 'Name cannot be "." or "..".'
+    return t ? t('explorer.validation.dots') : 'Name cannot be "." or "..".'
   }
   if (name.includes('/') || name.includes('\\')) {
-    return 'Path separators ("/" or "\\") are not allowed.'
+    return t
+      ? t('explorer.validation.separators')
+      : 'Path separators ("/" or "\\") are not allowed.'
   }
   // eslint-disable-next-line no-control-regex
   if (/[<>:"|?*\x00-\x1f]/.test(name)) {
-    return 'Contains invalid characters: < > : " | ? *'
+    return t
+      ? t('explorer.validation.invalidChars')
+      : 'Contains invalid characters: < > : " | ? *'
   }
   return null
 }
@@ -97,6 +102,7 @@ function matchesPath(target: string, relPath: string, isDir: boolean): boolean {
 export interface FileTreeStoreOptions {
   /** 全局排除规则（设置界面维护）；命中的条目从树中彻底隐藏，与 showIgnored 开关独立 */
   readonly excludes?: ExplorerExcludeService
+  readonly t?: TranslateFn
 }
 
 export function createFileTreeStore(
@@ -386,7 +392,7 @@ export function createFileTreeStore(
       }
 
       const name = rawName.trim()
-      const validationError = validateEntryName(name)
+      const validationError = validateEntryName(name, options?.t)
       if (validationError) {
         setActionError(validationError)
         return null
@@ -419,7 +425,7 @@ export function createFileTreeStore(
       }
 
       const name = rawName.trim()
-      const validationError = validateEntryName(name)
+      const validationError = validateEntryName(name, options?.t)
       if (validationError) {
         setActionError(validationError)
         return null

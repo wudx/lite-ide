@@ -1,11 +1,12 @@
 import type { PreviewProps } from '@lite-ide/kernel'
-import { formatBytes } from '@lite-ide/workbench'
+import { formatBytes, getI18n } from '@lite-ide/workbench'
 import FileWarning from 'lucide-solid/icons/file-exclamation-point'
 
 export default function FallbackPreview(props: PreviewProps) {
+  const i18n = getI18n(props.scope)
   const modifiedAt = () => {
-    if (!props.file.modifiedMs) return 'Unknown'
-    return new Date(props.file.modifiedMs).toLocaleString()
+    if (!props.file.modifiedMs) return i18n.t('previewFallback.unknown')
+    return new Date(props.file.modifiedMs).toLocaleString(i18n.locale())
   }
 
   return (
@@ -21,37 +22,40 @@ export default function FallbackPreview(props: PreviewProps) {
             </h2>
             <p class="text-xs text-[var(--text-secondary)]">
               {props.file.isBinary
-                ? 'Binary file cannot be displayed in the text previewer'
-                : 'File metadata inspection'}
+                ? i18n.t('previewFallback.binaryNotice')
+                : i18n.t('previewFallback.metadataInspection')}
             </p>
           </div>
         </div>
 
         <dl class="divide-y divide-[var(--border-subtle)] border-t border-[var(--border-subtle)] text-xs">
           <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
-            <dt class="text-[var(--text-muted)]">Path</dt>
+            <dt class="text-[var(--text-muted)]">{i18n.t('previewFallback.path')}</dt>
             <dd class="font-mono text-[var(--text-primary)] break-all">{props.file.relPath}</dd>
           </div>
 
           <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
-            <dt class="text-[var(--text-muted)]">Size</dt>
+            <dt class="text-[var(--text-muted)]">{i18n.t('previewFallback.size')}</dt>
             <dd class="font-mono text-[var(--text-primary)] tabular-nums">
-              {formatBytes(props.file.size)} ({props.file.size.toLocaleString()} bytes)
+              {i18n.t('previewFallback.sizeBytes', {
+                formatted: formatBytes(props.file.size),
+                raw: props.file.size.toLocaleString(i18n.locale()),
+              })}
             </dd>
           </div>
 
           <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
-            <dt class="text-[var(--text-muted)]">MIME Type</dt>
+            <dt class="text-[var(--text-muted)]">{i18n.t('previewFallback.mimeType')}</dt>
             <dd class="font-mono text-[var(--text-primary)]">{props.file.mime}</dd>
           </div>
 
           <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
-            <dt class="text-[var(--text-muted)]">Encoding</dt>
+            <dt class="text-[var(--text-muted)]">{i18n.t('previewFallback.encoding')}</dt>
             <dd class="font-mono uppercase text-[var(--text-primary)]">{props.file.encoding}</dd>
           </div>
 
           <div class="pt-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
-            <dt class="text-[var(--text-muted)]">Modified</dt>
+            <dt class="text-[var(--text-muted)]">{i18n.t('previewFallback.modified')}</dt>
             <dd class="text-[var(--text-primary)] tabular-nums">{modifiedAt()}</dd>
           </div>
         </dl>

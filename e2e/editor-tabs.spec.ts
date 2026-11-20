@@ -15,7 +15,7 @@ interface StripMetrics {
 async function readStrip(page: Page): Promise<StripMetrics> {
   return page.evaluate(() => {
     const strip = document.querySelector<HTMLElement>(
-      '[role="tablist"][aria-label="Editor tabs"]',
+      '[role="tablist"][aria-label="编辑器标签页"]',
     )
     if (!strip) return { overflow: false, scrollLeft: 0, activeTab: '', activeTabVisible: false }
     const active = strip.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
@@ -53,7 +53,7 @@ test('tab strip scrolls newly opened tabs into view when overflowing', async ({
   await expect(page.getByRole('tab', { name: 'App.tsx' })).toBeVisible()
 
   // Keep creating untitled tabs until the strip overflows horizontally.
-  const plus = page.getByTitle('New Untitled File')
+  const plus = page.getByTitle('新建未命名文件')
   for (let i = 0; i < 8; i++) {
     if (await readStrip(page).then((m) => m.overflow)) break
     await plus.click()
@@ -82,7 +82,7 @@ test('tab strip scrolls newly opened tabs into view when overflowing', async ({
     .toBe(true)
 
   // Keyboard navigation onto the last (off-screen) tab reveals it as well.
-  const tabs = page.getByRole('tablist', { name: 'Editor tabs' }).getByRole('tab')
+  const tabs = page.getByRole('tablist', { name: '编辑器标签页' }).getByRole('tab')
   const tabCount = await tabs.count()
   const lastTabName = (await tabs.last().textContent()) ?? ''
   for (let i = 1; i < tabCount; i++) await page.keyboard.press('Control+PageDown')

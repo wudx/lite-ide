@@ -1,6 +1,7 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import Check from 'lucide-solid/icons/check'
 import { For, Show } from 'solid-js'
+import { getI18n } from '../i18n'
 import { ThemeStateKey, THEME_DEFINITIONS, type ThemeDefinition } from '../services'
 
 export interface AppearanceSettingsProps {
@@ -40,15 +41,18 @@ function swatchOf(theme: ThemeDefinition): ThemeSwatch {
 
 export function AppearanceSettings(props: AppearanceSettingsProps) {
   const themeState = props.kernel.tryGet(ThemeStateKey)
+  const i18n = getI18n(props.kernel)
   // 主题列表是响应式的：内核 theme 贡献点（内置 + 插件）变化时同步刷新。
   const themes = (): readonly ThemeDefinition[] => themeState?.themes() ?? THEME_DEFINITIONS
 
   return (
     <div class="space-y-4">
       <section>
-        <h3 class="text-xs font-semibold text-[var(--text-primary)] leading-normal">颜色主题</h3>
+        <h3 class="text-xs font-semibold text-[var(--text-primary)] leading-normal">
+          {i18n.t('settings.appearance.heading')}
+        </h3>
         <p class="text-[11px] text-[var(--text-muted)] mt-1 mb-3 leading-relaxed">
-          选择工作台的配色方案，更改立即生效并自动保存。
+          {i18n.t('settings.appearance.description')}
         </p>
         <div class="grid grid-cols-3 gap-2.5">
           <For each={themes()}>
@@ -79,7 +83,7 @@ export function AppearanceSettings(props: AppearanceSettingsProps) {
                         isActive() ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'
                       }`}
                     >
-                      {theme.label}
+                      {i18n.resolveText(theme.labelKey, theme.label)}
                     </span>
                     <Show when={isActive()}>
                       <Check class="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />

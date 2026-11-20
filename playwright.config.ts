@@ -19,6 +19,7 @@ export default defineConfig({
     // while "localhost" can resolve to IPv4 first.
     baseURL: `http://127.0.0.1:${port}`,
     channel: channel || undefined,
+    locale: 'zh-CN',
     // Clipboard assertions need the async Clipboard API permissions.
     permissions: ['clipboard-read', 'clipboard-write'],
   },

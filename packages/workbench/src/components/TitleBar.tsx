@@ -12,6 +12,7 @@ import X from 'lucide-solid/icons/x'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { requestCloseProject } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
+import { getI18n } from '../i18n'
 import { LayoutStateKey } from '../services'
 
 export interface TitleBarProps {
@@ -27,6 +28,7 @@ export function TitleBar(props: TitleBarProps) {
   const isMac = isMacOsPlatform()
   const isTauri = isTauriEnvironment()
   const layout = props.kernel.tryGet(LayoutStateKey)
+  const i18n = getI18n(props.kernel)
   const [maximized, setMaximized] = createSignal(false)
 
   onMount(() => {
@@ -99,7 +101,7 @@ export function TitleBar(props: TitleBarProps) {
                 ? 'bg-[var(--bg-hover)] text-[var(--text-primary)] hover:bg-[var(--bg-hover-strong)]'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
-            title="Toggle Sidebar (Ctrl+B)"
+            title={i18n.t('titlebar.toggleSidebar')}
             onClick={() => void props.kernel.executeCommand('workbench.toggleSidebar')}
           >
             <PanelLeft class="w-3.5 h-3.5" />
@@ -140,13 +142,13 @@ export function TitleBar(props: TitleBarProps) {
                 <div class="w-4 h-4 flex items-center justify-center shrink-0">
                   <Show when={hasDirty()}>
                     <span
-                      title="Unsaved files in project"
+                      title={i18n.t('titlebar.unsavedInProject')}
                       class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] group-hover:hidden"
                     />
                   </Show>
                   <button
                     type="button"
-                    title="Close Project (Ctrl+Shift+W)"
+                    title={i18n.t('titlebar.closeProject')}
                     class={`p-0.5 rounded-md hover:bg-[var(--bg-hover-strong)] transition-all duration-150 ${
                       hasDirty()
                         ? 'hidden group-hover:flex items-center justify-center'
@@ -170,7 +172,7 @@ export function TitleBar(props: TitleBarProps) {
         <button
           type="button"
           class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95"
-          title="Open Project Folder (Ctrl+O)"
+          title={i18n.t('titlebar.openProject')}
           onClick={() => void props.kernel.executeCommand('workbench.openProject')}
         >
           <Plus class="w-3.5 h-3.5" />
@@ -184,8 +186,8 @@ export function TitleBar(props: TitleBarProps) {
       <div class="flex items-center gap-1 pr-1 shrink-0">
         <button
           type="button"
-          aria-label="Open Settings"
-          title="设置 (Ctrl+,)"
+          aria-label={i18n.t('titlebar.openSettingsAria')}
+          title={i18n.t('titlebar.openSettings')}
           class="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95"
           onClick={() => void props.kernel.executeCommand('workbench.openSettings')}
         >
@@ -199,7 +201,7 @@ export function TitleBar(props: TitleBarProps) {
           <button
             type="button"
             class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
-            title="Minimize"
+            title={i18n.t('titlebar.minimize')}
             onClick={() => void handleMinimize()}
           >
             <Minus class="w-3.5 h-3.5" />
@@ -207,7 +209,7 @@ export function TitleBar(props: TitleBarProps) {
           <button
             type="button"
             class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
-            title={maximized() ? 'Restore' : 'Maximize'}
+            title={maximized() ? i18n.t('titlebar.restore') : i18n.t('titlebar.maximize')}
             onClick={() => void handleToggleMaximize()}
           >
             <Show when={maximized()} fallback={<Square class="w-3 h-3" />}>
@@ -217,7 +219,7 @@ export function TitleBar(props: TitleBarProps) {
           <button
             type="button"
             class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-red-500/85 hover:text-white transition-colors"
-            title="Close"
+            title={i18n.t('titlebar.close')}
             onClick={() => void handleCloseWindow()}
           >
             <X class="w-3.5 h-3.5" />

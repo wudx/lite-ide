@@ -1,6 +1,7 @@
 import type { AppKernel, ProjectScope } from '@lite-ide/kernel'
 import Search from 'lucide-solid/icons/search'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from 'solid-js'
+import { getI18n } from '../i18n'
 import {
   buildFileIndex,
   QuickOpenKey,
@@ -22,6 +23,7 @@ const HIGHLIGHT_CLASS = 'text-[var(--accent)] font-semibold'
 
 export function QuickOpenDialog(props: QuickOpenDialogProps) {
   const service = props.kernel.tryGet(QuickOpenKey)
+  const i18n = getI18n(props.kernel)
   const [query, setQuery] = createSignal('')
   const [files, setFiles] = createSignal<QuickOpenFileEntry[] | null>(null)
   const [indexError, setIndexError] = createSignal<string | null>(null)
@@ -203,26 +205,32 @@ export function QuickOpenDialog(props: QuickOpenDialogProps) {
   const listContent = createMemo<JSX.Element>(() => {
     if (noProject()) {
       return (
-        <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">没有打开的项目</div>
+        <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">
+          {i18n.t('quickOpen.noProject')}
+        </div>
       )
     }
     if (indexError()) {
       return (
         <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">
-          索引文件失败：{indexError()}
+          {i18n.t('quickOpen.indexError', { message: indexError()! })}
         </div>
       )
     }
     if (!files()) {
       return (
         <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">
-          正在索引项目文件…
+          {i18n.t('quickOpen.indexing')}
         </div>
       )
     }
     const current = results()
     if (current.length === 0) {
-      return <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">无匹配文件</div>
+      return (
+        <div class="px-4 py-6 text-xs text-[var(--text-muted)] leading-normal">
+          {i18n.t('quickOpen.noMatches')}
+        </div>
+      )
     }
     return (
       <For each={current}>
@@ -261,7 +269,7 @@ export function QuickOpenDialog(props: QuickOpenDialogProps) {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="快速打开"
+          aria-label={i18n.t('quickOpen.dialogAria')}
           class="absolute left-1/2 top-10 -translate-x-1/2 w-[min(620px,92vw)] rounded-2xl glass-surface shadow-2xl overflow-hidden animate-popover-in"
         >
           <div class="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-[var(--border-subtle)]">
@@ -270,7 +278,7 @@ export function QuickOpenDialog(props: QuickOpenDialogProps) {
               ref={inputRef}
               type="text"
               class="flex-1 bg-transparent outline-none text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal"
-              placeholder="按名称搜索文件…"
+              placeholder={i18n.t('quickOpen.placeholder')}
               spellcheck={false}
               autocomplete="off"
               value={query()}
@@ -281,15 +289,15 @@ export function QuickOpenDialog(props: QuickOpenDialogProps) {
           <div
             ref={listRef}
             role="listbox"
-            aria-label="搜索结果"
+            aria-label={i18n.t('quickOpen.resultsAria')}
             class="max-h-[46vh] min-h-[44px] overflow-y-auto p-1.5"
           >
             {listContent()}
           </div>
           <div class="flex items-center gap-3 px-3.5 py-1.5 border-t border-[var(--border-subtle)] text-[10.5px] text-[var(--text-muted)] leading-normal">
-            <span>↑↓ 切换</span>
-            <span>Enter 打开</span>
-            <span>Esc 关闭</span>
+            <span>{i18n.t('quickOpen.hintNavigate')}</span>
+            <span>{i18n.t('quickOpen.hintOpen')}</span>
+            <span>{i18n.t('quickOpen.hintClose')}</span>
           </div>
         </div>
       </div>

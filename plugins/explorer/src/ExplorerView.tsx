@@ -5,6 +5,7 @@ import {
   copyTextToClipboard,
   EditorBufferKey,
   FileIcon,
+  getI18n,
   joinNativePath,
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
@@ -138,6 +139,7 @@ export function ExplorerView(props: ExplorerViewProps) {
   const selection = props.scope.get(ProjectSelectionKey)
   const buffers = props.scope.tryGet(EditorBufferKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
+  const i18n = getI18n(props.scope)
 
   const [contextMenu, setContextMenu] = createSignal<{
     x: number
@@ -249,18 +251,22 @@ export function ExplorerView(props: ExplorerViewProps) {
 
     if (dialogs) {
       const dirtyNote =
-        affectedDirty.length > 0
-          ? ` (${affectedDirty.length} unsaved file${affectedDirty.length > 1 ? 's' : ''} inside will also be discarded)`
-          : ''
+        affectedDirty.length === 0
+          ? ''
+          : affectedDirty.length === 1
+            ? i18n.t('explorer.delete.dirtyNoteOne')
+            : i18n.t('explorer.delete.dirtyNoteMany', { count: affectedDirty.length })
       const choice = await dialogs.confirm({
-        title: entry.isDir ? 'Delete Folder' : 'Delete File',
+        title: entry.isDir
+          ? i18n.t('explorer.delete.folderTitle')
+          : i18n.t('explorer.delete.fileTitle'),
         message: entry.isDir
-          ? `Permanently delete folder "${entry.name}" and all of its contents?${dirtyNote}`
-          : `Permanently delete "${entry.name}"?${dirtyNote}`,
+          ? i18n.t('explorer.delete.folderMessage', { name: entry.name, dirtyNote })
+          : i18n.t('explorer.delete.fileMessage', { name: entry.name, dirtyNote }),
         details: [entry.relPath],
         actions: [
-          { id: 'delete', label: 'Delete', variant: 'danger' },
-          { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+          { id: 'delete', label: i18n.t('explorer.menu.delete'), variant: 'danger' },
+          { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
         ],
         cancelId: 'cancel',
       })
@@ -382,13 +388,13 @@ export function ExplorerView(props: ExplorerViewProps) {
               type="text"
               value={store.filterQuery()}
               onInput={(e) => store.setFilterQuery(e.currentTarget.value)}
-              placeholder="Filter files..."
+              placeholder={i18n.t('explorer.filterPlaceholder')}
               class="w-full h-full px-2 bg-transparent outline-none text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             <Show when={store.filterQuery().length > 0}>
               <button
                 type="button"
-                title="Clear Filter"
+                title={i18n.t('explorer.clearFilter')}
                 class="mr-1.5 p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                 onClick={() => store.setFilterQuery('')}
               >
@@ -400,15 +406,20 @@ export function ExplorerView(props: ExplorerViewProps) {
 
         <div class="px-2.5 pb-1.5 flex items-center justify-between gap-2">
           <span class="text-[10.5px] font-medium uppercase tracking-wider text-[var(--text-muted)] pl-1 tabular-nums">
-            <Show when={store.filterQuery().trim().length > 0} fallback="Files">
-              {store.visibleNodes().length} matches
+            <Show
+              when={store.filterQuery().trim().length > 0}
+              fallback={i18n.t('explorer.filesHeading')}
+            >
+              {store.visibleNodes().length === 1
+                ? i18n.t('explorer.matchesOne')
+                : i18n.t('explorer.matchesMany', { count: store.visibleNodes().length })}
             </Show>
           </span>
 
           <div class="flex items-center gap-0.5">
             <button
               type="button"
-              title="New File"
+              title={i18n.t('explorer.newFile')}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={() => void store.startCreate('file', resolveTargetParentDir())}
             >
@@ -417,7 +428,7 @@ export function ExplorerView(props: ExplorerViewProps) {
 
             <button
               type="button"
-              title="New Folder"
+              title={i18n.t('explorer.newFolder')}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={() => void store.startCreate('dir', resolveTargetParentDir())}
             >
@@ -426,7 +437,7 @@ export function ExplorerView(props: ExplorerViewProps) {
 
             <button
               type="button"
-              title="Refresh Tree"
+              title={i18n.t('explorer.refreshTree')}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={() => void store.refreshAllExpanded()}
             >
@@ -435,7 +446,7 @@ export function ExplorerView(props: ExplorerViewProps) {
 
             <button
               type="button"
-              title="Collapse All Folders"
+              title={i18n.t('explorer.collapseAll')}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={() => store.collapseAll()}
             >
@@ -444,7 +455,11 @@ export function ExplorerView(props: ExplorerViewProps) {
 
             <button
               type="button"
-              title={store.showIgnored() ? 'Hide Ignored Files' : 'Show Ignored Files'}
+              title={
+                store.showIgnored()
+                  ? i18n.t('explorer.hideIgnored')
+                  : i18n.t('explorer.showIgnored')
+              }
               class={`p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95 ${
                 store.showIgnored()
                   ? 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -490,7 +505,7 @@ export function ExplorerView(props: ExplorerViewProps) {
           fallback={
             <div class="flex items-center justify-center gap-2 py-8 text-xs text-[var(--text-muted)]">
               <Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />
-              <span>Loading project files...</span>
+              <span>{i18n.t('explorer.loading')}</span>
             </div>
           }
         >
@@ -498,7 +513,7 @@ export function ExplorerView(props: ExplorerViewProps) {
             when={store.visibleNodes().length > 0}
             fallback={
               <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
-                No matching files
+                {i18n.t('explorer.noMatches')}
               </div>
             }
           >
@@ -540,7 +555,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                             aria-selected={isSelected()}
                             title={
                               isCreating()
-                                ? 'Enter name'
+                                ? i18n.t('explorer.enterName')
                                 : item().entry.relPath
                             }
                             class={`group/row absolute top-0 left-1.5 right-1.5 rounded-lg flex items-center gap-1.5 pr-2 text-xs transition-colors duration-100 ${
@@ -619,7 +634,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                                   </span>
                                   <Show when={isDirty()}>
                                     <span
-                                      title="Unsaved changes"
+                                      title={i18n.t('explorer.unsavedChanges')}
                                       class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] shrink-0"
                                     />
                                   </Show>
@@ -630,8 +645,8 @@ export function ExplorerView(props: ExplorerViewProps) {
                                 initialValue={isRenaming() ? item().entry.name : ''}
                                 placeholder={
                                   item().creatingKind === 'dir'
-                                    ? 'New folder name...'
-                                    : 'New file name...'
+                                    ? i18n.t('explorer.newFolderPlaceholder')
+                                    : i18n.t('explorer.newFilePlaceholder')
                                 }
                                 selectBaseName={isRenaming() && !item().entry.isDir}
                                 error={store.actionError()}
@@ -684,7 +699,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     void selection.selectFile(target.relPath)
                   }}
                 >
-                  <span>Open</span>
+                  <span>{i18n.t('explorer.menu.open')}</span>
                 </button>
               </Show>
 
@@ -699,7 +714,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                   }}
                 >
                   <FilePlus class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                  <span>New File</span>
+                  <span>{i18n.t('explorer.newFile')}</span>
                 </button>
                 <button
                   type="button"
@@ -711,7 +726,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                   }}
                 >
                   <FolderPlus class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                  <span>New Folder</span>
+                  <span>{i18n.t('explorer.newFolder')}</span>
                 </button>
               </Show>
 
@@ -726,7 +741,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                   }}
                 >
                   <RefreshCw class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                  <span>Refresh</span>
+                  <span>{i18n.t('explorer.menu.refresh')}</span>
                 </button>
               </Show>
 
@@ -745,7 +760,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     >
                       <span class="flex items-center gap-2">
                         <Pencil class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                        <span>Rename</span>
+                        <span>{i18n.t('explorer.menu.rename')}</span>
                       </span>
                       <span class="text-[10px] font-mono text-[var(--text-muted)]">F2</span>
                     </button>
@@ -759,7 +774,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                       }}
                     >
                       <Copy class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                      <span>Copy Path</span>
+                      <span>{i18n.t('common.copyPath')}</span>
                     </button>
                     <button
                       type="button"
@@ -771,7 +786,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                       }}
                     >
                       <FileStack class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                      <span>Copy Relative Path</span>
+                      <span>{i18n.t('common.copyRelativePath')}</span>
                     </button>
                     <button
                       type="button"
@@ -784,7 +799,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     >
                       <span class="flex items-center gap-2">
                         <Trash class="w-3.5 h-3.5" />
-                        <span>Delete</span>
+                        <span>{i18n.t('explorer.menu.delete')}</span>
                       </span>
                       <span class="text-[10px] font-mono opacity-65">Del</span>
                     </button>

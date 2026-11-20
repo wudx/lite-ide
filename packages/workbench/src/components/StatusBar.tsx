@@ -1,12 +1,14 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import { createMemo, For } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
+import { getI18n } from '../i18n'
 
 export interface StatusBarProps {
   kernel: AppKernel
 }
 
 export function StatusBar(props: StatusBarProps) {
+  const i18n = getI18n(props.kernel)
   const items = props.kernel.contributions('statusbar.item')
 
   const leftItems = createMemo(() =>
@@ -26,7 +28,7 @@ export function StatusBar(props: StatusBarProps) {
       <div class="flex items-center gap-3 min-w-0">
         <span class="flex items-center gap-1.5 text-[var(--text-secondary)]">
           <span class="w-1.5 h-1.5 rounded-full bg-[var(--success-text)]" />
-          <span>Projects: {props.kernel.projects().length}</span>
+          <span>{i18n.t('statusbar.projects', { count: props.kernel.projects().length })}</span>
         </span>
         <For each={leftItems()}>
           {(item) => (

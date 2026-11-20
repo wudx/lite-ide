@@ -5,6 +5,7 @@ import {
   isUntitledPath,
   untitledDisplayNameOf,
 } from './editor-buffers'
+import { getI18n, type TranslateFn } from './i18n'
 import { ProjectSelectionKey, WorkspaceBackendKey } from './services'
 
 const MAX_DETAIL_ITEMS = 5
@@ -20,13 +21,16 @@ export interface SaveAsResult {
  * backslashes and duplicated separators are normalized to "/". Returns the
  * { dir, name } split, or an error message when any segment is invalid.
  */
-export function parseSaveTarget(rawName: string): { dir: string; name: string } | string {
+export function parseSaveTarget(
+  rawName: string,
+  t: TranslateFn = getI18n().t,
+): { dir: string; name: string } | string {
   const cleaned = rawName.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/')
   if (!cleaned || cleaned === '/') {
-    return 'Name cannot be empty.'
+    return t('saveAs.error.emptyName')
   }
   if (cleaned.startsWith('/')) {
-    return 'Use a path relative to the project root.'
+    return t('saveAs.error.relativePath')
   }
 
   const idx = cleaned.lastIndexOf('/')
@@ -35,11 +39,11 @@ export function parseSaveTarget(rawName: string): { dir: string; name: string } 
 
   for (const seg of [...(dir ? dir.split('/') : []), name]) {
     if (!seg || seg === '.' || seg === '..') {
-      return 'Path cannot contain empty, "." or ".." segments.'
+      return t('saveAs.error.invalidSegments')
     }
     // eslint-disable-next-line no-control-regex
     if (/[<>:"|?*\x00-\x1f]/.test(seg)) {
-      return 'Contains invalid characters: < > : " | ? *'
+      return t('saveAs.error.invalidChars')
     }
   }
   return { dir, name }
@@ -57,15 +61,16 @@ export async function saveUntitledAs(
   untitledRelPath: string,
   rawName: string,
 ): Promise<SaveAsResult> {
+  const i18n = getI18n(kernel)
   const buffers = scope.tryGet(EditorBufferKey)
   if (!buffers || !isUntitledPath(untitledRelPath)) {
-    return { ok: false, error: 'Not an untitled buffer.' }
+    return { ok: false, error: i18n.t('saveAs.error.notUntitled') }
   }
   if (!buffers.getBuffer(untitledRelPath)) {
-    return { ok: false, error: 'Untitled buffer no longer exists.' }
+    return { ok: false, error: i18n.t('saveAs.error.missingUntitled') }
   }
 
-  const parsed = parseSaveTarget(rawName)
+  const parsed = parseSaveTarget(rawName, i18n.t)
   if (typeof parsed === 'string') {
     return { ok: false, error: parsed }
   }
@@ -80,13 +85,14 @@ async function saveUntitledToRelPath(
   untitledRelPath: string,
   targetRel: string,
 ): Promise<SaveAsResult> {
+  const i18n = getI18n(kernel)
   const buffers = scope.tryGet(EditorBufferKey)
   const selection = scope.get(ProjectSelectionKey)
   if (!buffers || !isUntitledPath(untitledRelPath)) {
-    return { ok: false, error: 'Not an untitled buffer.' }
+    return { ok: false, error: i18n.t('saveAs.error.notUntitled') }
   }
   if (!buffers.getBuffer(untitledRelPath)) {
-    return { ok: false, error: 'Untitled buffer no longer exists.' }
+    return { ok: false, error: i18n.t('saveAs.error.missingUntitled') }
   }
 
   const backend = kernel.get(WorkspaceBackendKey)
@@ -115,7 +121,7 @@ async function saveUntitledToRelPath(
     buffers.renamePaths(targetRel, untitledRelPath, false)
     await selection.renamePaths(targetRel, untitledRelPath, false)
     const saveError = buffers.getBuffer(untitledRelPath)?.saveError
-    return { ok: false, error: saveError ?? 'Failed to save the file.' }
+    return { ok: false, error: saveError ?? i18n.t('saveAs.error.saveFailed') }
   }
   return { ok: true, error: null }
 }
@@ -136,7 +142,11 @@ export async function requestUntitledSave(
   const selection = scope.get(ProjectSelectionKey)
 
   if (backend.pickSavePath) {
-    const picked = await backend.pickSavePath(scope.id, untitledDisplayNameOf(untitledRelPath))
+    const i18n = getI18n(kernel)
+    const picked = await backend.pickSavePath(scope.id, untitledDisplayNameOf(untitledRelPath), {
+      title: i18n.t('dialog.saveUntitledTitle'),
+      outsideProjectMessage: i18n.t('dialog.saveOutsideProject'),
+    })
     if (!picked) return false
     const result = await saveUntitledToRelPath(kernel, scope, untitledRelPath, picked)
     if (result.ok) return true
@@ -155,10 +165,10 @@ function baseNameOf(relPath: string): string {
   return idx === -1 ? normalized : normalized.slice(idx + 1)
 }
 
-function formatDetails(paths: string[]): string[] {
+function formatDetails(paths: string[], t: TranslateFn): string[] {
   if (paths.length <= MAX_DETAIL_ITEMS) return paths
   const head = paths.slice(0, MAX_DETAIL_ITEMS)
-  head.push(`...and ${paths.length - MAX_DETAIL_ITEMS} more`)
+  head.push(t('confirm.andMore', { count: paths.length - MAX_DETAIL_ITEMS }))
   return head
 }
 
@@ -170,6 +180,7 @@ async function confirmAndCloseTabs(
 ): Promise<boolean> {
   if (targetPaths.length === 0) return true
 
+  const i18n = getI18n(kernel)
   const selection = scope.get(ProjectSelectionKey)
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
@@ -179,23 +190,25 @@ async function confirmAndCloseTabs(
     if (!dialogs) return false
     const single = dirtyTargets.length === 1
     const choice = await dialogs.confirm({
-      title: 'Unsaved Changes',
+      title: i18n.t('confirm.unsavedTitle'),
       message: single
-        ? `Do you want to save changes to "${baseNameOf(dirtyTargets[0])}" before closing?`
-        : `${dirtyTargets.length} files have unsaved changes. Save before closing?`,
-      details: formatDetails(dirtyTargets),
+        ? i18n.t('confirm.closeTabs.messageOne', { name: baseNameOf(dirtyTargets[0]) })
+        : i18n.t('confirm.closeTabs.messageMany', { count: dirtyTargets.length }),
+      details: formatDetails(dirtyTargets, i18n.t),
       actions: [
         {
           id: 'save',
-          label: single ? 'Save & Close' : 'Save All & Close',
+          label: single ? i18n.t('confirm.closeTabs.saveOne') : i18n.t('confirm.closeTabs.saveMany'),
           variant: 'primary',
         },
         {
           id: 'discard',
-          label: single ? "Don't Save" : 'Discard & Close',
+          label: single
+            ? i18n.t('confirm.closeTabs.dontSave')
+            : i18n.t('confirm.closeTabs.discardClose'),
           variant: 'danger',
         },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -229,6 +242,7 @@ export async function requestSaveFile(
   scope: ProjectScope,
   relPath: string,
 ): Promise<boolean> {
+  const i18n = getI18n(kernel)
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
   const buf = buffers?.getBuffer(relPath)
@@ -249,18 +263,24 @@ export async function requestSaveFile(
 
   if (dialogs) {
     const choice = await dialogs.confirm({
-      title: buf.conflict === 'deleted' ? 'File Deleted on Disk' : 'External Disk Change',
+      title:
+        buf.conflict === 'deleted'
+          ? i18n.t('confirm.conflict.deletedTitle')
+          : i18n.t('confirm.conflict.modifiedTitle'),
       message:
         buf.conflict === 'deleted'
-          ? `"${buf.relPath}" was deleted on disk. Recreate the file and save your buffer?`
-          : `"${buf.relPath}" changed on disk. Overwrite the disk version with your current edits?`,
+          ? i18n.t('confirm.conflict.deletedMessage', { path: buf.relPath })
+          : i18n.t('confirm.conflict.modifiedMessage', { path: buf.relPath }),
       actions: [
         {
           id: 'overwrite',
-          label: buf.conflict === 'deleted' ? 'Recreate & Save' : 'Overwrite Disk',
+          label:
+            buf.conflict === 'deleted'
+              ? i18n.t('confirm.conflict.recreateSave')
+              : i18n.t('confirm.conflict.overwriteDisk'),
           variant: 'primary',
         },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -275,6 +295,7 @@ export async function requestRevertFile(
   scope: ProjectScope,
   relPath: string,
 ): Promise<boolean> {
+  const i18n = getI18n(kernel)
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
   const buf = buffers?.getBuffer(relPath)
@@ -284,11 +305,11 @@ export async function requestRevertFile(
 
   if (dialogs) {
     const choice = await dialogs.confirm({
-      title: 'Revert Unsaved Changes',
-      message: `Discard all unsaved edits in "${buf.relPath}" and reload from disk?`,
+      title: i18n.t('confirm.revert.title'),
+      message: i18n.t('confirm.revert.message', { path: buf.relPath }),
       actions: [
-        { id: 'revert', label: 'Revert Changes', variant: 'danger' },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'revert', label: i18n.t('confirm.revert.action'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -304,6 +325,7 @@ export async function requestCloseTab(
   scope: ProjectScope,
   relPath: string,
 ): Promise<boolean> {
+  const i18n = getI18n(kernel)
   const selection = scope.get(ProjectSelectionKey)
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
@@ -311,13 +333,13 @@ export async function requestCloseTab(
   if (buffers?.isDirty(relPath)) {
     if (!dialogs) return false
     const choice = await dialogs.confirm({
-      title: 'Unsaved Changes',
-      message: `Do you want to save the changes you made to "${baseNameOf(relPath)}"?`,
+      title: i18n.t('confirm.unsavedTitle'),
+      message: i18n.t('confirm.closeTab.message', { name: baseNameOf(relPath) }),
       details: [relPath],
       actions: [
-        { id: 'save', label: 'Save', variant: 'primary' },
-        { id: 'discard', label: "Don't Save", variant: 'danger' },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'save', label: i18n.t('confirm.closeTab.save'), variant: 'primary' },
+        { id: 'discard', label: i18n.t('confirm.closeTab.dontSave'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -360,6 +382,7 @@ export async function requestCloseProject(
   kernel: AppKernel,
   scope: ProjectScope,
 ): Promise<boolean> {
+  const i18n = getI18n(kernel)
   const buffers = scope.tryGet(EditorBufferKey)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
   const dirtyPaths = buffers ? [...buffers.dirtyPaths()] : []
@@ -367,13 +390,16 @@ export async function requestCloseProject(
   if (dirtyPaths.length > 0) {
     if (!dialogs) return false
     const choice = await dialogs.confirm({
-      title: `Unsaved Changes in ${scope.name}`,
-      message: `${dirtyPaths.length} unsaved file${dirtyPaths.length > 1 ? 's' : ''} will lose changes if you close this project.`,
-      details: formatDetails(dirtyPaths),
+      title: i18n.t('confirm.closeProject.title', { name: scope.name }),
+      message:
+        dirtyPaths.length === 1
+          ? i18n.t('confirm.closeProject.messageOne')
+          : i18n.t('confirm.closeProject.messageMany', { count: dirtyPaths.length }),
+      details: formatDetails(dirtyPaths, i18n.t),
       actions: [
-        { id: 'save', label: 'Save All & Close', variant: 'primary' },
-        { id: 'discard', label: 'Discard & Close', variant: 'danger' },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'save', label: i18n.t('confirm.closeProject.saveAll'), variant: 'primary' },
+        { id: 'discard', label: i18n.t('confirm.closeProject.discardClose'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -398,6 +424,7 @@ export async function requestCloseProject(
 }
 
 export async function requestCloseWindow(kernel: AppKernel): Promise<boolean> {
+  const i18n = getI18n(kernel)
   const dialogs = kernel.tryGet(ConfirmDialogKey)
   const dirtyEntries: Array<{ scope: ProjectScope; label: string }> = []
 
@@ -413,13 +440,19 @@ export async function requestCloseWindow(kernel: AppKernel): Promise<boolean> {
   if (!dialogs) return false
 
   const choice = await dialogs.confirm({
-    title: 'Unsaved Changes Before Closing',
-    message: `${dirtyEntries.length} unsaved file${dirtyEntries.length > 1 ? 's' : ''} across open projects. Save before exiting?`,
-    details: formatDetails(dirtyEntries.map((d) => d.label)),
+    title: i18n.t('confirm.closeWindow.title'),
+    message:
+      dirtyEntries.length === 1
+        ? i18n.t('confirm.closeWindow.messageOne')
+        : i18n.t('confirm.closeWindow.messageMany', { count: dirtyEntries.length }),
+    details: formatDetails(
+      dirtyEntries.map((d) => d.label),
+      i18n.t,
+    ),
     actions: [
-      { id: 'save', label: 'Save All & Exit', variant: 'primary' },
-      { id: 'discard', label: 'Discard & Exit', variant: 'danger' },
-      { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+      { id: 'save', label: i18n.t('confirm.closeWindow.saveAllExit'), variant: 'primary' },
+      { id: 'discard', label: i18n.t('confirm.closeWindow.discardExit'), variant: 'danger' },
+      { id: 'cancel', label: i18n.t('common.cancel'), variant: 'secondary' },
     ],
     cancelId: 'cancel',
   })

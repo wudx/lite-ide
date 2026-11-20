@@ -48,6 +48,15 @@ export interface FsDelta {
   overflow: boolean
 }
 
+export interface PickFolderOptions {
+  title?: string
+}
+
+export interface PickSavePathOptions {
+  title?: string
+  outsideProjectMessage?: string
+}
+
 export interface WorkspaceBackend {
   readonly kind: 'tauri' | 'mock'
   openProject(path: string, onFsEvent: (delta: FsDelta) => void): Promise<ProjectInfo>
@@ -65,13 +74,17 @@ export interface WorkspaceBackend {
   createDir(projectId: string, relPath: string): Promise<DirEntry>
   renamePath(projectId: string, oldRelPath: string, newRelPath: string): Promise<DirEntry>
   deletePath(projectId: string, relPath: string): Promise<void>
-  pickFolder(): Promise<string | null>
+  pickFolder(options?: PickFolderOptions): Promise<string | null>
   /**
    * Desktop-only: opens a native save dialog rooted at the project folder and
    * resolves to the chosen location relative to the project root, or null when
    * the user cancels (or picks a path outside the project). Browser backends
    * omit this capability; callers fall back to inline path entry.
    */
-  pickSavePath?(projectId: string, suggestedName: string): Promise<string | null>
+  pickSavePath?(
+    projectId: string,
+    suggestedName: string,
+    options?: PickSavePathOptions,
+  ): Promise<string | null>
   resolveFileUrl?(projectId: string, relPath: string): string
 }

@@ -3,6 +3,7 @@ import AlertTriangle from 'lucide-solid/icons/triangle-exclamation-point'
 import X from 'lucide-solid/icons/x'
 import { createEffect, For, onCleanup, Show } from 'solid-js'
 import { ConfirmDialogKey, type ConfirmAction } from '../dialogs'
+import { getI18n } from '../i18n'
 
 export interface ConfirmDialogProps {
   kernel: AppKernel
@@ -21,6 +22,7 @@ function buttonClasses(variant: ConfirmAction['variant']): string {
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
   const service = props.kernel.tryGet(ConfirmDialogKey)
+  const i18n = getI18n(props.kernel)
   let primaryButtonEl: HTMLButtonElement | undefined
 
   createEffect(() => {
@@ -82,7 +84,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 </div>
                 <button
                   type="button"
-                  title="Cancel"
+                  title={i18n.t('common.cancel')}
                   class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                   onClick={() => service?.dismiss()}
                 >

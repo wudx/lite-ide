@@ -33,15 +33,15 @@ test('explorer and editor-tab context menus copy absolute and relative paths', a
   // --- Explorer context menu ------------------------------------------------
   await openExplorerContextMenu(page)
   const menu = page.getByRole('menu')
-  await expect(menu.getByText('Copy Path')).toBeVisible()
-  await expect(menu.getByText('Copy Relative Path')).toBeVisible()
+  await expect(menu.getByText('复制路径')).toBeVisible()
+  await expect(menu.getByText('复制相对路径')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('explorer-menu.png'), animations: 'disabled' })
 
-  await menu.getByText('Copy Relative Path').click()
+  await menu.getByText('复制相对路径').click()
   expect(await readClipboard(page)).toBe(REL_PATH)
 
   await openExplorerContextMenu(page)
-  await page.getByRole('menu').getByText('Copy Path', { exact: true }).click()
+  await page.getByRole('menu').getByText('复制路径', { exact: true }).click()
   expect(await readClipboard(page)).toBe(ABS_PATH)
 
   // --- Editor tab context menu ----------------------------------------------
@@ -51,16 +51,16 @@ test('explorer and editor-tab context menus copy absolute and relative paths', a
 
   await tab.click({ button: 'right' })
   const tabMenu = page.getByRole('menu')
-  await expect(tabMenu.getByText('Close All')).toBeVisible()
-  await expect(tabMenu.getByText('Copy Path', { exact: true })).toBeVisible()
-  await expect(tabMenu.getByText('Copy Relative Path')).toBeVisible()
+  await expect(tabMenu.getByText('全部关闭')).toBeVisible()
+  await expect(tabMenu.getByText('复制路径', { exact: true })).toBeVisible()
+  await expect(tabMenu.getByText('复制相对路径')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('tab-menu.png'), animations: 'disabled' })
 
-  await tabMenu.getByText('Copy Path', { exact: true }).click()
+  await tabMenu.getByText('复制路径', { exact: true }).click()
   expect(await readClipboard(page)).toBe(ABS_PATH)
 
   await tab.click({ button: 'right' })
-  await page.getByRole('menu').getByText('Copy Relative Path').click()
+  await page.getByRole('menu').getByText('复制相对路径').click()
   expect(await readClipboard(page)).toBe(REL_PATH)
 
   expect(consoleErrors).toEqual([])

@@ -1,11 +1,14 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import FolderOpen from 'lucide-solid/icons/folder-open'
+import { getI18n } from '../i18n'
 
 export interface WelcomeEmptyProps {
   kernel: AppKernel
 }
 
 export function WelcomeEmpty(props: WelcomeEmptyProps) {
+  const i18n = getI18n(props.kernel)
+
   return (
     <div class="flex-1 rounded-xl bg-[var(--bg-editor)] panel-card overflow-hidden relative flex flex-col items-center justify-center text-[var(--text-primary)] px-6 select-none">
       {/* Ambient backdrop glow */}
@@ -28,7 +31,7 @@ export function WelcomeEmpty(props: WelcomeEmptyProps) {
         <div class="space-y-2">
           <h1 class="text-xl font-semibold tracking-tight text-[var(--text-primary)]">LiteIDE</h1>
           <p class="text-[12.5px] text-[var(--text-secondary)] leading-relaxed max-w-sm">
-            Lightweight micro-kernel workbench. Open one or more project folders — each opens in its own isolated top tab.
+            {i18n.t('welcome.subtitle')}
           </p>
         </div>
 
@@ -38,30 +41,30 @@ export function WelcomeEmpty(props: WelcomeEmptyProps) {
           onClick={() => void props.kernel.executeCommand('workbench.openProject')}
         >
           <FolderOpen class="w-4 h-4" />
-          <span>Open Project Folder</span>
+          <span>{i18n.t('welcome.openProjectFolder')}</span>
         </button>
 
         <div class="w-full grid grid-cols-2 gap-2.5 pt-2">
           <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-            <span>Open Project</span>
+            <span>{i18n.t('welcome.shortcut.openProject')}</span>
             <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-primary)]">
               Ctrl+O
             </kbd>
           </div>
           <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-            <span>Close Tab</span>
+            <span>{i18n.t('welcome.shortcut.closeTab')}</span>
             <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-primary)]">
               Ctrl+W
             </kbd>
           </div>
           <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-            <span>Toggle Sidebar</span>
+            <span>{i18n.t('welcome.shortcut.toggleSidebar')}</span>
             <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-primary)]">
               Ctrl+B
             </kbd>
           </div>
           <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-            <span>Switch Project</span>
+            <span>{i18n.t('welcome.shortcut.switchProject')}</span>
             <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-primary)]">
               Ctrl+Tab
             </kbd>

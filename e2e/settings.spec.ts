@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 // Settings dialog + multi-theme switching acceptance (mock demo project).
 const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
+const LOCALE_STORAGE_KEY = 'lite-ide.locale.v1'
 const EXCLUDE_STORAGE_KEY = 'lite-ide.explorer.exclude.v1'
 const SOLARIZED_EDITOR_BG = 'rgb(253, 246, 227)' // --bg-editor #FDF6E3
 
@@ -28,11 +29,13 @@ test('gear button and Ctrl+, open the settings dialog; Escape, ✕ and backdrop 
   await page.goto('/')
   await expect(page.getByRole('tree')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Open Settings' }).click()
+  await page.getByRole('button', { name: '打开设置' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   // Contributed sections show up in the dialog navigation.
   await expect(dialog.getByRole('button', { name: '外观' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '通用' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '资源管理器' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('settings-dialog.png'), animations: 'disabled' })
 
   await page.keyboard.press('Escape')
@@ -224,6 +227,84 @@ test('code editor renders CodeMirror with the Solarized palette under solarized-
     path: testInfo.outputPath('solarized-code-preview.png'),
     animations: 'disabled',
   })
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('general section switches display language across the IDE and persists across reload', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  // Playwright config pins locale to zh-CN, so Follow System boots into Chinese.
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+  await expect(page.getByText('项目: 2')).toBeVisible()
+
+  await page.getByRole('treeitem', { name: 'src' }).click()
+  await page.getByRole('treeitem', { name: 'kernel.ts' }).click()
+  await expect(page.getByText('已保存')).toBeVisible()
+  await expect(page.getByText('第 1 行，第 1 列')).toBeVisible()
+
+  // Open Settings -> 通用 -> switch to English.
+  await page.keyboard.press('Control+,')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '通用' }).click()
+  await expect(dialog.getByText('界面语言')).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('settings-language-zh.png'),
+    animations: 'disabled',
+  })
+
+  await dialog.getByRole('button', { name: /English/ }).click()
+
+  // Entire workbench & plugins react immediately without reload.
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('en-US')
+  expect(await page.evaluate((k) => localStorage.getItem(k), LOCALE_STORAGE_KEY)).toBe('en-US')
+  await expect(dialog.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Appearance' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'General' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Explorer' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Display Language' })).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('settings-language-en.png'),
+    animations: 'disabled',
+  })
+
+  // Also check Appearance section theme labels translated (including plugin Nord theme).
+  await dialog.getByRole('button', { name: 'Appearance' }).click()
+  await expect(dialog.getByRole('button', { name: 'Dark', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Nord Dark' })).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Projects: 2')).toBeVisible()
+  await expect(page.getByText('Saved')).toBeVisible()
+  await expect(page.getByText('Ln 1, Col 1')).toBeVisible()
+  await expect(page.getByPlaceholder('Filter files...').first()).toBeVisible()
+
+  // Reload: IDE boots directly in English.
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('en-US')
+  await expect(page.getByText('Projects: 2')).toBeVisible()
+  await expect(page.getByPlaceholder('Filter files...').first()).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('ide-english-reloaded.png'),
+    animations: 'disabled',
+  })
+
+  // Switch back to 跟随系统 (zh-CN) and verify immediate restoration.
+  await page.keyboard.press('Control+,')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'General' }).click()
+  await dialog.getByRole('button', { name: /Follow System/ }).click()
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+  expect(await page.evaluate((k) => localStorage.getItem(k), LOCALE_STORAGE_KEY)).toBe('system')
+  await expect(dialog.getByRole('heading', { name: '设置' })).toBeVisible()
+  await expect(page.getByText('项目: 2')).toBeVisible()
 
   expect(consoleErrors).toEqual([])
 })

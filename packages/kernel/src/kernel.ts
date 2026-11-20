@@ -297,9 +297,9 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
       }
     },
 
-    async openProjectWithDialog(): Promise<ProjectScope | null> {
+    async openProjectWithDialog(dialogOptions?: { title?: string }): Promise<ProjectScope | null> {
       if (!options.host.pickFolder) return null
-      const folder = await options.host.pickFolder()
+      const folder = await options.host.pickFolder(dialogOptions)
       if (!folder) return null
       return kernel.openProject(folder)
     },

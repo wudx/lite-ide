@@ -16,6 +16,7 @@ import {
   isUntitledPath,
   untitledDisplayNameOf,
 } from './editor-buffers'
+import { createI18nState, I18nStateKey } from './i18n'
 import { createQuickOpenService, QuickOpenKey } from './quick-open'
 
 export interface EditorTab {
@@ -69,6 +70,7 @@ export type ThemeAppearance = 'dark' | 'light'
 export interface ThemeDefinition {
   id: ThemeMode
   label: string
+  labelKey?: string
   /** 明暗基调：驱动根元素 dark/light class 与代码编辑器配色回退 */
   appearance: ThemeAppearance
   /** 激活时以行内样式注入根元素的 CSS 自定义属性；内置主题样式由 app.css 提供故为空 */
@@ -77,9 +79,14 @@ export interface ThemeDefinition {
 
 /** 内置主题：样式由 app.css 的 [data-theme] 选择器提供（index.html FOUC 脚本维护同名白名单）。 */
 export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
-  { id: 'dark', label: '深色', appearance: 'dark' },
-  { id: 'light', label: '浅色', appearance: 'light' },
-  { id: 'solarized-light', label: 'Solarized Light', appearance: 'light' },
+  { id: 'dark', label: '深色', labelKey: 'settings.theme.dark', appearance: 'dark' },
+  { id: 'light', label: '浅色', labelKey: 'settings.theme.light', appearance: 'light' },
+  {
+    id: 'solarized-light',
+    label: 'Solarized Light',
+    labelKey: 'settings.theme.solarized-light',
+    appearance: 'light',
+  },
 ]
 
 const DEFAULT_THEME_ID: ThemeMode = 'dark'
@@ -537,8 +544,8 @@ export function createKernelHostFromBackend(backend: WorkspaceBackend): KernelPr
         },
       }
     },
-    pickFolder() {
-      return backend.pickFolder()
+    pickFolder(options?: { title?: string }) {
+      return backend.pickFolder(options)
     },
   }
 }
@@ -553,8 +560,9 @@ export function createWorkbenchKernel(
   })
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
-  // 传入 kernel：ThemeState 需要响应式读取 theme 贡献点（插件注册的主题）。
+  // 传入 kernel：ThemeState / I18nState 需要响应式读取插件贡献点。
   kernel.provide(ThemeStateKey, createThemeState(kernel))
+  kernel.provide(I18nStateKey, createI18nState(kernel))
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   kernel.provide(QuickOpenKey, createQuickOpenService())

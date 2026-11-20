@@ -94,9 +94,18 @@ export const themeNordPlugin: Plugin = {
   id: 'builtin.theme-nord',
   name: 'Nord Theme',
   activate(ctx) {
+    ctx.contribute('i18n', {
+      locale: 'zh-CN',
+      messages: { 'theme.nord-dark': 'Nord 深色' },
+    })
+    ctx.contribute('i18n', {
+      locale: 'en-US',
+      messages: { 'theme.nord-dark': 'Nord Dark' },
+    })
     ctx.contribute('theme', {
       id: 'nord-dark',
       label: 'Nord 深色',
+      labelKey: 'theme.nord-dark',
       appearance: 'dark',
       variables: NORD_VARIABLES,
     })

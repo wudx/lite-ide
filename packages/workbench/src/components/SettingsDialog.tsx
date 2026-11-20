@@ -3,6 +3,7 @@ import X from 'lucide-solid/icons/x'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { SettingsDialogKey } from '../dialogs'
+import { getI18n } from '../i18n'
 
 export interface SettingsDialogProps {
   kernel: AppKernel
@@ -10,6 +11,7 @@ export interface SettingsDialogProps {
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const service = props.kernel.tryGet(SettingsDialogKey)
+  const i18n = getI18n(props.kernel)
   const [activeId, setActiveId] = createSignal<string | null>(null)
 
   const sections = createMemo(() =>
@@ -64,7 +66,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 id="lite-ide-settings-title"
                 class="text-[13.5px] font-semibold text-[var(--text-primary)] leading-normal"
               >
-                设置
+                {i18n.t('settings.title')}
               </h2>
             </div>
             <nav class="flex-1 overflow-y-auto p-2 space-y-0.5">
@@ -79,7 +81,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     }`}
                     onClick={() => setActiveId(section.id)}
                   >
-                    {section.title}
+                    {i18n.resolveText(section.titleKey, section.title)}
                   </button>
                 )}
               </For>
@@ -90,11 +92,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <div class="flex-1 min-w-0 flex flex-col">
             <div class="px-4 py-3.5 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3">
               <span class="text-[13px] font-semibold text-[var(--text-primary)] truncate leading-normal">
-                {activeSection()?.title}
+                {activeSection()
+                  ? i18n.resolveText(activeSection()!.titleKey, activeSection()!.title)
+                  : ''}
               </span>
               <button
                 type="button"
-                title="关闭"
+                title={i18n.t('common.close')}
                 class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                 onClick={() => service?.close()}
               >

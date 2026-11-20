@@ -2,6 +2,7 @@ import type { AppKernel, ProjectScope } from '@lite-ide/kernel'
 import Folder from 'lucide-solid/icons/folder'
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
+import { getI18n } from '../i18n'
 import { LayoutStateKey } from '../services'
 import { PreviewHost } from './PreviewHost'
 
@@ -13,6 +14,7 @@ export interface ProjectWorkspaceProps {
 
 export function ProjectWorkspace(props: ProjectWorkspaceProps) {
   const layout = props.kernel.get(LayoutStateKey)
+  const i18n = getI18n(props.kernel)
   const sidebarViews = props.kernel.contributions('sidebar.view')
 
   const sortedViews = createMemo(() =>
@@ -90,7 +92,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
                       </span>
                     </div>
                     <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                      {view().title}
+                      {i18n.resolveText(view().titleKey, view().title)}
                     </span>
                   </div>
                 )}
@@ -110,7 +112,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
                       }`}
                       onClick={() => setActiveViewId(view.id)}
                     >
-                      {view.title}
+                      {i18n.resolveText(view.titleKey, view.title)}
                     </button>
                   )}
                 </For>
@@ -124,7 +126,9 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
                 <ErrorBoundary
                   fallback={(err) => (
                     <div class="m-3 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
-                      Sidebar view error: {err instanceof Error ? err.message : String(err)}
+                      {i18n.t('workspace.sidebarError', {
+                        message: err instanceof Error ? err.message : String(err),
+                      })}
                     </div>
                   )}
                 >
@@ -139,7 +143,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
         <div
           role="separator"
           aria-orientation="vertical"
-          title="Drag to resize, double-click to reset"
+          title={i18n.t('workspace.resizeSidebar')}
           class="w-[8px] shrink-0 cursor-col-resize flex items-center justify-center group/split select-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}

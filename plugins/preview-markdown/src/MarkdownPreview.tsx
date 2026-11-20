@@ -1,6 +1,11 @@
 import type { PreviewProps } from '@lite-ide/kernel'
 import { getWorkspaceFileUrl } from '@lite-ide/protocol'
-import { EditorBufferKey, ProjectSelectionKey, WorkspaceBackendKey } from '@lite-ide/workbench'
+import {
+  EditorBufferKey,
+  getI18n,
+  ProjectSelectionKey,
+  WorkspaceBackendKey,
+} from '@lite-ide/workbench'
 import DOMPurify from 'dompurify'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import MarkdownIt from 'markdown-it'
@@ -35,6 +40,7 @@ export default function MarkdownPreview(props: PreviewProps) {
   const backend = props.scope.get(WorkspaceBackendKey)
   const selection = props.scope.get(ProjectSelectionKey)
   const buffers = props.scope.tryGet(EditorBufferKey)
+  const i18n = getI18n(props.scope)
 
   const [diskText, setDiskText] = createSignal('')
   const [loading, setLoading] = createSignal(false)
@@ -139,7 +145,7 @@ export default function MarkdownPreview(props: PreviewProps) {
       <Show when={error()}>
         {(msg) => (
           <div class="p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
-            Failed to render Markdown: {msg()}
+            {i18n.t('previewMarkdown.renderFailed', { message: msg() })}
           </div>
         )}
       </Show>
@@ -147,7 +153,7 @@ export default function MarkdownPreview(props: PreviewProps) {
       <Show when={loading() && !markdownText()}>
         <div class="flex items-center justify-center gap-2 py-12 text-xs text-[var(--text-secondary)]">
           <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
-          <span>Loading Markdown...</span>
+          <span>{i18n.t('previewMarkdown.loading')}</span>
         </div>
       </Show>
 

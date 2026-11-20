@@ -20,6 +20,7 @@ export interface ContributionMap {
   'sidebar.view': {
     id: string
     title: string
+    titleKey?: string
     order: number
     icon?: Component
     component: Component<{ scope: ProjectScope }>
@@ -27,6 +28,7 @@ export interface ContributionMap {
   'previewer.provider': {
     id: string
     label: string
+    labelKey?: string
     priority: number
     canHandle: (file: FileMeta) => boolean
     load: () => Promise<{ default: Component<PreviewProps> }>
@@ -34,6 +36,7 @@ export interface ContributionMap {
   command: {
     id: string
     title: string
+    titleKey?: string
     shortcut?: string
     run: (ctx: { kernel: AppKernel; activeProject?: ProjectScope }) => void | Promise<void>
   }
@@ -46,16 +49,26 @@ export interface ContributionMap {
   'settings.section': {
     id: string
     title: string
+    titleKey?: string
     order: number
     component: Component<{ kernel: AppKernel }>
   }
   theme: {
     id: string
     label: string
+    labelKey?: string
     /** 明暗基调：驱动根元素 dark/light class 与代码编辑器配色回退 */
     appearance: 'dark' | 'light'
     /** 激活时以行内样式注入根元素的 CSS 自定义属性（覆盖 app.css 的 :root 默认值） */
     variables?: Record<string, string>
+  }
+  i18n: {
+    /** BCP 47 语言标识（如 'zh-CN'、'en-US'） */
+    locale: string
+    /** 语言的自称显示名；提供时会将该语言注册为设置界面的可选项 */
+    label?: string
+    /** 该语言下的词条字典 */
+    messages: Record<string, string>
   }
 }
 
@@ -111,7 +124,7 @@ export interface OpenedProjectHandle {
 
 export interface KernelProjectHost {
   open(rootPath: string): Promise<OpenedProjectHandle>
-  pickFolder?(): Promise<string | null>
+  pickFolder?(options?: { title?: string }): Promise<string | null>
 }
 
 export interface AppKernelOptions {
@@ -137,7 +150,7 @@ export interface AppKernel extends Disposable {
   readonly warmProjectIds: Accessor<readonly string[]>
   isWarm(projectId: string): boolean
   openProject(rootPath: string): Promise<ProjectScope>
-  openProjectWithDialog(): Promise<ProjectScope | null>
+  openProjectWithDialog(options?: { title?: string }): Promise<ProjectScope | null>
   activateProject(projectId: string): void
   closeProject(projectId: string): Promise<void>
   executeCommand(commandId: string): Promise<void>

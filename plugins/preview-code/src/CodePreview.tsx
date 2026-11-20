@@ -33,6 +33,7 @@ import {
   DEFAULT_BUFFER_MAX_BYTES,
   EditorBufferKey,
   formatBytes,
+  getI18n,
   ProjectSelectionKey,
   ThemeStateKey,
   type DocumentBuffer,
@@ -44,6 +45,7 @@ import Search from 'lucide-solid/icons/search'
 import AlertTriangle from 'lucide-solid/icons/triangle-exclamation-point'
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { CodeEditorCacheKey } from './editor-cache'
+import { CODEMIRROR_ZH_CN_PHRASES } from './i18n'
 import { CodeStatsKey } from './stats'
 
 const EXTENDED_MAX_BYTES = 10 * 1024 * 1024
@@ -53,6 +55,7 @@ const languageCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const listenerCompartment = new Compartment()
 const themeCompartment = new Compartment()
+const phrasesCompartment = new Compartment()
 
 const ideDarkHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#c49bff' },
@@ -360,11 +363,16 @@ function computeCursorPosition(state: EditorState): { line: number; column: numb
   }
 }
 
+function getPhrasesExtension(locale: string): Extension {
+  return locale === 'zh-CN' ? EditorState.phrases.of(CODEMIRROR_ZH_CN_PHRASES) : []
+}
+
 function buildEditorExtensions(
   readOnly: boolean,
   listenerExt: Extension,
   themeId: string,
   appearance: ThemeAppearance,
+  locale: string,
 ): Extension[] {
   return [
     lineNumbers(),
@@ -377,6 +385,7 @@ function buildEditorExtensions(
     indentOnInput(),
     bracketMatching(),
     themeCompartment.of(getEditorThemeExtension(themeId, appearance)),
+    phrasesCompartment.of(getPhrasesExtension(locale)),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([indentWithTab, ...searchKeymap, ...historyKeymap, ...defaultKeymap, ...foldKeymap]),
@@ -394,6 +403,7 @@ export default function CodePreview(props: PreviewProps) {
   const buffers = props.scope.get(EditorBufferKey)
   const selection = props.scope.tryGet(ProjectSelectionKey)
   const themeState = props.scope.tryGet(ThemeStateKey)
+  const i18n = getI18n(props.scope)
   const codeStats = props.scope.tryGet(CodeStatsKey)
   const editorCache = props.scope.tryGet(CodeEditorCacheKey)
 
@@ -504,6 +514,7 @@ export default function CodePreview(props: PreviewProps) {
       cached!.state.doc.toString() === buf.content
     const mode = untrack(currentTheme)
     const appearance = untrack(currentAppearance)
+    const currentLocale = untrack(() => i18n.locale())
 
     mountedRelPath = buf.relPath
     mountedDiskRevision = buf.diskRevision
@@ -521,6 +532,7 @@ export default function CodePreview(props: PreviewProps) {
             ]),
             listenerCompartment.reconfigure(listenerExt),
             themeCompartment.reconfigure(getEditorThemeExtension(mode, appearance)),
+            phrasesCompartment.reconfigure(getPhrasesExtension(currentLocale)),
           ],
         })
         const targetScrollTop = cached.scrollTop
@@ -534,7 +546,13 @@ export default function CodePreview(props: PreviewProps) {
       } else {
         const nextState = EditorState.create({
           doc: buf.content,
-          extensions: buildEditorExtensions(buf.readOnly, listenerExt, mode, appearance),
+          extensions: buildEditorExtensions(
+            buf.readOnly,
+            listenerExt,
+            mode,
+            appearance,
+            currentLocale,
+          ),
         })
         view.setState(nextState)
         applyLanguageSupport(buf.relPath, fileName, fileExt)
@@ -557,6 +575,7 @@ export default function CodePreview(props: PreviewProps) {
           [],
           untrack(currentTheme),
           untrack(currentAppearance),
+          untrack(() => i18n.locale()),
         ),
       }),
     })
@@ -579,6 +598,20 @@ export default function CodePreview(props: PreviewProps) {
     try {
       view.dispatch({
         effects: themeCompartment.reconfigure(getEditorThemeExtension(mode, appearance)),
+      })
+    } finally {
+      isApplyingExternal = false
+    }
+  })
+
+  // Keep CodeMirror UI phrases synced with workbench locale.
+  createEffect(() => {
+    const loc = i18n.locale()
+    if (!view) return
+    isApplyingExternal = true
+    try {
+      view.dispatch({
+        effects: phrasesCompartment.reconfigure(getPhrasesExtension(loc)),
       })
     } finally {
       isApplyingExternal = false
@@ -706,7 +739,7 @@ export default function CodePreview(props: PreviewProps) {
           <div class="px-3.5 py-2 bg-[var(--danger-bg)] border-b border-[var(--danger-border)] flex items-center justify-between gap-3 text-xs text-[var(--danger-text)]">
             <div class="flex items-center gap-2 min-w-0">
               <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-[var(--danger-icon)]" />
-              <span class="truncate">Save failed: {errMsg()}</span>
+              <span class="truncate">{i18n.t('previewCode.saveFailed', { message: errMsg() })}</span>
             </div>
             <button
               type="button"
@@ -719,7 +752,7 @@ export default function CodePreview(props: PreviewProps) {
                   : buffers.saveBuffer(buf.relPath))
               }}
             >
-              Retry
+              {i18n.t('previewCode.retry')}
             </button>
           </div>
         )}
@@ -734,8 +767,8 @@ export default function CodePreview(props: PreviewProps) {
                 <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-[var(--warning-icon)]" />
                 <span class="truncate">
                   {buf().conflict === 'deleted'
-                    ? 'This file was deleted on disk. Your unsaved edits remain in memory.'
-                    : 'This file was modified on disk outside LiteIDE. Your unsaved edits are preserved.'}
+                    ? i18n.t('previewCode.conflictDeleted')
+                    : i18n.t('previewCode.conflictModified')}
                 </span>
               </div>
 
@@ -746,21 +779,21 @@ export default function CodePreview(props: PreviewProps) {
                     class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors"
                     onClick={() => void buffers.reloadBuffer(buf().relPath)}
                   >
-                    Reload from Disk
+                    {i18n.t('previewCode.reloadFromDisk')}
                   </button>
                   <button
                     type="button"
                     class="px-2.5 py-1 rounded-md bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
-                    Overwrite Disk
+                    {i18n.t('previewCode.overwriteDisk')}
                   </button>
                   <button
                     type="button"
                     class="px-2 py-1 rounded-md hover:bg-[var(--warning-btn-bg)] text-[var(--warning-text)] transition-colors"
                     onClick={() => buffers.dismissConflict(buf().relPath)}
                   >
-                    Dismiss
+                    {i18n.t('previewCode.dismiss')}
                   </button>
                 </Show>
 
@@ -770,7 +803,7 @@ export default function CodePreview(props: PreviewProps) {
                     class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
-                    Recreate & Save
+                    {i18n.t('previewCode.recreateSave')}
                   </button>
                   <button
                     type="button"
@@ -781,7 +814,7 @@ export default function CodePreview(props: PreviewProps) {
                       void selection?.closeTab(path)
                     }}
                   >
-                    Close Tab
+                    {i18n.t('previewCode.closeTab')}
                   </button>
                 </Show>
               </div>
@@ -799,8 +832,13 @@ export default function CodePreview(props: PreviewProps) {
                 <Lock class="w-3.5 h-3.5 shrink-0 text-[var(--warning-icon)]" />
                 <span class="truncate">
                   {buf().truncated
-                    ? `Showing first ${formatBytes(buf().loadedBytes)} of ${formatBytes(buf().totalBytes)} (Read-Only).`
-                    : (buf().readOnlyReason ?? 'Read-only file.')}
+                    ? i18n.t('previewCode.truncatedBanner', {
+                        loaded: formatBytes(buf().loadedBytes),
+                        total: formatBytes(buf().totalBytes),
+                      })
+                    : buf().encoding
+                      ? i18n.t('previewCode.unsupportedEncoding', { encoding: buf().encoding })
+                      : (buf().readOnlyReason ?? i18n.t('previewCode.readOnlyDefault'))}
                 </span>
               </div>
               <Show when={buf().truncated && buf().maxBytes < EXTENDED_MAX_BYTES}>
@@ -809,7 +847,7 @@ export default function CodePreview(props: PreviewProps) {
                   class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors shrink-0"
                   onClick={handleLoadExtended}
                 >
-                  Load up to 10 MB
+                  {i18n.t('previewCode.loadUpTo10Mb')}
                 </button>
               </Show>
             </div>
@@ -821,12 +859,14 @@ export default function CodePreview(props: PreviewProps) {
       <div class="absolute bottom-3.5 right-4 z-10 flex items-center">
         <button
           type="button"
-          title="Find & Replace (Ctrl+F / Ctrl+H)"
+          title={i18n.t('previewCode.findReplaceTitle')}
           class="glass-pill rounded-full px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98]"
           onClick={openSearchPanel}
         >
           <Search class="w-3 h-3 text-[var(--accent)]" />
-          <span class="font-medium">{langLabel()}</span>
+          <span class="font-medium">
+            {langLabel() === 'Plain Text' ? i18n.t('previewCode.plainText') : langLabel()}
+          </span>
           <span class="text-[10px] font-mono text-[var(--text-muted)] pl-1.5 border-l border-[var(--divider)]">
             Ctrl+F
           </span>
@@ -836,7 +876,7 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={error()}>
         {(msg) => (
           <div class="m-4 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
-            Failed to read file: {msg()}
+            {i18n.t('previewCode.readFailed', { message: msg() })}
           </div>
         )}
       </Show>
@@ -844,7 +884,7 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={loading() && !activeBuffer()}>
         <div class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-[var(--bg-editor)]/80 backdrop-blur-[2px] text-xs text-[var(--text-secondary)]">
           <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
-          <span>Reading {props.file.name}...</span>
+          <span>{i18n.t('previewCode.reading', { name: props.file.name })}</span>
         </div>
       </Show>
 

@@ -32,6 +32,7 @@ import {
 import { copyTextToClipboard } from '../clipboard'
 import { EditorBufferKey, untitledDisplayNameOf } from '../editor-buffers'
 import { formatBytes } from '../format'
+import { getI18n } from '../i18n'
 import { joinNativePath } from '../paths'
 import { ProjectSelectionKey } from '../services'
 import { FileIcon } from './FileIcon'
@@ -78,6 +79,7 @@ function parentFolderLabel(relPath: string): string {
 export function PreviewHost(props: PreviewHostProps) {
   const selection = props.scope.get(ProjectSelectionKey)
   const buffers = props.scope.tryGet(EditorBufferKey)
+  const i18n = getI18n(props.kernel)
   const providers = props.kernel.contributions('previewer.provider')
 
   const duplicateTabNames = createMemo(() => {
@@ -304,7 +306,7 @@ export function PreviewHost(props: PreviewHostProps) {
           <div
             ref={(el) => (tabStrip = el)}
             role="tablist"
-            aria-label="Editor tabs"
+            aria-label={i18n.t('preview.editorTabsAria')}
             class="flex-1 min-w-0 h-full px-2 pt-1.5 flex items-end gap-1 overflow-x-auto no-scrollbar"
           >
             <For each={selection.openTabs()}>
@@ -362,13 +364,13 @@ export function PreviewHost(props: PreviewHostProps) {
                   <div class="w-4 h-4 ml-auto flex items-center justify-center shrink-0">
                     <Show when={isDirty()}>
                       <span
-                        title="Unsaved changes"
+                        title={i18n.t('preview.unsavedChanges')}
                         class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] group-hover:hidden"
                       />
                     </Show>
                     <button
                       type="button"
-                      title="Close Tab (Ctrl+W)"
+                      title={i18n.t('preview.closeTab')}
                       class={`p-0.5 rounded-md hover:bg-[var(--bg-hover-strong)] transition-all duration-150 ${
                         isDirty()
                           ? 'hidden group-hover:flex items-center justify-center'
@@ -394,7 +396,7 @@ export function PreviewHost(props: PreviewHostProps) {
           <div class="shrink-0 h-full flex items-center pb-0.5 pr-1.5">
             <button
               type="button"
-              title="New Untitled File"
+              title={i18n.t('preview.newUntitledFile')}
               class="p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150"
               onClick={() => handleNewUntitled()}
             >
@@ -418,13 +420,13 @@ export function PreviewHost(props: PreviewHostProps) {
               }}
             >
               <div class="px-0.5 pb-1.5 text-[10.5px] font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                Save {untitledDisplayNameOf(target())}
+                {i18n.t('preview.saveAs.title', { name: untitledDisplayNameOf(target()) })}
               </div>
               <input
                 ref={(el) => (saveAsInput = el)}
                 value={saveAsName()}
                 onInput={(e) => setSaveAsName(e.currentTarget.value)}
-                placeholder="notes.md or src/notes.md"
+                placeholder={i18n.t('preview.saveAs.placeholder')}
                 spellcheck={false}
                 disabled={savingUntitled()}
                 class="w-full px-2.5 py-1.5 rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent-border)] transition-colors disabled:opacity-60"
@@ -436,8 +438,8 @@ export function PreviewHost(props: PreviewHostProps) {
                     <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-muted)] min-w-0">
                       <Folder class="w-3 h-3 shrink-0" />
                       <span class="truncate">
-                        {saveAsDir() ? `${saveAsDir()}/` : 'Project root'}
-                        <span class="opacity-60"> · Enter to save</span>
+                        {saveAsDir() ? `${saveAsDir()}/` : i18n.t('preview.saveAs.projectRoot')}
+                        <span class="opacity-60">{i18n.t('preview.saveAs.enterHint')}</span>
                       </span>
                     </span>
                   }
@@ -457,7 +459,7 @@ export function PreviewHost(props: PreviewHostProps) {
         {(relPath) => (
           <div class="h-[34px] shrink-0 px-3.5 flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-transparent">
             <div class="flex items-center gap-2 min-w-0 text-xs">
-              <nav aria-label="File path" class="flex items-center gap-1 min-w-0">
+              <nav aria-label={i18n.t('preview.filePathAria')} class="flex items-center gap-1 min-w-0">
                 <For each={pathSegments()}>
                   {(seg, idx) => {
                     const isLast = () => idx() === pathSegments().length - 1
@@ -496,31 +498,39 @@ export function PreviewHost(props: PreviewHostProps) {
                   <>
                     <Show when={buf().saving}>
                       <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[var(--accent)] text-[10.5px] font-medium">
-                        Saving...
+                        {i18n.t('preview.badge.saving')}
                       </span>
                     </Show>
                     <Show when={!buf().saving && buf().conflict === 'deleted'}>
                       <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-text)] border border-[var(--danger-border)] text-[10.5px] font-medium">
-                        Deleted on disk
+                        {i18n.t('preview.badge.deleted')}
                       </span>
                     </Show>
                     <Show when={!buf().saving && buf().conflict === 'modified'}>
                       <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-text)] border border-[var(--warning-border)] text-[10.5px] font-medium">
-                        External change
+                        {i18n.t('preview.badge.modified')}
                       </span>
                     </Show>
                     <Show when={!buf().saving && buf().conflict === 'none' && buf().dirty}>
                       <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[var(--accent)] text-[10.5px] font-medium">
-                        Unsaved
+                        {i18n.t('preview.badge.unsaved')}
                       </span>
                     </Show>
                     <Show when={buf().readOnly}>
                       <span
-                        title={buf().readOnlyReason ?? 'Read-only file'}
+                        title={
+                          buf().truncated
+                            ? i18n.t('preview.badge.readOnlyTitle')
+                            : buf().encoding
+                              ? i18n.t('preview.badge.unsupportedEncoding', {
+                                  encoding: buf().encoding,
+                                })
+                              : (buf().readOnlyReason ?? i18n.t('preview.badge.readOnlyTitle'))
+                        }
                         class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-muted)] text-[10.5px] flex items-center gap-1"
                       >
                         <Lock class="w-2.5 h-2.5" />
-                        <span>Read-Only</span>
+                        <span>{i18n.t('preview.badge.readOnly')}</span>
                       </span>
                     </Show>
                   </>
@@ -535,25 +545,25 @@ export function PreviewHost(props: PreviewHostProps) {
                     <Show when={buf().dirty && !buf().untitled}>
                       <button
                         type="button"
-                        title="Revert unsaved changes"
+                        title={i18n.t('preview.revertTitle')}
                         class="px-2 py-1 rounded-md text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] flex items-center gap-1 transition-all duration-150"
                         onClick={() => void handleRevertCurrent()}
                       >
                         <RotateCcw class="w-3 h-3" />
-                        <span>Revert</span>
+                        <span>{i18n.t('preview.revert')}</span>
                       </button>
 
                       <button
                         type="button"
                         disabled={buf().readOnly || buf().saving}
-                        title="Save file (Ctrl+S)"
+                        title={i18n.t('preview.saveTitle')}
                         class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-foreground)] shadow-[0_2px_10px_var(--accent-glow)] active:scale-[0.98] disabled:opacity-50 flex items-center gap-1 transition-all duration-150"
                         onClick={() => void handleSaveCurrent()}
                       >
                         <Show when={buf().saving} fallback={<Save class="w-3 h-3" />}>
                           <Loader2 class="w-3 h-3 animate-spin" />
                         </Show>
-                        <span>Save</span>
+                        <span>{i18n.t('preview.save')}</span>
                       </button>
                     </Show>
 
@@ -566,7 +576,7 @@ export function PreviewHost(props: PreviewHostProps) {
                     >
                       <span class="px-2 py-0.5 rounded-full text-[11px] text-[var(--text-muted)] flex items-center gap-1 select-none">
                         <Check class="w-3 h-3 text-[var(--success-text)]" />
-                        <span>Saved</span>
+                        <span>{i18n.t('preview.saved')}</span>
                       </span>
                     </Show>
                   </div>
@@ -588,7 +598,7 @@ export function PreviewHost(props: PreviewHostProps) {
                           }`}
                           onClick={() => selection.setPreferredPreviewerId(provider.id)}
                         >
-                          {provider.label}
+                          {i18n.resolveText(provider.labelKey, provider.label)}
                         </button>
                       )
                     }}
@@ -611,10 +621,10 @@ export function PreviewHost(props: PreviewHostProps) {
               </div>
               <div class="space-y-1.5 max-w-sm">
                 <p class="text-[13px] font-medium text-[var(--text-primary)]">
-                  No file selected
+                  {i18n.t('preview.empty.title')}
                 </p>
                 <p class="text-xs text-[var(--text-secondary)]">
-                  Choose a file from the explorer to start editing or previewing
+                  {i18n.t('preview.empty.subtitle')}
                 </p>
               </div>
               <div class="px-3 py-1 rounded-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[11px] font-mono text-[var(--text-muted)] max-w-md truncate">
@@ -625,19 +635,19 @@ export function PreviewHost(props: PreviewHostProps) {
                   <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+B
                   </kbd>
-                  <span>Sidebar</span>
+                  <span>{i18n.t('preview.empty.sidebar')}</span>
                 </span>
                 <span class="flex items-center gap-1.5">
                   <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+O
                   </kbd>
-                  <span>Open Project</span>
+                  <span>{i18n.t('preview.empty.openProject')}</span>
                 </span>
                 <span class="flex items-center gap-1.5">
                   <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+Tab
                   </kbd>
-                  <span>Switch Project</span>
+                  <span>{i18n.t('preview.empty.switchProject')}</span>
                 </span>
               </div>
             </div>
@@ -656,7 +666,7 @@ export function PreviewHost(props: PreviewHostProps) {
             {(errMsg) => (
               <div class="m-4 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs flex items-center gap-2">
                 <AlertTriangle class="w-4 h-4 shrink-0 text-[var(--danger-icon)]" />
-                <span>Failed to load view: {errMsg()}</span>
+                <span>{i18n.t('preview.loadError', { message: errMsg() })}</span>
               </div>
             )}
           </Show>
@@ -664,7 +674,7 @@ export function PreviewHost(props: PreviewHostProps) {
           <Show when={selection.loading() && !selection.fileMeta()}>
             <div class="flex-1 flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)]">
               <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
-              <span>Inspecting file...</span>
+              <span>{i18n.t('preview.inspecting')}</span>
             </div>
           </Show>
 
@@ -675,7 +685,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 fallback={
                   <div class="flex-1 flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)]">
                     <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
-                    <span>Loading editor...</span>
+                    <span>{i18n.t('preview.loadingEditor')}</span>
                   </div>
                 }
               >
@@ -683,7 +693,9 @@ export function PreviewHost(props: PreviewHostProps) {
                   <ErrorBoundary
                     fallback={(err) => (
                       <div class="m-4 p-4 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
-                        Editor view crashed: {err instanceof Error ? err.message : String(err)}
+                        {i18n.t('preview.crashed', {
+                          message: err instanceof Error ? err.message : String(err),
+                        })}
                       </div>
                     )}
                   >
@@ -723,7 +735,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 void requestCloseTab(props.kernel, props.scope, target)
               }}
             >
-              Close
+              {i18n.t('preview.tabMenu.close')}
             </button>
             <button
               type="button"
@@ -735,7 +747,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 void requestCloseOtherTabs(props.kernel, props.scope, target)
               }}
             >
-              Close Others
+              {i18n.t('preview.tabMenu.closeOthers')}
             </button>
             <button
               type="button"
@@ -745,7 +757,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 void requestCloseAllTabs(props.kernel, props.scope)
               }}
             >
-              Close All
+              {i18n.t('preview.tabMenu.closeAll')}
             </button>
             <div class="my-1 border-t border-[var(--border-subtle)]" />
             <button
@@ -757,7 +769,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 void copyTabPath(target, false)
               }}
             >
-              Copy Path
+              {i18n.t('common.copyPath')}
             </button>
             <button
               type="button"
@@ -768,7 +780,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 void copyTabPath(target, true)
               }}
             >
-              Copy Relative Path
+              {i18n.t('common.copyRelativePath')}
             </button>
           </div>
         )}
