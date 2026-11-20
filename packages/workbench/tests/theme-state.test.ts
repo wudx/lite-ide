@@ -1,3 +1,4 @@
+import type { AppKernel } from '@lite-ide/kernel'
 import { createSignal } from 'solid-js'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createSettingsDialogService } from '../src/dialogs'
@@ -13,7 +14,7 @@ function createFakeThemeHost() {
   const [contributions, setContributions] = createSignal<readonly ThemeContribution[]>([])
   return {
     // 与 AppKernel.contributions 一致：返回 accessor 本身，由调用方取值。
-    host: { contributions: () => contributions },
+    host: { contributions: () => contributions } as Pick<AppKernel, 'contributions'>,
     register(item: ThemeContribution) {
       setContributions((prev) => [...prev, item])
     },

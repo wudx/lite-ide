@@ -1,0 +1,8 @@
+{
+  "id": "hello-status",
+  "name": "Hello Status",
+  "version": "0.1.0",
+  "description": "在状态栏右侧显示一句问候，演示外部插件贡献 UI。",
+  "author": "LiteIDE Samples",
+  "main": "main.js"
+}

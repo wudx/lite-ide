@@ -18,12 +18,14 @@ LiteIDE 是基于 **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4** 的轻量跨�
 | `plugins/preview-image/` | `@lite-ide/plugin-preview-image` | 图片/SVG 预览插件：`previewer.provider`（优先级 `60`），棋盘格背景、缩放与拖拽 |
 | `plugins/preview-fallback/` | `@lite-ide/plugin-preview-fallback` | 兜底元信息卡片：`previewer.provider`（优先级 `0`），展示二进制或任意文件元数据 |
 | `plugins/theme-nord/` | `@lite-ide/plugin-theme-nord` | Nord 深色主题插件：贡献 `theme`（`variables` 以行内样式覆盖 `:root` 默认值），演示主题插件化机制 |
-| `src-tauri/` | `lite-ide` | Rust 后端：`project.rs`（`DashMap` 会话 + `notify` 250ms 防抖监听）、`fs.rs`（遵循 `.gitignore` 的列目录/探查/读取 + 路径穿越防护）、`protocol.rs`（异步 `workspace` 自定义协议 + HTTP `Range`）、`lib.rs`（IPC 命令与窗口初始化） |
+| `src-tauri/` | `lite-ide` | Rust 后端：`project.rs`（`DashMap` 会话 + `notify` 250ms 防抖监听）、`fs.rs`（遵循 `.gitignore` 的列目录/探查/读取 + 路径穿越防护）、`plugins.rs`（外部插件目录管理：清单校验/文件夹安装/内嵌目录/卸载/入口读取）、`protocol.rs`（异步 `workspace` 自定义协议 + HTTP `Range`）、`lib.rs`（IPC 命令与窗口初始化） |
+| `samples/plugins/` | — | 外部插件示例（`plugin.json` 清单 + 经典脚本 `main.js`）：内容为单一源，前端 mock 目录经 `?raw` 引用、Rust 目录经 `include_str!` 内嵌，也可在桌面端直接"从文件夹安装" |
 
 ## 核心架构与扩展约定
 
 - **插件扩展机制**：新功能实现为独立插件，在 `apps/desktop/src/main.tsx` 通过 `kernel.registerPlugin(...)` 注册。内核提供 7 个贡献点：`sidebar.view`、`previewer.provider`（需用动态 `load: () => import(...)` 实现按需分包）、`command`、`statusbar.item`、`settings.section`、`theme`、`i18n`，以及项目生命周期钩子 `ctx.onProjectOpen(scope => ...)`。`theme` 贡献点供插件注册自定义配色主题（`{ id, label, appearance, variables }`），`ThemeStateKey` 服务响应式聚合内置与插件主题并负责行内变量注入/清除；`i18n` 贡献点供插件补充词条或注册新语言（`{ locale, label?, messages }`），`I18nStateKey` 服务响应式驱动全工作台多语言与设置对话框"通用"区语言切换（支持跟随系统、`zh-CN`、`en-US`）。
 - **多项目隔离与生命周期**：顶部 1 个 Tab 对应 1 个 `ProjectScope`（内含独立 SolidJS `createRoot`）。`openProject` 必须先执行 `setupScope` 和全部 `onProjectOpen` 钩子，再在 `batch(...)` 中更新 `projects` / `warmProjectIds` / `activeProjectId`，保证组件同步挂载时所有项目级服务已就绪；非活跃的热项目（默认 LRU 上限 5 个）以 `display: none` 保活 DOM 与滚动状态。
+- **外部插件系统（安装/卸载）**：`WorkspaceBackend` 的可选方法族 `pluginList` / `pluginInstallFromPath`（桌面端原生文件夹选择后拷入 `<app_data_dir>/plugins`）/ `pluginInstallFromCatalog`（内置示例目录，Rust `include_str!` 内嵌、mock 走 `localStorage`）/ `pluginUninstall` / `pluginReadEntry` / `pluginCatalog` 提供后端能力；workbench 的 `PluginRegistryKey` 服务（`plugin-registry.ts`）负责拉取清单、用 `new Function` 在捕获层下求值入口脚本（入口经全局 `liteide.plugin({...})` 注册，manifest id 为注册键）、经 `kernel.registerPlugin` 激活并维护启用/停用状态（停用名单存 `lite-ide.plugins.disabled.v1`）。设置对话框"插件"分区（`PluginSettings.tsx`）提供目录安装、启用/停用、二次确认卸载；外部脚本不参与 Tailwind 扫描，插件内 DOM 样式须用行内 style 或 CSS 变量。信任模型与 VS Code 侧载扩展同级：插件目录位于应用数据目录，能写该目录的本地进程即视为可信——启用中的插件会在启动时自动执行。
 - **双运行模式（Tauri + Mock）**：`createDefaultBackend()` 检测 `window.__TAURI_INTERNALS__`，桌面端走 Tauri IPC，纯浏览器（`pnpm dev`）自动降级为 `createMockBackend()` 并预载两个示例项目（`lite-ide-demo`、`rust-core-sample`）。改动 UI 或插件时保持两种模式均可用。
 - **Rust 安全与错误边界**：所有文件读写与自定义协议请求均须通过 `resolve_safe_path` 校验路径位于项目 `canonical_root` 之内；错误统一走 `AppError` 序列化为 `{ code, message }`。
 

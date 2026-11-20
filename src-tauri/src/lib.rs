@@ -3,6 +3,7 @@ mod error;
 mod fs;
 mod git;
 mod jumplist;
+mod plugins;
 mod project;
 mod protocol;
 
@@ -344,6 +345,10 @@ pub fn run() {
             let recent = jumplist::init(app.handle());
             app.manage(recent);
 
+            // 外部插件目录（<app_data_dir>/plugins）随应用数据初始化。
+            let plugin_manager = std::sync::Arc::new(plugins::PluginManager::new(app.handle()));
+            app.manage(plugin_manager);
+
             let launch = jumplist::LaunchRequest::default();
             // args_os：参数含无法映射 Unicode 的字符时 args() 会 panic。
             let argv: Vec<String> = std::env::args_os()
@@ -381,7 +386,13 @@ pub fn run() {
             git_stash_drop,
             git_log,
             git_show,
-            ai_chat
+            ai_chat,
+            plugins::plugin_list,
+            plugins::plugin_catalog,
+            plugins::plugin_install_from_path,
+            plugins::plugin_install_from_catalog,
+            plugins::plugin_uninstall,
+            plugins::plugin_read_entry
         ])
         .run(tauri::generate_context!())
         .expect("error while running LiteIDE");

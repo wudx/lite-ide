@@ -164,8 +164,9 @@ describe('createAiModelService custom providers', () => {
   })
 
   it('chat() calls the active custom provider endpoint via fetch', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify(COMPLETION_PAYLOAD), { status: 200 }),
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(COMPLETION_PAYLOAD), { status: 200 }),
     )
     vi.stubGlobal('fetch', fetchMock)
 

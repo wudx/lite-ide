@@ -13,6 +13,7 @@
     "@lite-ide/kernel": "workspace:*",
     "@lite-ide/protocol": "workspace:*",
     "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
     "lucide-solid": "^1.76.0",
     "solid-js": "^1.9.19"
   }

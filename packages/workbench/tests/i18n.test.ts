@@ -1,3 +1,4 @@
+import type { AppKernel } from '@lite-ide/kernel'
 import { createSignal } from 'solid-js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createMockBackend } from '@lite-ide/protocol'
@@ -23,7 +24,7 @@ import { themeNordPlugin } from '../../../plugins/theme-nord/src/index'
 function createFakeI18nHost() {
   const [contributions, setContributions] = createSignal<readonly I18nContribution[]>([])
   return {
-    host: { contributions: () => contributions },
+    host: { contributions: () => contributions } as Pick<AppKernel, 'contributions'>,
     register(item: I18nContribution) {
       setContributions((prev) => [...prev, item])
     },

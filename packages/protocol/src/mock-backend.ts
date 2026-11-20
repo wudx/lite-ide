@@ -1,7 +1,12 @@
+import { BUILTIN_PLUGIN_SAMPLES, builtinPluginCatalog } from './plugin-samples'
 import type {
+  CatalogPlugin,
   DirEntry,
   FileMeta,
   FsDelta,
+  InstalledPlugin,
+  PluginListResult,
+  PluginManifest,
   ProjectInfo,
   TextPayload,
   WorkspaceBackend,
@@ -421,6 +426,54 @@ function inferMime(relPath: string): string {
   }
 }
 
+/** localStorage key of the demo backend's installed-plugin store. */
+const MOCK_PLUGIN_STORE_KEY = 'lite-ide.mock-plugins.v1'
+
+interface StoredMockPlugin {
+  manifest: PluginManifest
+  mainJs: string
+  installedMs: number
+}
+
+function loadMockPluginStore(): Record<string, StoredMockPlugin> {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(MOCK_PLUGIN_STORE_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') return {}
+    const store: Record<string, StoredMockPlugin> = {}
+    for (const [id, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (entry === null || typeof entry !== 'object') continue
+      const candidate = entry as Partial<StoredMockPlugin>
+      const manifest = candidate.manifest as Partial<PluginManifest> | undefined
+      // 与 Rust 端 parse_manifest 对齐：manifest 关键字段须为字符串。
+      if (
+        typeof candidate.mainJs !== 'string' ||
+        typeof candidate.installedMs !== 'number' ||
+        typeof manifest?.id !== 'string' ||
+        typeof manifest.name !== 'string' ||
+        typeof manifest.version !== 'string'
+      ) {
+        continue
+      }
+      store[id] = candidate as StoredMockPlugin
+    }
+    return store
+  } catch {
+    return {}
+  }
+}
+
+function saveMockPluginStore(store: Record<string, StoredMockPlugin>): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(MOCK_PLUGIN_STORE_KEY, JSON.stringify(store))
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
 export function createMockBackend(): WorkspaceBackend {
   const repoPool = new Map<string, MockRepo>()
   const openSessions = new Map<string, MockRepo>()
@@ -802,6 +855,60 @@ export function createMockBackend(): WorkspaceBackend {
       const candidate = MOCK_REPO_TEMPLATES[pickCursor % MOCK_REPO_TEMPLATES.length]
       pickCursor++
       return candidate.rootPath
+    },
+
+    // 浏览器演示后端的插件管理：目录安装不可用，已装插件存 localStorage。
+    async pluginList(): Promise<PluginListResult> {
+      const store = loadMockPluginStore()
+      const plugins: InstalledPlugin[] = Object.values(store)
+        .sort((a, b) => b.installedMs - a.installedMs)
+        .map((entry) => ({
+          manifest: entry.manifest,
+          dirName: entry.manifest.id,
+          installedMs: entry.installedMs,
+          error: null,
+        }))
+      return { rootPath: null, plugins }
+    },
+
+    async pluginCatalog(): Promise<CatalogPlugin[]> {
+      return builtinPluginCatalog()
+    },
+
+    async pluginInstallFromCatalog(catalogId: string): Promise<InstalledPlugin> {
+      const sample = BUILTIN_PLUGIN_SAMPLES.find((s) => s.manifest.id === catalogId)
+      if (!sample) throw new Error(`Plugin catalog entry not found: ${catalogId}`)
+      const store = loadMockPluginStore()
+      if (store[catalogId]) {
+        throw new Error(`Plugin "${catalogId}" is already installed`)
+      }
+      const installed: StoredMockPlugin = {
+        manifest: sample.manifest,
+        mainJs: sample.mainJs,
+        installedMs: Date.now(),
+      }
+      store[catalogId] = installed
+      saveMockPluginStore(store)
+      return {
+        manifest: installed.manifest,
+        dirName: installed.manifest.id,
+        installedMs: installed.installedMs,
+        error: null,
+      }
+    },
+
+    async pluginUninstall(pluginId: string): Promise<void> {
+      const store = loadMockPluginStore()
+      if (!(pluginId in store)) throw new Error(`Plugin not installed: ${pluginId}`)
+      delete store[pluginId]
+      saveMockPluginStore(store)
+    },
+
+    async pluginReadEntry(pluginId: string): Promise<string> {
+      const store = loadMockPluginStore()
+      const entry = store[pluginId]
+      if (!entry) throw new Error(`Plugin not installed: ${pluginId}`)
+      return entry.mainJs
     },
 
     resolveFileUrl(projectId: string, relPath: string): string {

@@ -38,6 +38,9 @@ pub enum AppError {
 
     #[error("ai error: {0}")]
     Ai(String),
+
+    #[error("plugin error: {0}")]
+    Plugin(String),
 }
 
 #[derive(Serialize)]
@@ -63,6 +66,7 @@ impl AppError {
             Self::Watch(_) => "WATCH_ERROR",
             Self::Git(_) => "GIT_ERROR",
             Self::Ai(_) => "AI_ERROR",
+            Self::Plugin(_) => "PLUGIN_ERROR",
         }
     }
 }

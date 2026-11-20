@@ -19,6 +19,7 @@ import { GeneralSettings } from './GeneralSettings'
 import { ModelSettings } from './ModelSettings'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { QuickOpenDialog } from './QuickOpenDialog'
+import { PluginSettings } from './PluginSettings'
 import { SettingsDialog } from './SettingsDialog'
 import { StatusBar } from './StatusBar'
 import { TitleBar } from './TitleBar'
@@ -190,6 +191,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         titleKey: 'settings.section.models',
         order: 10,
         component: ModelSettings,
+      }),
+    )
+
+    // Built-in plugins section: external plugin install / uninstall manager.
+    disposables.add(
+      props.kernel.contribute('settings.section', {
+        id: 'workbench.plugins',
+        title: '插件',
+        titleKey: 'settings.section.plugins',
+        order: 15,
+        component: PluginSettings,
       }),
     )
 

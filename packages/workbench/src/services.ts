@@ -18,6 +18,7 @@ import {
   untitledDisplayNameOf,
 } from './editor-buffers'
 import { createI18nState, I18nStateKey } from './i18n'
+import { createPluginRegistry, PluginRegistryKey } from './plugin-registry'
 import { createQuickOpenService, QuickOpenKey } from './quick-open'
 
 export interface EditorTab {
@@ -600,5 +601,7 @@ export function createWorkbenchKernel(
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   kernel.provide(QuickOpenKey, createQuickOpenService())
   kernel.provide(AiModelKey, createAiModelService())
+  // 外部插件注册表：构造时自动从后端拉取已装列表并激活启用项。
+  kernel.provide(PluginRegistryKey, createPluginRegistry(kernel, backend))
   return kernel
 }

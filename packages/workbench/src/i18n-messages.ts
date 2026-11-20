@@ -122,6 +122,31 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'settings.models.deleteCustomTitle': '删除该自定义提供商',
   'settings.models.deleteCustomConfirm': '再次点击确认删除',
 
+  // PluginSettings（外部插件管理）
+  'settings.section.plugins': '插件',
+  'plugins.heading': '插件管理',
+  'plugins.description':
+    '安装、停用与卸载外部插件；已启用的插件在工作台启动时自动加载。插件文件夹需包含 plugin.json 清单与入口脚本，可参考仓库 samples/plugins 目录。',
+  'plugins.catalog.heading': '可安装的插件',
+  'plugins.install': '安装',
+  'plugins.installing': '安装中…',
+  'plugins.installed.heading': '已安装',
+  'plugins.installed.empty': '尚未安装任何插件，可从上方目录或本地文件夹安装。',
+  'plugins.status.running': '运行中',
+  'plugins.status.stopped': '已停用',
+  'plugins.status.loading': '加载中…',
+  'plugins.status.error': '加载失败',
+  'plugins.action.enable': '启用',
+  'plugins.action.disable': '停用',
+  'plugins.action.reload': '重新加载',
+  'plugins.action.uninstall': '卸载',
+  'plugins.action.uninstallConfirm': '再次点击确认卸载',
+  'plugins.installFromFolder': '从文件夹安装…',
+  'plugins.installFromFolderTitle': '选择包含 plugin.json 的插件文件夹',
+  'plugins.rootPath': '插件目录：{path}',
+  'plugins.unsupported': '当前后端不支持插件管理。',
+  'plugins.opFailed': '操作失败：{message}',
+
   // QuickOpenDialog
   'quickOpen.dialogAria': '快速打开',
   'quickOpen.placeholder': '按名称搜索文件…',
@@ -311,6 +336,31 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'settings.models.customCancel': 'Cancel',
   'settings.models.deleteCustomTitle': 'Delete this custom provider',
   'settings.models.deleteCustomConfirm': 'Click again to confirm',
+
+  // PluginSettings (external plugin management)
+  'settings.section.plugins': 'Plugins',
+  'plugins.heading': 'Plugins',
+  'plugins.description':
+    'Install, disable and uninstall external plugins; enabled plugins load automatically on startup. A plugin folder needs a plugin.json manifest plus an entry script — see the samples/plugins directory in the repo.',
+  'plugins.catalog.heading': 'Available plugins',
+  'plugins.install': 'Install',
+  'plugins.installing': 'Installing…',
+  'plugins.installed.heading': 'Installed',
+  'plugins.installed.empty': 'No plugins installed yet. Pick one from the catalog above or a local folder.',
+  'plugins.status.running': 'Running',
+  'plugins.status.stopped': 'Disabled',
+  'plugins.status.loading': 'Loading…',
+  'plugins.status.error': 'Failed to load',
+  'plugins.action.enable': 'Enable',
+  'plugins.action.disable': 'Disable',
+  'plugins.action.reload': 'Reload',
+  'plugins.action.uninstall': 'Uninstall',
+  'plugins.action.uninstallConfirm': 'Click again to confirm',
+  'plugins.installFromFolder': 'Install from folder…',
+  'plugins.installFromFolderTitle': 'Choose a plugin folder with plugin.json',
+  'plugins.rootPath': 'Plugins directory: {path}',
+  'plugins.unsupported': 'Plugin management is not supported by this backend.',
+  'plugins.opFailed': 'Operation failed: {message}',
 
   // QuickOpenDialog
   'quickOpen.dialogAria': 'Quick Open',

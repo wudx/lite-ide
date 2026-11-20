@@ -13,5 +13,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
-  }
+  },
+  "files": ["global-env.d.ts"]
 }

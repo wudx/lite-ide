@@ -2,11 +2,14 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
 import { message, open, save } from '@tauri-apps/plugin-dialog'
 import type {
+  CatalogPlugin,
   DirEntry,
   FileMeta,
   FsDelta,
+  InstalledPlugin,
   PickFolderOptions,
   PickSavePathOptions,
+  PluginListResult,
   ProjectInfo,
   TextPayload,
   WorkspaceBackend,
@@ -141,6 +144,31 @@ export function createTauriBackend(): WorkspaceBackend {
         return null
       }
       return relPath
+    },
+
+    // 外部插件管理：桌面端由 Rust 侧维护应用数据目录下的 plugins/ 文件夹。
+    async pluginList(): Promise<PluginListResult> {
+      return invoke<PluginListResult>('plugin_list')
+    },
+
+    async pluginInstallFromPath(sourcePath: string): Promise<InstalledPlugin> {
+      return invoke<InstalledPlugin>('plugin_install_from_path', { sourcePath })
+    },
+
+    async pluginInstallFromCatalog(catalogId: string): Promise<InstalledPlugin> {
+      return invoke<InstalledPlugin>('plugin_install_from_catalog', { catalogId })
+    },
+
+    async pluginUninstall(pluginId: string): Promise<void> {
+      await invoke<void>('plugin_uninstall', { pluginId })
+    },
+
+    async pluginReadEntry(pluginId: string): Promise<string> {
+      return invoke<string>('plugin_read_entry', { pluginId })
+    },
+
+    async pluginCatalog(): Promise<CatalogPlugin[]> {
+      return invoke<CatalogPlugin[]>('plugin_catalog')
     },
   }
 }

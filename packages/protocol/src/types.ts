@@ -52,6 +52,43 @@ export interface PickFolderOptions {
   title?: string
 }
 
+/**
+ * Manifest of an installable external plugin (`plugin.json` inside the plugin
+ * folder). Entry scripts are classic scripts registering themselves through
+ * the injected `liteide.plugin({...})` global at load time.
+ */
+export interface PluginManifest {
+  /** Unique id: ASCII letters, digits, `-` and `_` (also the folder name). */
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  /** Entry script filename inside the plugin folder; defaults to `main.js`. */
+  main?: string
+}
+
+/** A plugin installed in the backend-managed plugins directory. */
+export interface InstalledPlugin {
+  manifest: PluginManifest
+  /** Folder name inside the managed plugins root. */
+  dirName: string
+  installedMs: number
+  /** Set when the folder exists but its manifest failed validation. */
+  error?: string | null
+}
+
+export interface PluginListResult {
+  /** Absolute path of the managed plugins root; null on the browser demo backend. */
+  rootPath: string | null
+  plugins: InstalledPlugin[]
+}
+
+/** A catalog entry available for one-click install (built-in samples). */
+export interface CatalogPlugin {
+  manifest: PluginManifest
+}
+
 export interface PickSavePathOptions {
   title?: string
   outsideProjectMessage?: string
@@ -216,4 +253,19 @@ export interface WorkspaceBackend {
     options?: PickSavePathOptions,
   ): Promise<string | null>
   resolveFileUrl?(projectId: string, relPath: string): string
+
+  // ---- External plugin management (app-level, optional like pickSavePath) ----
+
+  /** Installed external plugins; absent when the backend lacks plugin support. */
+  pluginList?(): Promise<PluginListResult>
+  /** Installs a plugin from a local folder containing `plugin.json` (desktop). */
+  pluginInstallFromPath?(sourcePath: string): Promise<InstalledPlugin>
+  /** Installs a built-in catalog plugin by id (desktop & demo backends). */
+  pluginInstallFromCatalog?(catalogId: string): Promise<InstalledPlugin>
+  /** Removes an installed plugin folder. */
+  pluginUninstall?(pluginId: string): Promise<void>
+  /** Entry script source of an installed plugin, ready for evaluation. */
+  pluginReadEntry?(pluginId: string): Promise<string>
+  /** Installable catalog; absent when the backend ships no catalog. */
+  pluginCatalog?(): Promise<CatalogPlugin[]>
 }

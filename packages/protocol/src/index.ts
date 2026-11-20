@@ -7,6 +7,7 @@ import { createTauriBackend } from './tauri-backend'
 import type { GitBackend, WorkspaceBackend } from './types'
 
 export * from './ai'
+export * from './plugin-samples'
 export * from './types'
 export * from './url'
 export { createMockGitBackend, createTauriGitBackend } from './git-backend'
