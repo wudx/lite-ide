@@ -16,6 +16,7 @@ import {
   isUntitledPath,
   untitledDisplayNameOf,
 } from './editor-buffers'
+import { createQuickOpenService, QuickOpenKey } from './quick-open'
 
 export interface EditorTab {
   relPath: string
@@ -556,5 +557,6 @@ export function createWorkbenchKernel(
   kernel.provide(ThemeStateKey, createThemeState(kernel))
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
+  kernel.provide(QuickOpenKey, createQuickOpenService())
   return kernel
 }

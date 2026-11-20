@@ -11,9 +11,11 @@ import {
 import { EditorBufferKey } from '../editor-buffers'
 import { SettingsDialogKey } from '../dialogs'
 import { LayoutStateKey, ProjectSelectionKey, ThemeStateKey } from '../services'
+import { QuickOpenKey } from '../quick-open'
 import { AppearanceSettings } from './AppearanceSettings'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProjectWorkspace } from './ProjectWorkspace'
+import { QuickOpenDialog } from './QuickOpenDialog'
 import { SettingsDialog } from './SettingsDialog'
 import { StatusBar } from './StatusBar'
 import { TitleBar } from './TitleBar'
@@ -95,6 +97,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           if (activeProject) {
             await requestCloseProject(kernel, activeProject)
           }
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.quickOpen',
+        title: 'Quick Open File by Name',
+        shortcut: 'Mod+P',
+        run: ({ kernel }) => {
+          kernel.tryGet(QuickOpenKey)?.open()
         },
       }),
     )
@@ -210,6 +223,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           void props.kernel.executeCommand('workbench.openProject')
           return
         }
+        if (key === 'p' && !e.shiftKey) {
+          e.preventDefault()
+          void props.kernel.executeCommand('workbench.quickOpen')
+          return
+        }
         if (key === 'w') {
           e.preventDefault()
           void props.kernel.executeCommand(
@@ -320,6 +338,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       <StatusBar kernel={props.kernel} />
       <ConfirmDialog kernel={props.kernel} />
       <SettingsDialog kernel={props.kernel} />
+      <QuickOpenDialog kernel={props.kernel} />
     </div>
   )
 }
