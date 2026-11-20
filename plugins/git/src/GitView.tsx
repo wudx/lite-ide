@@ -3,6 +3,7 @@ import type { GitFileStatus } from '@lite-ide/protocol'
 import {
   ConfirmDialogKey,
   FileIcon,
+  getI18n,
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
 import Check from 'lucide-solid/icons/check'
@@ -75,13 +76,13 @@ function statusTone(letter: string): string {
   return STATUS_TONE[letter] ?? 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
 }
 
-const STATUS_TITLE: Record<string, string> = {
-  M: 'Modified',
-  A: 'Added',
-  D: 'Deleted',
-  R: 'Renamed',
-  C: 'Conflicted',
-  U: 'Untracked',
+const STATUS_TITLE_KEYS: Record<string, string> = {
+  M: 'git.status.modified',
+  A: 'git.status.added',
+  D: 'git.status.deleted',
+  R: 'git.status.renamed',
+  C: 'git.status.conflicted',
+  U: 'git.status.untracked',
 }
 
 interface ChangeRowProps {
@@ -98,6 +99,7 @@ interface ChangeRowProps {
 
 function ChangeRow(props: ChangeRowProps) {
   const selection = props.scope.get(ProjectSelectionKey)
+  const i18n = getI18n(props.scope)
   const letter = () => statusLetter(props.entry, props.section)
   const unmerged = () => isUnmergedEntry(props.entry)
   const dir = () => {
@@ -142,7 +144,11 @@ function ChangeRow(props: ChangeRowProps) {
       </Show>
       <span
         class={`shrink-0 w-4 h-4 rounded-md flex items-center justify-center text-[10px] font-semibold font-mono ${statusTone(letter())}`}
-        title={STATUS_TITLE[letter()] ?? props.entry.relPath}
+        title={
+          STATUS_TITLE_KEYS[letter()]
+            ? i18n.t(STATUS_TITLE_KEYS[letter()])
+            : props.entry.relPath
+        }
       >
         {letter()}
       </span>
@@ -151,8 +157,8 @@ function ChangeRow(props: ChangeRowProps) {
         <Show when={!unmerged() && props.section === 'unstaged'}>
           <button
             type="button"
-            aria-label={`Stage ${props.entry.relPath}`}
-            title="Stage Changes"
+            aria-label={i18n.t('git.action.stagePath', { path: props.entry.relPath })}
+            title={i18n.t('git.action.stage')}
             disabled={props.disabled}
             class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
             onClick={(e) => {
@@ -166,8 +172,8 @@ function ChangeRow(props: ChangeRowProps) {
         <Show when={!unmerged() && props.section === 'staged'}>
           <button
             type="button"
-            aria-label={`Unstage ${props.entry.relPath}`}
-            title="Unstage Changes"
+            aria-label={i18n.t('git.action.unstagePath', { path: props.entry.relPath })}
+            title={i18n.t('git.action.unstage')}
             disabled={props.disabled}
             class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
             onClick={(e) => {
@@ -181,8 +187,8 @@ function ChangeRow(props: ChangeRowProps) {
         <Show when={!unmerged() && props.section === 'unstaged'}>
           <button
             type="button"
-            aria-label={`Discard ${props.entry.relPath}`}
-            title="Discard Changes"
+            aria-label={i18n.t('git.action.discardPath', { path: props.entry.relPath })}
+            title={i18n.t('git.action.discard')}
             disabled={props.disabled}
             class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
             onClick={(e) => {
@@ -212,6 +218,7 @@ interface TreeDirBranchProps {
 }
 
 function TreeDirBranch(props: TreeDirBranchProps) {
+  const i18n = getI18n(props.scope)
   const dirKey = () => `${props.section}:${props.node.relPath}`
   const collapsed = () => Boolean(props.collapsedDirs[dirKey()])
   const stageable = createMemo(() => props.node.allEntries.filter(isStageableEntry))
@@ -241,8 +248,8 @@ function TreeDirBranch(props: TreeDirBranchProps) {
           <Show when={props.section === 'unstaged' && stageable().length > 0}>
             <button
               type="button"
-              aria-label={`Stage ${props.node.relPath}`}
-              title="Stage Folder Changes"
+              aria-label={i18n.t('git.action.stagePath', { path: props.node.relPath })}
+              title={i18n.t('git.action.stageFolder')}
               disabled={props.disabled}
               class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
               onClick={() => props.onStageEntries(stageable())}
@@ -253,8 +260,8 @@ function TreeDirBranch(props: TreeDirBranchProps) {
           <Show when={props.section === 'staged'}>
             <button
               type="button"
-              aria-label={`Unstage ${props.node.relPath}`}
-              title="Unstage Folder Changes"
+              aria-label={i18n.t('git.action.unstagePath', { path: props.node.relPath })}
+              title={i18n.t('git.action.unstageFolder')}
               disabled={props.disabled}
               class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
               onClick={() => props.onUnstageEntries(props.node.allEntries)}
@@ -429,6 +436,7 @@ function SectionHeader(props: SectionHeaderProps) {
 export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
+  const i18n = getI18n(props.scope)
 
   const [sectionCollapsed, setSectionCollapsed] = createSignal<Record<string, boolean>>({})
   const [dirCollapsed, setDirCollapsed] = createSignal<Record<string, boolean>>({})
@@ -581,7 +589,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const repo = () => store.status()?.repo ?? false
   const branchLabel = () => {
     const branch = store.status()?.branch
-    return branch ? branch : 'HEAD (detached)'
+    return branch ? branch : i18n.t('git.detachedHead')
   }
 
   const stagedEntries = createMemo(() =>
@@ -623,14 +631,14 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     if (!dialogs) return
     const untracked = isUntrackedEntry(entry)
     const choice = await dialogs.confirm({
-      title: 'Discard Changes',
+      title: i18n.t('git.discard.title'),
       message: untracked
-        ? `Delete untracked file "${entry.relPath}"? This cannot be undone.`
-        : `Discard changes in "${entry.relPath}"? This cannot be undone.`,
+        ? i18n.t('git.discard.untrackedMessage', { path: entry.relPath })
+        : i18n.t('git.discard.trackedMessage', { path: entry.relPath }),
       details: [entry.relPath],
       actions: [
-        { id: 'discard', label: 'Discard', variant: 'danger' },
-        { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        { id: 'discard', label: i18n.t('git.discard.confirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
       ],
       cancelId: 'cancel',
     })
@@ -661,7 +669,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 <>
                   <GitBranch class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
                   <span class="text-[11.5px] text-[var(--text-muted)] truncate leading-normal">
-                    Source Control
+                    {i18n.t('git.sourceControl')}
                   </span>
                 </>
               }
@@ -672,7 +680,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 data-testid="git-branch-switcher"
                 aria-haspopup="listbox"
                 aria-expanded={branchMenuOpen()}
-                title="Switch Branch"
+                title={i18n.t('git.switchBranch')}
                 disabled={store.committing() || store.mutating()}
                 class="flex items-center gap-1.5 min-w-0 px-1.5 py-1 -ml-1.5 rounded-lg hover:bg-[var(--bg-hover)] disabled:opacity-60 disabled:pointer-events-none transition-colors cursor-pointer"
                 onClick={toggleBranchMenu}
@@ -704,8 +712,8 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             <button
               type="button"
               data-testid="git-view-mode-toggle"
-              aria-label="View as Tree"
-              title={viewMode() === 'list' ? 'View as Tree' : 'View as List'}
+              aria-label={viewMode() === 'list' ? i18n.t('git.viewAsTree') : i18n.t('git.viewAsList')}
+              title={viewMode() === 'list' ? i18n.t('git.viewAsTree') : i18n.t('git.viewAsList')}
               aria-pressed={viewMode() === 'tree'}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={toggleViewMode}
@@ -716,8 +724,8 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             </button>
             <button
               type="button"
-              aria-label="Refresh Status"
-              title="Refresh Status"
+              aria-label={i18n.t('git.refreshStatus')}
+              title={i18n.t('git.refreshStatus')}
               class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
               onClick={handleManualRefresh}
             >
@@ -740,13 +748,13 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
               ref={branchInputRef}
               type="text"
               role="combobox"
-              aria-label="Filter or create branch"
+              aria-label={i18n.t('git.branchPicker.filterAriaLabel')}
               aria-expanded={branchMenuOpen()}
               aria-controls={BRANCH_LISTBOX_ID}
               aria-activedescendant={
                 branchPickerItems().length > 0 ? branchOptionId(branchActiveIdx()) : undefined
               }
-              placeholder="Switch or create branch..."
+              placeholder={i18n.t('git.branchPicker.placeholder')}
               value={branchQuery()}
               onInput={(e) => setBranchQuery(e.currentTarget.value)}
               class="w-full h-[28px] px-2.5 rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] outline-none text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal"
@@ -755,7 +763,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
               ref={branchListRef}
               id={BRANCH_LISTBOX_ID}
               role="listbox"
-              aria-label="Branches"
+              aria-label={i18n.t('git.branchPicker.listAriaLabel')}
               class="max-h-[220px] overflow-y-auto overflow-x-hidden flex flex-col gap-0.5"
             >
               <Show
@@ -763,7 +771,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 fallback={
                   <div class="flex items-center justify-center gap-1.5 py-3 text-[11px] text-[var(--text-muted)]">
                     <Loader2 class="w-3 h-3 animate-spin text-[var(--accent)]" />
-                    <span>Loading branches...</span>
+                    <span>{i18n.t('git.branchPicker.loading')}</span>
                   </div>
                 }
               >
@@ -771,7 +779,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   when={branchPickerItems().length > 0}
                   fallback={
                     <div class="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">
-                      No matching branches
+                      {i18n.t('git.branchPicker.empty')}
                     </div>
                   }
                 >
@@ -796,7 +804,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                         >
                           <Plus class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
                           <span class="truncate flex-1 leading-normal min-w-0">
-                            Create branch "{item.name}"
+                            {i18n.t('git.branchPicker.create', { name: item.name })}
                           </span>
                         </button>
                       ) : (
@@ -830,7 +838,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                           </span>
                           <Show when={item.branch.remote}>
                             <span class="shrink-0 text-[9.5px] uppercase tracking-wider text-[var(--text-muted)]">
-                              remote
+                              {i18n.t('git.branchPicker.remote')}
                             </span>
                           </Show>
                           <Show when={item.branch.current}>
@@ -868,19 +876,19 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   // Status never arrived (e.g. git missing from PATH); the
                   // error banner above already explains why.
                   <div class="flex-1 px-3 py-8 text-center text-xs text-[var(--text-muted)]">
-                    Git status unavailable
+                    {i18n.t('git.state.unavailable')}
                   </div>
                 }
               >
                 <div class="flex-1 px-3 py-8 text-center text-xs text-[var(--text-muted)]">
-                  Not a Git repository
+                  {i18n.t('git.state.notRepo')}
                 </div>
               </Show>
             }
           >
             <div class="flex items-center justify-center gap-2 py-8 text-xs text-[var(--text-muted)]">
               <Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />
-              <span>Loading git status...</span>
+              <span>{i18n.t('git.state.loading')}</span>
             </div>
           </Show>
         }
@@ -888,11 +896,11 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
         {/* Commit box */}
         <div class="shrink-0 px-2.5 pt-2.5 pb-2 border-b border-[var(--border-subtle)]">
           <textarea
-            aria-label="Commit message"
+            aria-label={i18n.t('git.commit.ariaLabel')}
             value={store.commitMessage()}
             onInput={(e) => store.setCommitMessage(e.currentTarget.value)}
             onKeyDown={onCommitBoxKeyDown}
-            placeholder="Commit message (Ctrl+Enter to commit)"
+            placeholder={i18n.t('git.commit.placeholder')}
             rows={2}
             class="w-full resize-none rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] focus:shadow-[0_0_0_2px_var(--accent-soft)] outline-none px-2.5 py-1.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal transition-all"
           />
@@ -914,7 +922,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             >
               <Check class="w-3.5 h-3.5" />
             </Show>
-            <span>Commit ({stagedEntries().length})</span>
+            <span>{i18n.t('git.commit.button', { count: stagedEntries().length })}</span>
           </button>
         </div>
 
@@ -924,18 +932,18 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             when={stagedEntries().length > 0 || unstagedEntries().length > 0}
             fallback={
               <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
-                Working tree clean
+                {i18n.t('git.state.clean')}
               </div>
             }
           >
             <Show when={stagedEntries().length > 0}>
               <SectionHeader
-                title="Staged Changes"
+                title={i18n.t('git.section.staged')}
                 count={stagedEntries().length}
                 collapsed={Boolean(sectionCollapsed().staged)}
                 onToggle={() => toggleSection('staged')}
                 actionKind="unstage"
-                actionLabel="Unstage All Changes"
+                actionLabel={i18n.t('git.section.unstageAll')}
                 actionDisabled={store.committing() || store.mutating()}
                 onAction={() => void store.unstageAll()}
               />
@@ -957,12 +965,12 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
 
             <Show when={unstagedEntries().length > 0}>
               <SectionHeader
-                title="Changes"
+                title={i18n.t('git.section.unstaged')}
                 count={unstagedEntries().length}
                 collapsed={Boolean(sectionCollapsed().unstaged)}
                 onToggle={() => toggleSection('unstaged')}
                 actionKind={stageableEntries().length > 0 ? 'stage' : undefined}
-                actionLabel="Stage All Changes"
+                actionLabel={i18n.t('git.section.stageAll')}
                 actionDisabled={store.committing() || store.mutating()}
                 onAction={() => void store.stageAll()}
                 class={stagedEntries().length > 0 ? 'pt-2' : 'pt-1'}

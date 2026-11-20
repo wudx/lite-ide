@@ -1,5 +1,6 @@
 import { createServiceKey } from '@lite-ide/kernel'
 import type { GitBackend, GitBranchInfo, GitFileStatus, GitStatus } from '@lite-ide/protocol'
+import type { TranslateFn } from '@lite-ide/workbench'
 import { batch, createSignal, type Accessor } from 'solid-js'
 
 /** FS-delta events coalesce into one debounced status refresh. */
@@ -86,7 +87,16 @@ export function statusLetter(entry: GitFileStatus, section: 'staged' | 'unstaged
   return entry.y === '?' ? 'U' : entry.y
 }
 
-export function createGitStore(projectId: string, backend: GitBackend): GitStore {
+export interface GitStoreOptions {
+  readonly t?: TranslateFn
+}
+
+export function createGitStore(
+  projectId: string,
+  backend: GitBackend,
+  options?: GitStoreOptions,
+): GitStore {
+  const t: TranslateFn = options?.t ?? ((_key, _params, fallback) => fallback ?? _key)
   const [status, setStatus] = createSignal<GitStatus | null>(null)
   const [loading, setLoading] = createSignal(true)
   const [refreshing, setRefreshing] = createSignal(false)
@@ -215,7 +225,7 @@ export function createGitStore(projectId: string, backend: GitBackend): GitStore
     async checkoutBranch(name: string, create = false): Promise<boolean> {
       const trimmed = name.trim()
       if (!trimmed) {
-        setError('Branch name is empty.')
+        setError(t('git.error.emptyBranch', undefined, 'Branch name is empty.'))
         return false
       }
       if (committing() || mutating()) return false
@@ -290,12 +300,12 @@ export function createGitStore(projectId: string, backend: GitBackend): GitStore
       if (committing() || mutating()) return false
       const message = commitMessage().trim()
       if (!message) {
-        setError('Commit message is empty.')
+        setError(t('git.error.emptyCommit', undefined, 'Commit message is empty.'))
         return false
       }
       const stagedCount = status()?.entries.filter(hasStagedChanges).length ?? 0
       if (stagedCount === 0) {
-        setError('No staged changes to commit.')
+        setError(t('git.error.noStaged', undefined, 'No staged changes to commit.'))
         return false
       }
 

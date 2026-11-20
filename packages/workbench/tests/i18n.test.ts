@@ -12,6 +12,7 @@ import {
 import { WORKBENCH_EN_US, WORKBENCH_ZH_CN } from '../src/i18n-messages'
 import { createWorkbenchKernel } from '../src/services'
 import { explorerPlugin } from '../../../plugins/explorer/src/index'
+import { gitPlugin } from '../../../plugins/git/src/index'
 import { previewAudioPlugin } from '../../../plugins/preview-audio/src/index'
 import { previewCodePlugin } from '../../../plugins/preview-code/src/index'
 import { previewFallbackPlugin } from '../../../plugins/preview-fallback/src/index'
@@ -174,6 +175,7 @@ describe('createI18nState', () => {
     try {
       for (const plugin of [
         explorerPlugin,
+        gitPlugin,
         previewCodePlugin,
         previewMarkdownPlugin,
         previewImagePlugin,

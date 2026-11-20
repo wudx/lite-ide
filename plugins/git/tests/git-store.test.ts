@@ -322,4 +322,27 @@ describe('git store (mock backend)', () => {
     expect(await store.checkoutBranch('fresh')).toBe(true)
     expect(store.error()).toBe('branch list unavailable')
   })
+
+  it('uses provided translator for validation error messages', async () => {
+    const messages: Record<string, string> = {
+      'git.error.emptyBranch': '分支名称不能为空。',
+      'git.error.emptyCommit': '提交信息不能为空。',
+      'git.error.noStaged': '没有已暂存的更改可供提交。',
+    }
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend(), {
+      t: (key, _params, fallback) => messages[key] ?? fallback ?? key,
+    })
+    await store.refresh()
+
+    expect(await store.checkoutBranch('   ')).toBe(false)
+    expect(store.error()).toBe('分支名称不能为空。')
+
+    expect(await store.commit()).toBe(false)
+    expect(store.error()).toBe('提交信息不能为空。')
+
+    await store.unstageAll()
+    store.setCommitMessage('feat: test')
+    expect(await store.commit()).toBe(false)
+    expect(store.error()).toBe('没有已暂存的更改可供提交。')
+  })
 })
