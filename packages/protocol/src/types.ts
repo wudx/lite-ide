@@ -117,6 +117,29 @@ export interface GitStashEntry {
   date: string
 }
 
+/** One commit from `git log` on the current branch, newest first. */
+export interface GitCommitInfo {
+  /** Full commit SHA. */
+  sha: string
+  /** Abbreviated SHA for display (git picks the unambiguous length). */
+  shortSha: string
+  /** First paragraph (subject line) of the commit message. */
+  subject: string
+  /** Remaining commit message body, if any. */
+  body?: string | null
+  author: string
+  email: string
+  /** Author time in epoch milliseconds. */
+  dateMs: number
+}
+
+export interface GitLogOptions {
+  /** Maximum number of commits to return (default 50). */
+  limit?: number
+  /** Number of newer commits to skip, for pagination. */
+  skip?: number
+}
+
 /**
  * Version-control operations for one opened project. Implementations must
  * scope every call to the project and only accept project-relative paths.
@@ -138,6 +161,17 @@ export interface GitBackend {
   push(projectId: string): Promise<void>
   /** Unified per-file patches for staged or worktree changes (empty when clean). */
   diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>
+  /**
+   * Recent commits on the current branch, newest first. A folder outside
+   * version control — or a repository without any commits yet — resolves to
+   * an empty list rather than an error.
+   */
+  log(projectId: string, options?: GitLogOptions): Promise<GitCommitInfo[]>
+  /**
+   * Per-file patches introduced by one commit. Paths narrow the result;
+   * merge commits resolve to an empty list (combined diffs are not shown).
+   */
+  show(projectId: string, sha: string, relPaths?: string[]): Promise<GitDiffFile[]>
   branches(projectId: string): Promise<GitBranchInfo[]>
   checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
   /** Stashes all tracked + untracked changes; optional stash message. */

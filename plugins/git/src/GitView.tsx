@@ -14,6 +14,7 @@ import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
 import EllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import GitBranch from 'lucide-solid/icons/git-branch'
+import GitCommitHorizontal from 'lucide-solid/icons/git-commit-horizontal'
 import Globe from 'lucide-solid/icons/globe'
 import List from 'lucide-solid/icons/list'
 import ListTree from 'lucide-solid/icons/list-tree'
@@ -50,11 +51,16 @@ import {
   type GitDiffSection,
   GitStoreKey,
 } from './git-store'
+import { GitHistory } from './GitHistory'
 import { buildGitTree, type GitTreeDirNode } from './git-tree'
+import { statusTone } from './tone'
 
 type GitViewMode = 'list' | 'tree'
 
+type GitPanelMode = 'changes' | 'history'
+
 const VIEW_MODE_STORAGE_KEY = 'lite-ide:git:view-mode'
+const PANEL_MODE_STORAGE_KEY = 'lite-ide:git:panel-mode'
 
 function readStoredViewMode(): GitViewMode {
   if (typeof localStorage === 'undefined') return 'list'
@@ -74,17 +80,22 @@ function writeStoredViewMode(mode: GitViewMode): void {
   }
 }
 
-const STATUS_TONE: Record<string, string> = {
-  M: 'bg-[var(--warning-bg)] text-[var(--warning-text)]',
-  A: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  D: 'bg-[var(--danger-bg)] text-[var(--danger-text)]',
-  R: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  U: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  C: 'bg-[var(--danger-bg)] text-[var(--danger-text)]',
+function readStoredPanelMode(): GitPanelMode {
+  if (typeof localStorage === 'undefined') return 'changes'
+  try {
+    return localStorage.getItem(PANEL_MODE_STORAGE_KEY) === 'history' ? 'history' : 'changes'
+  } catch {
+    return 'changes'
+  }
 }
 
-function statusTone(letter: string): string {
-  return STATUS_TONE[letter] ?? 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
+function writeStoredPanelMode(mode: GitPanelMode): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(PANEL_MODE_STORAGE_KEY, mode)
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
 }
 
 const STATUS_TITLE_KEYS: Record<string, string> = {
@@ -559,6 +570,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [sectionCollapsed, setSectionCollapsed] = createSignal<Record<string, boolean>>({})
   const [dirCollapsed, setDirCollapsed] = createSignal<Record<string, boolean>>({})
   const [viewMode, setViewMode] = createSignal<GitViewMode>(readStoredViewMode())
+  const [panelMode, setPanelMode] = createSignal<GitPanelMode>(readStoredPanelMode())
   const [manualSpinning, setManualSpinning] = createSignal(false)
   const [branchMenuOpen, setBranchMenuOpen] = createSignal(false)
   const [branchQuery, setBranchQuery] = createSignal('')
@@ -786,6 +798,12 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     writeStoredViewMode(next)
   }
 
+  function togglePanelMode() {
+    const next: GitPanelMode = panelMode() === 'changes' ? 'history' : 'changes'
+    setPanelMode(next)
+    writeStoredPanelMode(next)
+  }
+
   /**
    * Opens the diff preview for a change row: the focused section tells the
    * `git-diff` previewer which comparison to render (staged rows compare
@@ -1001,12 +1019,29 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
               aria-label={viewMode() === 'list' ? i18n.t('git.viewAsTree') : i18n.t('git.viewAsList')}
               title={viewMode() === 'list' ? i18n.t('git.viewAsTree') : i18n.t('git.viewAsList')}
               aria-pressed={viewMode() === 'tree'}
-              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
+              disabled={panelMode() === 'history'}
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-all duration-150 active:scale-95"
               onClick={toggleViewMode}
             >
               <Show when={viewMode() === 'list'} fallback={<List class="w-3.5 h-3.5" />}>
                 <ListTree class="w-3.5 h-3.5" />
               </Show>
+            </button>
+            <button
+              type="button"
+              data-testid="git-history-toggle"
+              aria-label={i18n.t('git.history.toggle')}
+              title={i18n.t('git.history.toggle')}
+              aria-pressed={panelMode() === 'history'}
+              disabled={!repo()}
+              class={`p-1.5 rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:pointer-events-none ${
+                panelMode() === 'history'
+                  ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+              }`}
+              onClick={togglePanelMode}
+            >
+              <GitCommitHorizontal class="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
@@ -1265,138 +1300,143 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
           </Show>
         }
       >
-        {/* Commit box */}
-        <div class="shrink-0 px-2.5 pt-2.5 pb-2 border-b border-[var(--border-subtle)]">
-          <textarea
-            aria-label={i18n.t('git.commit.ariaLabel')}
-            value={store.commitMessage()}
-            onInput={(e) => store.setCommitMessage(e.currentTarget.value)}
-            onKeyDown={onCommitBoxKeyDown}
-            placeholder={i18n.t('git.commit.placeholder')}
-            rows={2}
-            class="w-full resize-none rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] focus:shadow-[0_0_0_2px_var(--accent-soft)] outline-none px-2.5 py-1.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal transition-all"
-          />
-          <div class="mt-1.5 flex items-center gap-1.5">
-            <Show when={ai}>
+        <Show
+          when={panelMode() === 'changes'}
+          fallback={<GitHistory scope={props.scope} />}
+        >
+          {/* Commit box */}
+          <div class="shrink-0 px-2.5 pt-2.5 pb-2 border-b border-[var(--border-subtle)]">
+            <textarea
+              aria-label={i18n.t('git.commit.ariaLabel')}
+              value={store.commitMessage()}
+              onInput={(e) => store.setCommitMessage(e.currentTarget.value)}
+              onKeyDown={onCommitBoxKeyDown}
+              placeholder={i18n.t('git.commit.placeholder')}
+              rows={2}
+              class="w-full resize-none rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] focus:shadow-[0_0_0_2px_var(--accent-soft)] outline-none px-2.5 py-1.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal transition-all"
+            />
+            <div class="mt-1.5 flex items-center gap-1.5">
+              <Show when={ai}>
+                <button
+                  type="button"
+                  data-testid="git-ai-generate"
+                  aria-label={i18n.t('git.ai.generateTitle')}
+                  title={i18n.t('git.ai.generateTitle')}
+                  disabled={aiGenerating() || store.committing() || store.mutating()}
+                  class="shrink-0 h-[28px] px-2.5 rounded-lg border border-[var(--border-panel)] bg-[var(--bg-subtle)] flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                  onClick={() => void generateCommitMessage()}
+                >
+                  <Show
+                    when={!aiGenerating()}
+                    fallback={<Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
+                  >
+                    <Sparkles class="w-3.5 h-3.5 text-[var(--accent)]" />
+                  </Show>
+                  <span>{i18n.t('git.ai.generate')}</span>
+                </button>
+              </Show>
               <button
                 type="button"
-                data-testid="git-ai-generate"
-                aria-label={i18n.t('git.ai.generateTitle')}
-                title={i18n.t('git.ai.generateTitle')}
-                disabled={aiGenerating() || store.committing() || store.mutating()}
-                class="shrink-0 h-[28px] px-2.5 rounded-lg border border-[var(--border-panel)] bg-[var(--bg-subtle)] flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                onClick={() => void generateCommitMessage()}
+                data-testid="git-commit-button"
+                class="flex-1 h-[28px] rounded-lg flex items-center justify-center gap-1.5 text-[11.5px] font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:hover:bg-[var(--accent)]"
+                disabled={
+                  stagedEntries().length === 0 ||
+                  store.commitMessage().trim().length === 0 ||
+                  store.committing() ||
+                  store.mutating()
+                }
+                onClick={() => void commitFromBox()}
               >
                 <Show
-                  when={!aiGenerating()}
-                  fallback={<Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
+                  when={!store.committing()}
+                  fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
                 >
-                  <Sparkles class="w-3.5 h-3.5 text-[var(--accent)]" />
+                  <Check class="w-3.5 h-3.5" />
                 </Show>
-                <span>{i18n.t('git.ai.generate')}</span>
+                <span>{i18n.t('git.commit.button', { count: stagedEntries().length })}</span>
               </button>
-            </Show>
-            <button
-              type="button"
-              data-testid="git-commit-button"
-              class="flex-1 h-[28px] rounded-lg flex items-center justify-center gap-1.5 text-[11.5px] font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:hover:bg-[var(--accent)]"
-              disabled={
-                stagedEntries().length === 0 ||
-                store.commitMessage().trim().length === 0 ||
-                store.committing() ||
-                store.mutating()
-              }
-              onClick={() => void commitFromBox()}
-            >
-              <Show
-                when={!store.committing()}
-                fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
-              >
-                <Check class="w-3.5 h-3.5" />
-              </Show>
-              <span>{i18n.t('git.commit.button', { count: stagedEntries().length })}</span>
-            </button>
+            </div>
           </div>
-        </div>
 
-        {/* Change sections */}
-        <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1.5">
-          <Show
-            when={stagedEntries().length > 0 || unstagedEntries().length > 0}
-            fallback={
-              <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
-                {i18n.t('git.state.clean')}
-              </div>
-            }
-          >
-            <Show when={stagedEntries().length > 0}>
-              <SectionHeader
-                title={i18n.t('git.section.staged')}
-                count={stagedEntries().length}
-                collapsed={Boolean(sectionCollapsed().staged)}
-                onToggle={() => toggleSection('staged')}
-                actionKind="unstage"
-                actionLabel={i18n.t('git.section.unstageAll')}
-                actionDisabled={store.committing() || store.mutating()}
-                onAction={() => void store.unstageAll()}
-              />
-              <Show when={!sectionCollapsed().staged}>
-                <ChangeSectionContent
-                  scope={props.scope}
-                  section="staged"
-                  entries={stagedEntries()}
-                  viewMode={viewMode()}
-                  collapsedDirs={dirCollapsed()}
-                  disabled={store.committing() || store.mutating()}
-                  onToggleDir={toggleDir}
-                  onOpenDiff={openDiff}
-                  onStageEntries={stageEntries}
-                  onUnstageEntries={unstageEntries}
-                  onDiscardEntry={discardEntry}
+          {/* Change sections */}
+          <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1.5">
+            <Show
+              when={stagedEntries().length > 0 || unstagedEntries().length > 0}
+              fallback={
+                <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
+                  {i18n.t('git.state.clean')}
+                </div>
+              }
+            >
+              <Show when={stagedEntries().length > 0}>
+                <SectionHeader
+                  title={i18n.t('git.section.staged')}
+                  count={stagedEntries().length}
+                  collapsed={Boolean(sectionCollapsed().staged)}
+                  onToggle={() => toggleSection('staged')}
+                  actionKind="unstage"
+                  actionLabel={i18n.t('git.section.unstageAll')}
+                  actionDisabled={store.committing() || store.mutating()}
+                  onAction={() => void store.unstageAll()}
                 />
+                <Show when={!sectionCollapsed().staged}>
+                  <ChangeSectionContent
+                    scope={props.scope}
+                    section="staged"
+                    entries={stagedEntries()}
+                    viewMode={viewMode()}
+                    collapsedDirs={dirCollapsed()}
+                    disabled={store.committing() || store.mutating()}
+                    onToggleDir={toggleDir}
+                    onOpenDiff={openDiff}
+                    onStageEntries={stageEntries}
+                    onUnstageEntries={unstageEntries}
+                    onDiscardEntry={discardEntry}
+                  />
+                </Show>
+              </Show>
+
+              <Show when={unstagedEntries().length > 0}>
+                <SectionHeader
+                  title={i18n.t('git.section.unstaged')}
+                  count={unstagedEntries().length}
+                  collapsed={Boolean(sectionCollapsed().unstaged)}
+                  onToggle={() => toggleSection('unstaged')}
+                  actionKind={stageableEntries().length > 0 ? 'stage' : undefined}
+                  actionLabel={i18n.t('git.section.stageAll')}
+                  actionDisabled={store.committing() || store.mutating()}
+                  onAction={() => void store.stageAll()}
+                  class={stagedEntries().length > 0 ? 'pt-2' : 'pt-1'}
+                />
+                <Show when={!sectionCollapsed().unstaged}>
+                  <ChangeSectionContent
+                    scope={props.scope}
+                    section="unstaged"
+                    entries={unstagedEntries()}
+                    viewMode={viewMode()}
+                    collapsedDirs={dirCollapsed()}
+                    disabled={store.committing() || store.mutating()}
+                    onToggleDir={toggleDir}
+                    onOpenDiff={openDiff}
+                    onStageEntries={stageEntries}
+                    onUnstageEntries={unstageEntries}
+                    onDiscardEntry={discardEntry}
+                    onStashEntry={stashEntry}
+                  />
+                </Show>
               </Show>
             </Show>
 
-            <Show when={unstagedEntries().length > 0}>
-              <SectionHeader
-                title={i18n.t('git.section.unstaged')}
-                count={unstagedEntries().length}
-                collapsed={Boolean(sectionCollapsed().unstaged)}
-                onToggle={() => toggleSection('unstaged')}
-                actionKind={stageableEntries().length > 0 ? 'stage' : undefined}
-                actionLabel={i18n.t('git.section.stageAll')}
-                actionDisabled={store.committing() || store.mutating()}
-                onAction={() => void store.stageAll()}
-                class={stagedEntries().length > 0 ? 'pt-2' : 'pt-1'}
-              />
-              <Show when={!sectionCollapsed().unstaged}>
-                <ChangeSectionContent
-                  scope={props.scope}
-                  section="unstaged"
-                  entries={unstagedEntries()}
-                  viewMode={viewMode()}
-                  collapsedDirs={dirCollapsed()}
-                  disabled={store.committing() || store.mutating()}
-                  onToggleDir={toggleDir}
-                  onOpenDiff={openDiff}
-                  onStageEntries={stageEntries}
-                  onUnstageEntries={unstageEntries}
-                  onDiscardEntry={discardEntry}
-                  onStashEntry={stashEntry}
-                />
-              </Show>
-            </Show>
-          </Show>
-
-          {/* Stash stack stays visible even when the working tree is clean. */}
-          <StashSection
-            scope={props.scope}
-            stashes={store.stashes()}
-            disabled={store.committing() || store.mutating()}
-            onRestore={(entry) => void restoreStash(entry)}
-            onDrop={(entry) => void dropStash(entry)}
-          />
-        </div>
+            {/* Stash stack stays visible even when the working tree is clean. */}
+            <StashSection
+              scope={props.scope}
+              stashes={store.stashes()}
+              disabled={store.committing() || store.mutating()}
+              onRestore={(entry) => void restoreStash(entry)}
+              onDrop={(entry) => void dropStash(entry)}
+            />
+          </div>
+        </Show>
       </Show>
     </div>
   )

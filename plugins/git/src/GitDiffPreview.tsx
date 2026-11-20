@@ -123,14 +123,22 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     return 'unstaged'
   }
 
+  /** Commit SHA when the preview compares a file inside one commit (history view). */
+  const initialRev = (): string | null => {
+    const focus = store?.diffFocus()
+    if (focus && focus.relPath === props.file.relPath && focus.sha) return focus.sha
+    return null
+  }
+
   const [section, setSection] = createSignal<GitDiffSection>(initialSection())
+  const [rev, setRev] = createSignal<string | null>(initialRev())
   const [viewMode, setViewMode] = createSignal<DiffViewMode>(readStoredDiffViewMode())
   const [rawDiff, setRawDiff] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(true)
   const [refreshTick, setRefreshTick] = createSignal(0)
   let fetchSeq = 0
-  let trackedPath: string | null = null
+  let trackedKey: string | null = null
 
   function toggleViewMode(mode: DiffViewMode) {
     setViewMode(mode)
@@ -138,11 +146,12 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   }
 
   // Follow later Git-panel clicks on the same file so re-opening a row swaps
-  // the comparison without remounting the tab.
+  // the comparison (section or commit) without remounting the tab.
   createEffect(() => {
     const focus = store?.diffFocus()
     if (focus && focus.relPath === props.file.relPath) {
       setSection(focus.section)
+      setRev(focus.sha ?? null)
     }
   })
 
@@ -151,23 +160,28 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     const backendRef = backend
     if (!storeRef || !backendRef) return
     // PreviewHost reuses this component instance across tabs with the same
-    // previewer; a different file must not inherit the previous section or
-    // flash the previous diff while loading.
-    if (trackedPath !== props.file.relPath) {
-      trackedPath = props.file.relPath
+    // previewer; a different file (or commit) must not inherit the previous
+    // comparison or flash the previous diff while loading.
+    const key = `${rev() ?? ''}\u0000${props.file.relPath}`
+    if (trackedKey !== key) {
+      trackedKey = key
       setSection(initialSection())
+      setRev(initialRev())
       setRawDiff(null)
       setError(null)
     }
     // Status refreshes after every git action and debounced fs event, so the
-    // diff tracks stage/unstage/discard without extra wiring.
+    // diff tracks stage/unstage/discard without extra wiring. Commit diffs
+    // are immutable; only focus/relPath/refresh changes retrigger them.
     storeRef.status()
     props.file.relPath
     section()
+    rev()
     refreshTick()
 
     const seq = ++fetchSeq
     const staged = section() === 'staged'
+    const commitSha = rev()
     const current = entry()
     const fsRef = fsBackend
 
@@ -176,7 +190,12 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setError(null)
       try {
         let text: string
-        if (fsRef && current && !staged && isUntrackedEntry(current)) {
+        if (commitSha) {
+          const files = await backendRef.show(props.file.projectId, commitSha, [
+            props.file.relPath,
+          ])
+          text = files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
+        } else if (fsRef && current && !staged && isUntrackedEntry(current)) {
           // Untracked paths never appear in `git diff`; render the whole file
           // as additions instead.
           const payload = await fsRef.readText(props.file.projectId, props.file.relPath)
@@ -225,6 +244,8 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   })
 
   const showSectionToggle = createMemo(() => {
+    // Commit diffs have a single immutable comparison; no section switcher.
+    if (rev()) return false
     const current = entry()
     // Status not loaded yet: hide the switcher until we know the file's state
     // (the body's loading spinner covers this window).
@@ -242,40 +263,52 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       {/* Toolbar: comparison switcher, +/− stats, refresh */}
       <div class="shrink-0 px-3 py-1.5 border-b border-[var(--border-subtle)] flex items-center gap-2">
         <Show
-          when={showSectionToggle()}
+          when={rev()}
           fallback={
-            <span class="text-[11px] text-[var(--text-muted)] leading-normal">
-              {i18n.t('git.diff.fileUnchanged')}
-            </span>
+            <Show
+              when={showSectionToggle()}
+              fallback={
+                <span class="text-[11px] text-[var(--text-muted)] leading-normal">
+                  {i18n.t('git.diff.fileUnchanged')}
+                </span>
+              }
+            >
+              <div
+                role="tablist"
+                aria-label={i18n.t('git.diff.switchComparison')}
+                class="flex items-center gap-0.5 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]"
+              >
+                <For each={['staged', 'unstaged'] as const}>
+                  {(candidate) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      data-testid="git-diff-section"
+                      data-section={candidate}
+                      aria-selected={section() === candidate}
+                      class={`px-2.5 py-0.5 rounded-md text-[11px] font-medium transition-all duration-150 ${
+                        section() === candidate
+                          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
+                      }`}
+                      onClick={() => setSection(candidate)}
+                    >
+                      {i18n.t(
+                        candidate === 'staged' ? 'git.diff.section.staged' : 'git.diff.section.unstaged',
+                      )}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
           }
         >
-          <div
-            role="tablist"
-            aria-label={i18n.t('git.diff.switchComparison')}
-            class="flex items-center gap-0.5 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]"
+          <span
+            data-testid="git-diff-commit-sha"
+            class="shrink-0 px-2.5 py-0.5 rounded-md text-[11px] font-medium font-mono tabular-nums leading-normal bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[var(--accent)]"
           >
-            <For each={['staged', 'unstaged'] as const}>
-              {(candidate) => (
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="git-diff-section"
-                  data-section={candidate}
-                  aria-selected={section() === candidate}
-                  class={`px-2.5 py-0.5 rounded-md text-[11px] font-medium transition-all duration-150 ${
-                    section() === candidate
-                      ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
-                  }`}
-                  onClick={() => setSection(candidate)}
-                >
-                  {i18n.t(
-                    candidate === 'staged' ? 'git.diff.section.staged' : 'git.diff.section.unstaged',
-                  )}
-                </button>
-              )}
-            </For>
-          </div>
+            {i18n.t('git.diff.range.commit', { sha: rev()!.slice(0, 7) })}
+          </span>
         </Show>
 
         <span
@@ -289,9 +322,13 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
         <div class="ml-auto min-w-0 truncate text-[10.5px] text-[var(--text-muted)] leading-normal hidden md:block">
           <Show
             when={parsed()?.oldPath && parsed()?.newPath && parsed()!.oldPath !== parsed()!.newPath}
-            fallback={i18n.t(
-              section() === 'staged' ? 'git.diff.range.staged' : 'git.diff.range.unstaged',
-            )}
+            fallback={
+              rev()
+                ? i18n.t('git.diff.range.commit', { sha: rev()!.slice(0, 7) })
+                : i18n.t(
+                    section() === 'staged' ? 'git.diff.range.staged' : 'git.diff.range.unstaged',
+                  )
+            }
           >
             {`${parsed()!.oldPath} → ${parsed()!.newPath}`}
           </Show>

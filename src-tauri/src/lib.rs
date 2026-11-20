@@ -13,7 +13,9 @@ use tauri::{Emitter, Manager, State};
 
 use crate::error::AppError;
 use crate::fs::{DirEntry, FileMeta, TextPayload, WriteTextResult};
-use crate::git::{GitBranchInfo, GitCommitResult, GitDiffFile, GitStashEntry, GitStatus};
+use crate::git::{
+    GitBranchInfo, GitCommitInfo, GitCommitResult, GitDiffFile, GitStashEntry, GitStatus,
+};
 use crate::project::{FsDelta, ProjectInfo, ProjectManager};
 
 #[tauri::command]
@@ -276,6 +278,28 @@ async fn git_stash_drop(
     git::stash_drop(&root, index).await
 }
 
+#[tauri::command]
+async fn git_log(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    limit: Option<u32>,
+    skip: Option<u32>,
+) -> Result<Vec<GitCommitInfo>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::log(&root, limit.unwrap_or(50), skip.unwrap_or(0)).await
+}
+
+#[tauri::command]
+async fn git_show(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    sha: String,
+    paths: Vec<String>,
+) -> Result<Vec<GitDiffFile>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::show(&root, &sha, &paths).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 任务栏跳转列表依赖 AUMID 在首个窗口创建前声明，必须最先执行。
@@ -355,6 +379,8 @@ pub fn run() {
             git_stash_list,
             git_stash_pop,
             git_stash_drop,
+            git_log,
+            git_show,
             ai_chat
         ])
         .run(tauri::generate_context!())

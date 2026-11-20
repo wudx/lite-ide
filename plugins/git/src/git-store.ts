@@ -2,15 +2,19 @@ import { createServiceKey } from '@lite-ide/kernel'
 import type {
   GitBackend,
   GitBranchInfo,
+  GitCommitInfo,
   GitFileStatus,
-  GitStatus,
   GitStashEntry,
+  GitStatus,
 } from '@lite-ide/protocol'
 import type { TranslateFn } from '@lite-ide/workbench'
 import { batch, createSignal, type Accessor } from 'solid-js'
 
 /** FS-delta events coalesce into one debounced status refresh. */
 const FS_REFRESH_DEBOUNCE_MS = 400
+
+/** Commits fetched per history page ("load more" extends by this size). */
+export const COMMITS_PAGE_SIZE = 50
 
 function isNoisyGitWatchPath(relPath: string): boolean {
   const normalized = relPath.replace(/\\/g, '/')
@@ -59,9 +63,20 @@ export interface GitStore {
   /** The project's stash stack, newest entry first. */
   readonly stashes: Accessor<GitStashEntry[]>
   readonly stashesLoading: Accessor<boolean>
+  /** Commit history on the current branch, newest first. */
+  readonly commits: Accessor<GitCommitInfo[]>
+  /** True until the first history page arrives. */
+  readonly commitsLoading: Accessor<boolean>
+  /** True while a "load more" page request is in flight. */
+  readonly commitsLoadingMore: Accessor<boolean>
+  /** History fetch failure, surfaced inside the history view. */
+  readonly commitsError: Accessor<string | null>
+  /** True when the last page was full, so more commits may exist. */
+  readonly hasMoreCommits: Accessor<boolean>
   /**
    * Last Git-panel row the user asked a diff for; the diff previewer reads it
-   * to pick the staged/unstaged comparison for the file it renders.
+   * to pick the staged/unstaged comparison for the file it renders. `sha`
+   * selects a single commit's comparison (history view).
    */
   readonly diffFocus: Accessor<GitDiffFocus | null>
   setCommitMessage(message: string): void
@@ -71,6 +86,12 @@ export interface GitStore {
   loadBranches(): Promise<void>
   /** Fetches the stash stack; called when the panel opens and after stash writes. */
   loadStashes(): Promise<void>
+  /** Loads the first history page unless one is already in memory. */
+  ensureCommitsLoaded(): Promise<void>
+  /** Reloads the first history page (after commit / branch switch). */
+  reloadCommits(): Promise<void>
+  /** Fetches the next history page and appends it. */
+  loadMoreCommits(): Promise<void>
   checkoutBranch(name: string, create?: boolean): Promise<boolean>
   handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }): void
   stage(relPaths: string[]): Promise<void>
@@ -100,6 +121,8 @@ export type GitDiffSection = 'staged' | 'unstaged'
 export interface GitDiffFocus {
   relPath: string
   section: GitDiffSection
+  /** Set when the preview compares the file inside one commit (history view). */
+  sha?: string
 }
 
 /** previewer.provider id contributed by this plugin for diff previews. */
@@ -157,6 +180,17 @@ export function statusLetter(entry: GitFileStatus, section: 'staged' | 'unstaged
   return entry.y === '?' ? 'U' : entry.y
 }
 
+/**
+ * Status letter for one file inside a commit, derived from its patch header
+ * (the history view shows patches, not porcelain status).
+ */
+export function commitFileLetter(patch: string): string {
+  if (patch.includes('new file mode')) return 'A'
+  if (patch.includes('deleted file mode')) return 'D'
+  if (/^rename from /m.test(patch)) return 'R'
+  return 'M'
+}
+
 export interface GitStoreOptions {
   readonly t?: TranslateFn
 }
@@ -180,11 +214,18 @@ export function createGitStore(
   const [branchesLoading, setBranchesLoading] = createSignal(false)
   const [stashes, setStashes] = createSignal<GitStashEntry[]>([])
   const [stashesLoading, setStashesLoading] = createSignal(false)
+  const [commits, setCommits] = createSignal<GitCommitInfo[]>([])
+  const [commitsLoading, setCommitsLoading] = createSignal(false)
+  const [commitsLoadingMore, setCommitsLoadingMore] = createSignal(false)
+  const [commitsError, setCommitsError] = createSignal<string | null>(null)
+  const [hasMoreCommits, setHasMoreCommits] = createSignal(false)
   const [diffFocus, setDiffFocus] = createSignal<GitDiffFocus | null>(null)
 
   let requestSeq = 0
   let branchRequestSeq = 0
   let stashRequestSeq = 0
+  let commitsRequestSeq = 0
+  let commitsLoaded = false
   let fsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let writeChain: Promise<void> = Promise.resolve()
   let statusInFlight: Promise<string | null> | null = null
@@ -323,6 +364,45 @@ export function createGitStore(
     }
   }
 
+  /**
+   * Fetches one history page. `next` appends to the list ("load more");
+   * otherwise the first page replaces whatever is held. The sequence guard
+   * keeps reloads from racing an in-flight "load more" append.
+   */
+  async function loadCommitsPage(next: boolean): Promise<void> {
+    const seq = ++commitsRequestSeq
+    if (next) {
+      setCommitsLoadingMore(true)
+    } else if (commits().length === 0) {
+      // First-page spinner only on the initial load; background reloads
+      // (commit / branch switch / fs delta) swap the list in place.
+      setCommitsLoading(true)
+    }
+    setCommitsError(null)
+    try {
+      const page = await backend.log(projectId, {
+        skip: next ? commits().length : 0,
+        limit: COMMITS_PAGE_SIZE,
+      })
+      if (seq !== commitsRequestSeq) return
+      batch(() => {
+        setCommits(next ? [...commits(), ...page] : page)
+        setHasMoreCommits(page.length >= COMMITS_PAGE_SIZE)
+      })
+      commitsLoaded = true
+    } catch (err) {
+      if (seq !== commitsRequestSeq) return
+      setCommitsError(err instanceof Error ? err.message : String(err))
+      // A failed first load must not leave a dangling "load more" button.
+      if (!next) setHasMoreCommits(false)
+    } finally {
+      if (seq === commitsRequestSeq) {
+        setCommitsLoading(false)
+        setCommitsLoadingMore(false)
+      }
+    }
+  }
+
   async function loadStashes(): Promise<void> {
     await fetchStashes(true)
   }
@@ -380,6 +460,11 @@ export function createGitStore(
     branchesLoading,
     stashes,
     stashesLoading,
+    commits,
+    commitsLoading,
+    commitsLoadingMore,
+    commitsError,
+    hasMoreCommits,
     diffFocus,
 
     setCommitMessage(message: string) {
@@ -397,6 +482,22 @@ export function createGitStore(
     loadBranches,
 
     loadStashes,
+
+    ensureCommitsLoaded(): Promise<void> {
+      if (commitsLoaded || commitsLoading()) return Promise.resolve()
+      return loadCommitsPage(false)
+    },
+
+    reloadCommits(): Promise<void> {
+      return loadCommitsPage(false)
+    },
+
+    loadMoreCommits(): Promise<void> {
+      if (!hasMoreCommits() || commitsLoading() || commitsLoadingMore()) {
+        return Promise.resolve()
+      }
+      return loadCommitsPage(true)
+    },
 
     async checkoutBranch(name: string, create = false): Promise<boolean> {
       const trimmed = name.trim()
@@ -420,6 +521,10 @@ export function createGitStore(
           fetchBranches(false),
         ])
         setError(checkoutError ?? statusError ?? branchError)
+        // A branch switch points HEAD at different history.
+        if (ok && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
         return ok
       })
     },
@@ -439,6 +544,11 @@ export function createGitStore(
       fsRefreshTimer = setTimeout(() => {
         fsRefreshTimer = null
         void refresh()
+        // External commits (e.g. made in a terminal) change the log too; a
+        // no-op when the history view was never opened this session.
+        if (commitsLoaded) {
+          void loadCommitsPage(false)
+        }
       }, FS_REFRESH_DEBOUNCE_MS)
     },
 
@@ -517,6 +627,10 @@ export function createGitStore(
             await backend.commit(projectId, message)
             setCommitMessage('')
             await refresh()
+            // The new commit lands on top of the current branch's history.
+            if (commitsLoaded) {
+              await loadCommitsPage(false)
+            }
             return true
           } catch (err) {
             setError(err instanceof Error ? err.message : String(err))

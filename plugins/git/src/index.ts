@@ -12,6 +12,7 @@ export {
   GitBackendKey,
   GitStoreKey,
   GIT_DIFF_PREVIEWER_ID,
+  commitFileLetter,
   hasStagedChanges,
   hasUnstagedChanges,
   isStageableEntry,
@@ -41,6 +42,7 @@ export {
   splitHunkRows,
 } from './diff-parse'
 export { GitView } from './GitView'
+export { GitHistory } from './GitHistory'
 export { GitStatusBarItem } from './GitStatusBarItem'
 
 export const gitPlugin: Plugin = {

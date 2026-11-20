@@ -1,6 +1,8 @@
-import { createMockGitBackend, type GitBackend, type GitStatus } from '@lite-ide/protocol'
+import { createMockGitBackend, type GitBackend, type GitCommitInfo, type GitStatus } from '@lite-ide/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  commitFileLetter,
+  COMMITS_PAGE_SIZE,
   createGitStore,
   hasStagedChanges,
   hasUnstagedChanges,
@@ -190,6 +192,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: async () => {},
       stashDrop: async () => {},
+      log: async () => [],
+      show: async () => [],
     }
 
     const store = createGitStore('custom', fakeBackend)
@@ -248,6 +252,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: async () => {},
       stashDrop: async () => {},
+      log: async () => [],
+      show: async () => [],
     }
 
     const store = createGitStore('slow', slowBackend)
@@ -328,6 +334,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: async () => {},
       stashDrop: async () => {},
+      log: async () => [],
+      show: async () => [],
     }
 
     const store = createGitStore('race', racyBackend)
@@ -407,6 +415,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: async () => {},
       stashDrop: async () => {},
+      log: async () => [],
+      show: async () => [],
     }
 
     const store = createGitStore('coalesce', slowBackend)
@@ -455,6 +465,8 @@ describe('git store (mock backend)', () => {
         stashList: async () => [],
         stashPop: async () => {},
         stashDrop: async () => {},
+        log: async () => [],
+        show: async () => [],
       }
 
       const store = createGitStore('delta-filter', backend)
@@ -527,6 +539,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: async () => {},
       stashDrop: async () => {},
+      log: async () => [],
+      show: async () => [],
     }
     const failingStore = createGitStore('fail-push', failingBackend)
     await failingStore.refresh()
@@ -642,6 +656,8 @@ describe('git store (mock backend)', () => {
       stashList: async () => [],
       stashPop: stashPopSpy,
       stashDrop: stashDropSpy,
+      log: async () => [],
+      show: async () => [],
     }
 
     const store = createGitStore('stash-project', fakeBackend)
@@ -660,5 +676,195 @@ describe('git store (mock backend)', () => {
 
     await store.stashDrop(1)
     expect(stashDropSpy).toHaveBeenCalledWith('stash-project', 1)
+  })
+})
+
+describe('git store history (mock backend)', () => {
+  it('loads the seeded commit history newest first', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    expect(store.commits()).toEqual([])
+    expect(store.hasMoreCommits()).toBe(false)
+
+    await store.ensureCommitsLoaded()
+
+    expect(store.commitsLoading()).toBe(false)
+    expect(store.commitsError()).toBeNull()
+    expect(store.hasMoreCommits()).toBe(false)
+    const commits = store.commits()
+    expect(commits.length).toBe(3)
+    expect(commits[0].subject).toBe('feat: 示例面板支持提交与推送流程')
+    expect(commits[2].subject).toBe('init: 初始化示例项目')
+    expect(commits.every((c) => c.sha.length === 40)).toBe(true)
+    expect(commits.every((c) => c.author === 'Demo User')).toBe(true)
+
+    // Repeated ensure does not re-fetch (commits stay the same objects).
+    await store.ensureCommitsLoaded()
+    expect(store.commits()).toBe(commits)
+  })
+
+  it('prepends freshly committed changes to the history', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+    await store.ensureCommitsLoaded()
+    expect(store.commits().length).toBe(3)
+
+    const staged = store
+      .status()!
+      .entries.filter(hasStagedChanges)
+      .map((e) => e.relPath)
+    await store.stage(staged)
+    store.setCommitMessage('feat: e2e style commit')
+    expect(await store.commit()).toBe(true)
+
+    // commit() awaits the history reload when one is already loaded.
+    const commits = store.commits()
+    expect(commits.length).toBe(4)
+    expect(commits[0].subject).toBe('feat: e2e style commit')
+    expect(commits[1].subject).toBe('feat: 示例面板支持提交与推送流程')
+  })
+
+  it('reports history errors for folders outside version control', async () => {
+    const store = createGitStore(PLAIN_PROJECT, createMockGitBackend())
+    await store.ensureCommitsLoaded()
+    expect(store.commits()).toEqual([])
+    expect(store.commitsError()).toContain('not a git repository')
+    expect(store.hasMoreCommits()).toBe(false)
+  })
+})
+
+describe('git store history pagination', () => {
+  /** Minimal backend serving `commits` through log(); other ops are no-ops. */
+  function logOnlyBackend(
+    commits: GitCommitInfo[],
+    calls: Array<number>,
+  ): GitBackend {
+    return {
+      status: async () => ({
+        repo: true,
+        branch: 'main',
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        entries: [],
+      }),
+      stage: async () => {},
+      unstage: async () => {},
+      discard: async () => {},
+      commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
+      branches: async () => [],
+      diff: async () => [],
+      checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
+      log: async (_projectId, options) => {
+        const skip = options?.skip ?? 0
+        calls.push(skip)
+        return commits.slice(skip, skip + (options?.limit ?? 50))
+      },
+      show: async () => [],
+    }
+  }
+
+  it('reloads a loaded history on fs deltas but not before it was opened', async () => {
+    vi.useFakeTimers()
+    try {
+      const calls: Array<number> = []
+      const store = createGitStore('delta-history', logOnlyBackend([commitAt(1)], calls))
+
+      await store.refresh()
+      store.handleFsDelta({ affectedPaths: ['src/App.tsx'], overflow: false })
+      await vi.advanceTimersByTimeAsync(500)
+      // History was never opened: fs deltas must not fetch log pages.
+      expect(calls).toEqual([])
+
+      await store.ensureCommitsLoaded()
+      expect(calls).toEqual([0])
+
+      store.handleFsDelta({ affectedPaths: ['src/App.tsx'], overflow: false })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(calls).toEqual([0, 0])
+      expect(store.commits()[0].subject).toBe('commit 1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  function commitAt(index: number): GitCommitInfo {
+    return {
+      sha: String(index).padStart(40, 'a'),
+      shortSha: String(index).padStart(7, 'a'),
+      subject: `commit ${index}`,
+      body: null,
+      author: 'Test',
+      email: 'test@example.com',
+      dateMs: 1_700_000_000 + index,
+    }
+  }
+
+  it('pages through a long history via loadMoreCommits', async () => {
+    const calls: Array<number> = []
+    const total = COMMITS_PAGE_SIZE + 70
+    const store = createGitStore('paged', logOnlyBackend(
+      Array.from({ length: total }, (_, i) => commitAt(total - 1 - i)),
+      calls,
+    ))
+
+    await store.ensureCommitsLoaded()
+    expect(calls).toEqual([0])
+    expect(store.commits().length).toBe(COMMITS_PAGE_SIZE)
+    expect(store.commits()[0].subject).toBe(`commit ${total - 1}`)
+    expect(store.hasMoreCommits()).toBe(true)
+
+    await store.loadMoreCommits()
+    expect(calls).toEqual([0, COMMITS_PAGE_SIZE])
+    expect(store.commits().length).toBe(2 * COMMITS_PAGE_SIZE)
+    expect(store.hasMoreCommits()).toBe(true)
+
+    await store.loadMoreCommits()
+    expect(calls).toEqual([0, COMMITS_PAGE_SIZE, 2 * COMMITS_PAGE_SIZE])
+    expect(store.commits().length).toBe(total)
+    // The tail page is short, so no further page exists.
+    expect(store.hasMoreCommits()).toBe(false)
+
+    await store.loadMoreCommits()
+    expect(calls).toEqual([0, COMMITS_PAGE_SIZE, 2 * COMMITS_PAGE_SIZE])
+    expect(store.commits().length).toBe(total)
+  })
+
+  it('reloadCommits replaces the list and reports backend failures', async () => {
+    let fail = false
+    const backend = logOnlyBackend([commitAt(1)], [])
+    backend.log = async () => {
+      if (fail) throw new Error('git log blew up')
+      return [commitAt(1)]
+    }
+    const store = createGitStore('relog', backend)
+
+    await store.ensureCommitsLoaded()
+    expect(store.commits()[0].subject).toBe('commit 1')
+
+    fail = true
+    await store.reloadCommits()
+    expect(store.commitsError()).toContain('git log blew up')
+    // The previously loaded list stays visible beside the error.
+    expect(store.commits().length).toBe(1)
+
+    fail = false
+    await store.reloadCommits()
+    expect(store.commitsError()).toBeNull()
+    expect(store.commits()[0].subject).toBe('commit 1')
+  })
+})
+
+describe('commitFileLetter', () => {
+  it('derives the status letter from the patch header', () => {
+    expect(commitFileLetter('diff --git a/x b/x\nnew file mode 100644\n')).toBe('A')
+    expect(commitFileLetter('diff --git a/x b/x\ndeleted file mode 100644\n')).toBe('D')
+    expect(commitFileLetter('diff --git a/x b/x\nrename from old.txt\nrename to new.txt\n')).toBe('R')
+    expect(commitFileLetter('diff --git a/x b/x\nindex 111..222\n--- a/x\n+++ b/x\n')).toBe('M')
   })
 })

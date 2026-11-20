@@ -92,6 +92,19 @@ pub struct GitStashEntry {
     pub date: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitInfo {
+    pub sha: String,
+    pub short_sha: String,
+    pub subject: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    pub author: String,
+    pub email: String,
+    pub date_ms: i64,
+}
+
 /// Runs `git` in the project root and returns stdout on success.
 async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
     let mut cmd = Command::new("git");
@@ -428,6 +441,154 @@ pub async fn branches(canonical_root: &Path) -> Result<Vec<GitBranchInfo>, AppEr
     )
     .await?;
     Ok(parse_branches(&stdout))
+}
+
+/// Recent commits on the current branch, newest first. A repository without
+/// any commits yet (unborn HEAD) resolves to an empty list rather than an
+/// error, mirroring `diff`'s staged handling.
+pub async fn log(
+    canonical_root: &Path,
+    limit: u32,
+    skip: u32,
+) -> Result<Vec<GitCommitInfo>, AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Ok(Vec::new());
+    }
+    let has_head = run_git(canonical_root, &["rev-parse", "-q", "--verify", "HEAD"])
+        .await
+        .is_ok();
+    if !has_head {
+        return Ok(Vec::new());
+    }
+    let limit_s = limit.to_string();
+    let skip_s = skip.to_string();
+    // \x1e separates records and \x1f separates fields so multi-line bodies
+    // and unusual author names survive verbatim (subject/body are plain text;
+    // everything else is single-line by construction).
+    let stdout = run_git(
+        canonical_root,
+        &[
+            "log",
+            "--date-order",
+            "--skip",
+            &skip_s,
+            "--max-count",
+            &limit_s,
+            "--format=%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e",
+        ],
+    )
+    .await?;
+    Ok(parse_log(&stdout))
+}
+
+/// Per-file patches introduced by one commit. Merge commits resolve to an
+/// empty result (`git show` renders combined diffs, which the UI does not
+/// parse), and a non-repository resolves to an empty result like `diff`.
+pub async fn show(
+    canonical_root: &Path,
+    sha: &str,
+    paths: &[String],
+) -> Result<Vec<GitDiffFile>, AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Ok(Vec::new());
+    }
+    validate_sha(sha)?;
+    validate_pathspecs(paths)?;
+
+    let base_args: Vec<&str> = vec![
+        "-c",
+        "core.quotepath=false",
+        "show",
+        "--no-color",
+        "--no-ext-diff",
+        "--format=",
+    ];
+    let joined = run_git_rev_batched(canonical_root, base_args, sha, paths).await?;
+    const MAX_DIFF_OUTPUT_CHARS: usize = 1024 * 1024;
+    let raw = truncate_at_char_boundary(&joined, MAX_DIFF_OUTPUT_CHARS);
+    Ok(parse_diff_files(raw))
+}
+
+/// Runs `<base_args...> <rev> -- <paths...>` in batches sized to stay well
+/// below Windows' 32 KiB `CreateProcess` command-line limit; an empty path
+/// list runs once without pathspecs.
+async fn run_git_rev_batched(
+    root: &Path,
+    base_args: Vec<&str>,
+    rev: &str,
+    paths: &[String],
+) -> Result<String, AppError> {
+    const MAX_BATCH_BYTES: usize = 16 * 1024;
+    let mut outputs: Vec<String> = Vec::new();
+    let mut idx = 0usize;
+    loop {
+        let start = idx;
+        let mut batch_bytes = 0usize;
+        while idx < paths.len() {
+            let next_len = paths[idx].len() + 3;
+            if idx > start && batch_bytes + next_len > MAX_BATCH_BYTES {
+                break;
+            }
+            batch_bytes += next_len;
+            idx += 1;
+        }
+        let mut args = base_args.clone();
+        args.push(rev);
+        args.push("--");
+        args.extend(paths[start..idx].iter().map(String::as_str));
+        outputs.push(run_git(root, &args).await?);
+        if idx >= paths.len() {
+            break;
+        }
+    }
+    Ok(outputs.join("\n"))
+}
+
+/// Validates a revision before handing it to `git show`, blocking
+/// option-injection prefixes and non-hex garbage (the UI only passes SHAs
+/// parsed out of `git log`, but the command boundary stays defensive).
+fn validate_sha(sha: &str) -> Result<&str, AppError> {
+    let ok = (4..=40).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit());
+    if !ok {
+        return Err(AppError::Git(format!("invalid revision: '{sha}'")));
+    }
+    Ok(sha)
+}
+
+/// Parses `git log --format=%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e`.
+///
+/// Records are separated by \x1e; fields by \x1f. The body is the final field
+/// and may span multiple lines (embedded newlines survive), so `splitn(7)`
+/// keeps everything after the sixth separator inside the body.
+pub fn parse_log(raw: &str) -> Vec<GitCommitInfo> {
+    let mut items = Vec::new();
+    for record in raw.split('\x1e') {
+        let record = record.trim_start_matches(['\n', '\r']);
+        if record.trim().is_empty() {
+            continue;
+        }
+        let mut fields = record.splitn(7, '\x1f');
+        let sha = fields.next().unwrap_or("").trim().to_string();
+        let short_sha = fields.next().unwrap_or("").trim().to_string();
+        let author = fields.next().unwrap_or("").trim().to_string();
+        let email = fields.next().unwrap_or("").trim().to_string();
+        let at = fields.next().unwrap_or("").trim();
+        let subject = fields.next().unwrap_or("").trim().to_string();
+        let body_raw = fields.next().unwrap_or("").trim().to_string();
+        if sha.is_empty() || subject.is_empty() {
+            continue;
+        }
+        items.push(GitCommitInfo {
+            date_ms: at.parse::<i64>().unwrap_or(0).saturating_mul(1000),
+            sha,
+            short_sha,
+            subject,
+            body: if body_raw.is_empty() { None } else { Some(body_raw) },
+            author,
+            email,
+        });
+    }
+    items
 }
 
 pub async fn checkout_branch(
@@ -877,6 +1038,50 @@ mod tests {
         let raw = "## main\0 M \u{4e2d}\u{6587} file \u{2013} name.md\0";
         let status = parse_status(raw);
         assert_eq!(entry(&status, 0), (' ', 'M', "\u{4e2d}\u{6587} file \u{2013} name.md"));
+    }
+
+    #[test]
+    fn parses_log_records_with_body_and_timestamps() {
+        let raw = concat!(
+            "11111112222222333333444444555555666666777\x1f1111111\x1fAlice A\x1f",
+            "alice@example.com\x1f1700000000\x1fsubject one\x1fbody line 1\nbody line 2\x1e",
+            "\n222222233333334444445555556666667777777\x1f2222222\x1fBob B\x1f",
+            "bob@example.com\x1f1700000060\x1fsubject two\x1f\x1e"
+        );
+        let items = parse_log(raw);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].sha, "11111112222222333333444444555555666666777");
+        assert_eq!(items[0].short_sha, "1111111");
+        assert_eq!(items[0].author, "Alice A");
+        assert_eq!(items[0].email, "alice@example.com");
+        assert_eq!(items[0].date_ms, 1_700_000_000_000);
+        assert_eq!(items[0].subject, "subject one");
+        assert_eq!(items[0].body.as_deref(), Some("body line 1\nbody line 2"));
+        // Empty body resolves to None; leading newline between records is skipped.
+        assert_eq!(items[1].subject, "subject two");
+        assert_eq!(items[1].body, None);
+        assert_eq!(items[1].date_ms, 1_700_000_060_000);
+    }
+
+    #[test]
+    fn parses_log_ignores_empty_records_and_garbage() {
+        assert!(parse_log("").is_empty());
+        assert!(parse_log("\x1e\n\x1e").is_empty());
+        // Record without sha or subject is dropped rather than misparsed.
+        let raw = "\x1f\x1f\x1f\x1fnot-a-sha\x1f\x1e";
+        assert!(parse_log(raw).is_empty());
+    }
+
+    #[test]
+    fn validates_revisions() {
+        assert!(validate_sha("1a2b3c4").is_ok());
+        assert!(validate_sha(&"a".repeat(40)).is_ok());
+        assert!(validate_sha("abc").is_err());
+        assert!(validate_sha(&"a".repeat(41)).is_err());
+        assert!(validate_sha("--exec=rm").is_err());
+        assert!(validate_sha("HEAD").is_err());
+        assert!(validate_sha("1a2b 3c4").is_err());
+        assert!(validate_sha("").is_err());
     }
 
     #[test]
@@ -1400,5 +1605,77 @@ mod repo_tests {
 
         push(&local_root).await.unwrap();
         assert_eq!(status(&local_root).await.unwrap().ahead, 0);
+    }
+
+    #[tokio::test]
+    async fn logs_and_shows_commits_with_pagination() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        commit(&root, "first subject").await.unwrap();
+        std::fs::write(root.join("b.txt"), "two\n").unwrap();
+        git_ok(&root, &["add", "--", "b.txt"]).await;
+        commit(&root, "second subject").await.unwrap();
+        std::fs::write(root.join("a.txt"), "one two").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        commit(&root, "third subject").await.unwrap();
+
+        // Newest first, with shas resolved from the real repository.
+        let all = log(&root, 50, 0).await.unwrap();
+        assert_eq!(
+            all.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(),
+            ["third subject", "second subject", "first subject"]
+        );
+        assert!(all.iter().all(|c| c.sha.len() == 40));
+        assert!(all.iter().all(|c| c.short_sha.len() >= 4));
+        assert_eq!(all[0].author, "Test");
+        assert_eq!(all[0].email, "test@example.com");
+        assert!(all[0].date_ms > 0);
+
+        // Pagination: skip/limit windows concatenate into the same list.
+        let page_one = log(&root, 2, 0).await.unwrap();
+        let page_two = log(&root, 50, 2).await.unwrap();
+        let combined: Vec<String> = page_one
+            .iter()
+            .chain(page_two.iter())
+            .map(|c| c.sha.clone())
+            .collect();
+        assert_eq!(combined, all.iter().map(|c| c.sha.clone()).collect::<Vec<_>>());
+
+        // Show renders per-file patches for one commit; the pathspec narrows.
+        let second = &all[1];
+        let files = show(&root, &second.sha, &[]).await.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].rel_path, "b.txt");
+        assert!(files[0].patch.contains("new file mode"));
+        assert!(files[0].patch.contains("+two"));
+
+        let filtered = show(&root, &second.sha, &["a.txt".into()]).await.unwrap();
+        assert!(filtered.is_empty());
+
+        // Invalid revisions are rejected before touching git.
+        assert!(show(&root, "--exec=rm", &[]).await.is_err());
+        assert!(show(&root, "HEAD", &[]).await.is_err());
+        assert!(show(&root, "zzzz", &[]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn log_and_show_resolve_empty_outside_repo_and_unborn_head() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("plain.txt"), "no git here").unwrap();
+        assert!(log(&root, 50, 0).await.unwrap().is_empty());
+        assert!(show(&root, "1a2b3c4d", &[]).await.unwrap().is_empty());
+
+        // Repository without commits: empty history, no error.
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q"]).await;
+        std::fs::write(root.join("a.txt"), "hello").unwrap();
+        assert!(log(&root, 50, 0).await.unwrap().is_empty());
     }
 }

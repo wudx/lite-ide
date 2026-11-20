@@ -2,9 +2,11 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   GitBackend,
   GitBranchInfo,
+  GitCommitInfo,
   GitCommitResult,
   GitDiffFile,
   GitDiffOptions,
+  GitLogOptions,
   GitStatus,
   GitStashEntry,
 } from './types'
@@ -55,6 +57,22 @@ export function createTauriGitBackend(): GitBackend {
       })
     },
 
+    async log(projectId: string, options?: GitLogOptions): Promise<GitCommitInfo[]> {
+      return invoke<GitCommitInfo[]>('git_log', {
+        projectId,
+        limit: options?.limit,
+        skip: options?.skip,
+      })
+    },
+
+    async show(projectId: string, sha: string, relPaths?: string[]): Promise<GitDiffFile[]> {
+      return invoke<GitDiffFile[]>('git_show', {
+        projectId,
+        sha,
+        paths: relPaths ?? [],
+      })
+    },
+
     async branches(projectId: string): Promise<GitBranchInfo[]> {
       return invoke<GitBranchInfo[]>('git_branches', { projectId })
     },
@@ -89,6 +107,18 @@ export function createTauriGitBackend(): GitBackend {
   }
 }
 
+interface MockGitCommit {
+  sha: string
+  shortSha: string
+  subject: string
+  body: string | null
+  author: string
+  email: string
+  dateMs: number
+  /** Per-file patches introduced by this commit. */
+  files: Array<{ relPath: string; patch: string }>
+}
+
 interface MockGitRepoState {
   repo: boolean
   branch: string
@@ -106,6 +136,8 @@ interface MockGitRepoState {
   /** Stash stack, newest entry first; each entry snapshots what it holds. */
   stashes: MockStash[]
   commitCount: number
+  /** Commit history on the current branch, newest first. */
+  log: MockGitCommit[]
 }
 
 /** Worktree state captured by a stash entry so pop can restore it. */
@@ -155,6 +187,106 @@ index 91c3e77..4e7f2a9 100644
  }
 `
 
+/**
+ * Seeded commit history for the demo repo. Timestamps are offset from the
+ * session start so relative dates in the history view stay plausible; e2e
+ * assertions target subjects and SHAs, not dates.
+ */
+const MOCK_DEMO_LOG: MockGitCommit[] = [
+  {
+    sha: '3f9d2c1a8b7e4f60a1b2c3d4e5f60718293a4b5c',
+    shortSha: '3f9d2c1',
+    subject: 'feat: 示例面板支持提交与推送流程',
+    body: null,
+    author: 'Demo User',
+    email: 'demo@lite-ide.dev',
+    dateMs: Date.now() - 26 * 60 * 60 * 1000,
+    files: [
+      {
+        relPath: 'src/App.tsx',
+        patch: [
+          'diff --git a/src/App.tsx b/src/App.tsx',
+          'index 11aa22b..33cc44d 100644',
+          '--- a/src/App.tsx',
+          '+++ b/src/App.tsx',
+          '@@ -1,3 +1,4 @@',
+          " import { createSignal } from 'solid-js'",
+          '',
+          ' export function Counter() {',
+          "+  // push flow demo",
+          '   const [count, setCount] = createSignal(0)',
+        ].join('\n'),
+      },
+    ],
+  },
+  {
+    sha: '8c1d4e2f0a9b3c6d5e7f8091a2b3c4d5e6f70819',
+    shortSha: '8c1d4e2',
+    subject: 'docs: 完善预览器与主题插件说明',
+    body: null,
+    author: 'Demo User',
+    email: 'demo@lite-ide.dev',
+    dateMs: Date.now() - 3 * 24 * 60 * 60 * 1000,
+    files: [
+      {
+        relPath: 'README.md',
+        patch: [
+          'diff --git a/README.md b/README.md',
+          'index 55ee66f..77aa88b 100644',
+          '--- a/README.md',
+          '+++ b/README.md',
+          '@@ -1,3 +1,4 @@',
+          ' # LiteIDE Demo',
+          '',
+          '-轻量桌面 IDE 示例。',
+          '+轻量桌面 IDE 示例，内置代码、Markdown、图片预览。',
+          '+支持 Nord 主题插件。',
+        ].join('\n'),
+      },
+    ],
+  },
+  {
+    sha: '1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d',
+    shortSha: '1a2b3c4',
+    subject: 'init: 初始化示例项目',
+    body: '搭建项目骨架：README 与示例计数器组件。',
+    author: 'Demo User',
+    email: 'demo@lite-ide.dev',
+    dateMs: Date.now() - 7 * 24 * 60 * 60 * 1000,
+    files: [
+      {
+        relPath: 'README.md',
+        patch: [
+          'diff --git a/README.md b/README.md',
+          'new file mode 100644',
+          'index 0000000..55ee66f',
+          '--- /dev/null',
+          '+++ b/README.md',
+          '@@ -0,0 +1,3 @@',
+          '+# LiteIDE Demo',
+          '+',
+          '+轻量桌面 IDE 示例。',
+        ].join('\n'),
+      },
+      {
+        relPath: 'src/App.tsx',
+        patch: [
+          'diff --git a/src/App.tsx b/src/App.tsx',
+          'new file mode 100644',
+          'index 0000000..11aa22b',
+          '--- /dev/null',
+          '+++ b/src/App.tsx',
+          '@@ -0,0 +1,4 @@',
+          "+import { createSignal } from 'solid-js'",
+          '+',
+          '+export function Counter() {',
+          '+  const [count, setCount] = createSignal(0)',
+        ].join('\n'),
+      },
+    ],
+  },
+]
+
 const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
   // The demo repo starts with one staged and one unstaged modification so the
   // panel (and its e2e coverage) has meaningful state in browser mock mode.
@@ -200,8 +332,10 @@ const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
         },
       },
     ],
+    log: MOCK_DEMO_LOG,
   },
 }
+
 
 function defaultMockState(): MockGitRepoState {
   return {
@@ -216,6 +350,7 @@ function defaultMockState(): MockGitRepoState {
     unstagedDiffs: new Map(),
     stashes: [],
     commitCount: 0,
+    log: [],
   }
 }
 
@@ -286,6 +421,11 @@ export function createMockGitBackend(): GitBackend {
           unstagedDiffs: [...stash.snapshot.unstagedDiffs],
           untracked: [...stash.snapshot.untracked],
         },
+      }))
+      // Clone seeded history: instances must not share (and mutate) one array.
+      state.log = (MOCK_REPO_INITIAL[projectId]?.log ?? []).map((c) => ({
+        ...c,
+        files: c.files.map((f) => ({ ...f })),
       }))
       repoStates.set(projectId, state)
     }
@@ -434,6 +574,12 @@ export function createMockGitBackend(): GitBackend {
       if (state.staged.size === 0) {
         throw new Error('nothing to commit, working tree clean')
       }
+      // Capture the committed patches for the history view, mirroring what
+      // `diff()` would have rendered for these staged entries.
+      const files = [...state.staged].map(([relPath, letter]) => ({
+        relPath,
+        patch: state.stagedDiffs.get(relPath) ?? buildMockPatch(relPath, letter),
+      }))
       state.staged.clear()
       // Committed changes no longer differ from HEAD.
       state.stagedDiffs.clear()
@@ -442,6 +588,16 @@ export function createMockGitBackend(): GitBackend {
       const sha = (0x1000000 + state.commitCount * 0x9e3779)
         .toString(16)
         .padStart(7, '0')
+      state.log.unshift({
+        sha: sha.padEnd(40, '0'),
+        shortSha: sha,
+        subject: message,
+        body: null,
+        author: 'Demo User',
+        email: 'demo@lite-ide.dev',
+        dateMs: Date.now(),
+        files,
+      })
       return { sha }
     },
 
@@ -486,6 +642,35 @@ export function createMockGitBackend(): GitBackend {
         })
       }
       return files
+    },
+
+    async log(projectId: string, options?: GitLogOptions): Promise<GitCommitInfo[]> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const limit = options?.limit ?? 50
+      const skip = options?.skip ?? 0
+      return state.log
+        .slice(skip, skip + limit)
+        .map((c) => ({
+          sha: c.sha,
+          shortSha: c.shortSha,
+          subject: c.subject,
+          body: c.body,
+          author: c.author,
+          email: c.email,
+          dateMs: c.dateMs,
+        }))
+    },
+
+    async show(projectId: string, sha: string, relPaths?: string[]): Promise<GitDiffFile[]> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const commit = state.log.find((c) => c.sha === sha)
+      if (!commit) throw new Error(`fatal: bad revision '${sha}'`)
+      const wanted = relPaths && relPaths.length > 0 ? new Set(relPaths) : null
+      return commit.files
+        .filter((f) => !wanted || wanted.has(f.relPath))
+        .map((f) => ({ relPath: f.relPath, patch: f.patch }))
     },
 
     async branches(projectId: string): Promise<GitBranchInfo[]> {
