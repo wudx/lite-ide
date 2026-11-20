@@ -43,6 +43,12 @@ export interface ContributionMap {
     order: number
     component: Component<{ scope?: ProjectScope }>
   }
+  'settings.section': {
+    id: string
+    title: string
+    order: number
+    component: Component<{ kernel: AppKernel }>
+  }
 }
 
 export type ContributionPoint = keyof ContributionMap

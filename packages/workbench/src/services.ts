@@ -8,7 +8,7 @@ import {
 } from '@lite-ide/kernel'
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
 import { createSignal, type Accessor } from 'solid-js'
-import { ConfirmDialogKey, createConfirmDialogService } from './dialogs'
+import { ConfirmDialogKey, createConfirmDialogService, SettingsDialogKey, createSettingsDialogService } from './dialogs'
 import {
   createEditorBufferService,
   EditorBufferKey,
@@ -59,7 +59,21 @@ export interface LayoutStateService {
   setSidebarWidth(width: number): void
 }
 
-export type ThemeMode = 'dark' | 'light'
+export type ThemeMode = 'dark' | 'light' | 'solarized-light'
+
+export interface ThemeDefinition {
+  id: ThemeMode
+  label: string
+}
+
+/** Single source of truth for available themes: UI listing + storage whitelist + toggle cycling. */
+export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
+  { id: 'dark', label: '深色' },
+  { id: 'light', label: '浅色' },
+  { id: 'solarized-light', label: 'Solarized Light' },
+]
+
+const THEME_MODE_IDS = new Set<string>(THEME_DEFINITIONS.map((t) => t.id))
 
 export interface ThemeStateService {
   readonly theme: Accessor<ThemeMode>
@@ -386,7 +400,8 @@ export const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
 function readStoredTheme(): ThemeMode {
   if (typeof localStorage === 'undefined') return 'dark'
   try {
-    return localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark'
+    const stored = localStorage.getItem(THEME_STORAGE_KEY)
+    return stored && THEME_MODE_IDS.has(stored) ? (stored as ThemeMode) : 'dark'
   } catch {
     return 'dark'
   }
@@ -397,7 +412,7 @@ function applyThemeToDom(mode: ThemeMode) {
   const root = document.documentElement
   root.dataset.theme = mode
   root.classList.toggle('dark', mode === 'dark')
-  root.classList.toggle('light', mode === 'light')
+  root.classList.toggle('light', mode !== 'dark')
 }
 
 export function createThemeState(): ThemeStateService {
@@ -421,7 +436,10 @@ export function createThemeState(): ThemeStateService {
     theme,
     setTheme,
     toggleTheme() {
-      setTheme(theme() === 'dark' ? 'light' : 'dark')
+      const idx = THEME_DEFINITIONS.findIndex((t) => t.id === theme())
+      // THEME_DEFINITIONS is non-empty, so modular advance always lands on a theme.
+      const next = THEME_DEFINITIONS[(idx + 1) % THEME_DEFINITIONS.length]
+      setTheme(next.id)
     },
   }
 }
@@ -484,5 +502,6 @@ export function createWorkbenchKernel(
   kernel.provide(LayoutStateKey, createLayoutState())
   kernel.provide(ThemeStateKey, createThemeState())
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
+  kernel.provide(SettingsDialogKey, createSettingsDialogService())
   return kernel
 }

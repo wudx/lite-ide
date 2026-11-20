@@ -98,6 +98,30 @@ const ideLightHighlightStyle = HighlightStyle.define([
   { tag: [tags.invalid], color: '#dc2626' },
 ])
 
+// Canonical Solarized Light syntax palette: green keywords, cyan strings,
+// blue functions, yellow types, base01/base00 plain text on base3 parchment.
+const ideSolarizedHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#859900' },
+  { tag: [tags.modifier, tags.self], color: '#b58900' },
+  { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#073642' },
+  { tag: [tags.variableName], color: '#586e75' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#268bd2' },
+  { tag: [tags.propertyName, tags.attributeName], color: '#268bd2' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#b58900' },
+  { tag: [tags.tagName], color: '#268bd2' },
+  { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit], color: '#d33682' },
+  { tag: [tags.string, tags.docString, tags.attributeValue], color: '#2aa198' },
+  { tag: [tags.regexp, tags.escape, tags.special(tags.string)], color: '#cb4b16' },
+  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: '#657b83' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], color: '#93a1a1', fontStyle: 'italic' },
+  { tag: [tags.meta, tags.annotation, tags.processingInstruction], color: '#6c71c4' },
+  { tag: [tags.heading], color: '#268bd2', fontWeight: '600' },
+  { tag: [tags.strong], fontWeight: '600', color: '#073642' },
+  { tag: [tags.emphasis], fontStyle: 'italic' },
+  { tag: [tags.link, tags.url], color: '#268bd2', textDecoration: 'underline' },
+  { tag: [tags.invalid], color: '#dc322f' },
+])
+
 const baseThemeStyles = {
   '&': {
     height: '100%',
@@ -154,7 +178,10 @@ const ideDarkTheme = EditorView.theme(
     '.cm-activeLine': {
       backgroundColor: 'rgba(255, 255, 255, 0.026)',
     },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    // Match the specificity of CodeMirror's default focused-selection rule
+    // (&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground)
+    // or the default colors win — same applies to the light/solarized themes below.
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection': {
       backgroundColor: 'rgba(122, 162, 255, 0.22)',
     },
     '.cm-selectionMatch': {
@@ -207,7 +234,7 @@ const ideLightTheme = EditorView.theme(
     '.cm-activeLine': {
       backgroundColor: 'rgba(15, 23, 42, 0.032)',
     },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection': {
       backgroundColor: 'rgba(59, 111, 246, 0.16)',
     },
     '.cm-selectionMatch': {
@@ -246,18 +273,79 @@ const ideLightTheme = EditorView.theme(
   { dark: false },
 )
 
+const ideSolarizedTheme = EditorView.theme(
+  {
+    ...baseThemeStyles,
+    '.cm-gutters': {
+      ...baseThemeStyles['.cm-gutters'],
+      color: '#93a1a1',
+    },
+    '.cm-activeLineGutter': {
+      ...baseThemeStyles['.cm-activeLineGutter'],
+      color: '#073642',
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'rgba(7, 54, 66, 0.055)',
+    },
+    // VSCode editor.selectionBackground in Solarized Light is solid base2 #EEE8D5.
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: 'rgba(238, 232, 213, 0.9)',
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: 'rgba(238, 232, 213, 0.9)',
+      borderRadius: '3px',
+    },
+    '&.cm-focused .cm-matchingBracket': {
+      backgroundColor: 'rgba(38, 139, 210, 0.15)',
+      outline: '1px solid rgba(38, 139, 210, 0.38)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch': {
+      backgroundColor: 'rgba(181, 137, 0, 0.20)',
+      outline: '1px solid rgba(181, 137, 0, 0.38)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'rgba(38, 139, 210, 0.26)',
+      outline: '1px solid rgba(38, 139, 210, 0.52)',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: 'rgba(7, 54, 66, 0.06)',
+      border: '1px solid rgba(7, 54, 66, 0.14)',
+      color: 'var(--text-secondary)',
+      borderRadius: '5px',
+      padding: '0 6px',
+      margin: '0 4px',
+    },
+    '.cm-tooltip': {
+      backgroundColor: '#fdf6e3',
+      border: '1px solid var(--border-strong)',
+      borderRadius: '8px',
+      boxShadow: '0 10px 28px rgba(7, 54, 66, 0.14)',
+    },
+  },
+  { dark: false },
+)
+
 function getEditorThemeExtension(mode: ThemeMode): Extension {
-  return mode === 'light'
-    ? [
-        syntaxHighlighting(ideLightHighlightStyle),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        ideLightTheme,
-      ]
-    : [
-        syntaxHighlighting(ideDarkHighlightStyle),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        ideDarkTheme,
-      ]
+  const themeByMode: Record<ThemeMode, Extension> = {
+    dark: [
+      syntaxHighlighting(ideDarkHighlightStyle),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ideDarkTheme,
+    ],
+    light: [
+      syntaxHighlighting(ideLightHighlightStyle),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ideLightTheme,
+    ],
+    'solarized-light': [
+      syntaxHighlighting(ideSolarizedHighlightStyle),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ideSolarizedTheme,
+    ],
+  }
+  return themeByMode[mode]
 }
 
 function computeCursorPosition(state: EditorState): { line: number; column: number } {

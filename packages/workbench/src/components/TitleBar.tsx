@@ -4,16 +4,15 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import Copy from 'lucide-solid/icons/copy'
 import FolderGit2 from 'lucide-solid/icons/folder-git-2'
 import Minus from 'lucide-solid/icons/minus'
-import Moon from 'lucide-solid/icons/moon'
 import PanelLeft from 'lucide-solid/icons/panel-left'
 import Plus from 'lucide-solid/icons/plus'
+import Settings from 'lucide-solid/icons/settings'
 import Square from 'lucide-solid/icons/square'
-import Sun from 'lucide-solid/icons/sun'
 import X from 'lucide-solid/icons/x'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { requestCloseProject } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
-import { LayoutStateKey, ThemeStateKey } from '../services'
+import { LayoutStateKey } from '../services'
 
 export interface TitleBarProps {
   kernel: AppKernel
@@ -28,7 +27,6 @@ export function TitleBar(props: TitleBarProps) {
   const isMac = isMacOsPlatform()
   const isTauri = isTauriEnvironment()
   const layout = props.kernel.tryGet(LayoutStateKey)
-  const themeState = props.kernel.tryGet(ThemeStateKey)
   const [maximized, setMaximized] = createSignal(false)
 
   onMount(() => {
@@ -182,26 +180,17 @@ export function TitleBar(props: TitleBarProps) {
       {/* Draggable empty spacer */}
       <div class="flex-1 min-w-[32px] h-full" data-tauri-drag-region />
 
-      {/* Right actions: Theme switcher */}
+      {/* Right actions: Settings */}
       <div class="flex items-center gap-1 pr-1 shrink-0">
-        <Show when={themeState}>
-          {(ts) => {
-            const isDark = () => ts().theme() === 'dark'
-            return (
-              <button
-                type="button"
-                aria-label={isDark() ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-                title={isDark() ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-                class="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95"
-                onClick={() => void props.kernel.executeCommand('workbench.toggleTheme')}
-              >
-                <Show when={isDark()} fallback={<Moon class="w-3.5 h-3.5" />}>
-                  <Sun class="w-3.5 h-3.5" />
-                </Show>
-              </button>
-            )
-          }}
-        </Show>
+        <button
+          type="button"
+          aria-label="Open Settings"
+          title="设置 (Ctrl+,)"
+          class="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95"
+          onClick={() => void props.kernel.executeCommand('workbench.openSettings')}
+        >
+          <Settings class="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Native-style window controls on Windows / Linux */}

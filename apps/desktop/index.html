@@ -7,12 +7,14 @@
     <title>LiteIDE</title>
     <script>
       ;(function () {
+        // Keep in sync with THEME_DEFINITIONS in packages/workbench/src/services.ts.
+        var modes = ['dark', 'light', 'solarized-light']
         try {
           var t = localStorage.getItem('lite-ide.theme.v1')
-          var mode = t === 'light' ? 'light' : 'dark'
+          var mode = modes.indexOf(t) >= 0 ? t : 'dark'
           document.documentElement.dataset.theme = mode
           document.documentElement.classList.toggle('dark', mode === 'dark')
-          document.documentElement.classList.toggle('light', mode === 'light')
+          document.documentElement.classList.toggle('light', mode !== 'dark')
         } catch (e) {
           document.documentElement.dataset.theme = 'dark'
           document.documentElement.classList.add('dark')

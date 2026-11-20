@@ -68,3 +68,25 @@ export function createConfirmDialogService(): ConfirmDialogService {
     },
   }
 }
+
+export interface SettingsDialogService {
+  readonly isOpen: Accessor<boolean>
+  open(): void
+  close(): void
+}
+
+export const SettingsDialogKey = createServiceKey<SettingsDialogService>('workbench.settingsDialog')
+
+export function createSettingsDialogService(): SettingsDialogService {
+  const [isOpen, setIsOpen] = createSignal(false)
+
+  return {
+    isOpen,
+    open() {
+      setIsOpen(true)
+    },
+    close() {
+      setIsOpen(false)
+    },
+  }
+}

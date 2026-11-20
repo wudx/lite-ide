@@ -9,9 +9,12 @@ import {
   requestSaveFile,
 } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
+import { SettingsDialogKey } from '../dialogs'
 import { LayoutStateKey, ProjectSelectionKey, ThemeStateKey } from '../services'
+import { AppearanceSettings } from './AppearanceSettings'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProjectWorkspace } from './ProjectWorkspace'
+import { SettingsDialog } from './SettingsDialog'
 import { StatusBar } from './StatusBar'
 import { TitleBar } from './TitleBar'
 import { WelcomeEmpty } from './WelcomeEmpty'
@@ -107,13 +110,36 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }),
     )
 
+    // No built-in entry point (the settings dialog covers theme picking);
+    // kept as public command surface for plugins and automation.
     disposables.add(
       props.kernel.contribute('command', {
         id: 'workbench.toggleTheme',
-        title: 'Toggle Color Theme',
+        title: 'Cycle Color Theme',
         run: ({ kernel }) => {
           kernel.tryGet(ThemeStateKey)?.toggleTheme()
         },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.openSettings',
+        title: 'Open Settings',
+        shortcut: 'Mod+,',
+        run: ({ kernel }) => {
+          kernel.tryGet(SettingsDialogKey)?.open()
+        },
+      }),
+    )
+
+    // Built-in appearance section: the workbench ships its own theme picker.
+    disposables.add(
+      props.kernel.contribute('settings.section', {
+        id: 'workbench.appearance',
+        title: '外观',
+        order: 0,
+        component: AppearanceSettings,
       }),
     )
 
@@ -196,6 +222,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           void props.kernel.executeCommand('workbench.toggleSidebar')
           return
         }
+        if (key === ',' && !e.shiftKey) {
+          e.preventDefault()
+          void props.kernel.executeCommand('workbench.openSettings')
+          return
+        }
       }
       if (e.ctrlKey && !e.altKey && e.key === 'Tab') {
         e.preventDefault()
@@ -264,7 +295,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   })
 
   return (
-    <div class="h-screen w-screen overflow-hidden flex flex-col workbench-shell-bg text-[var(--text-primary)] ring-1 ring-inset ring-[var(--window-ring)]">
+    <div class="h-screen w-screen overflow-hidden flex flex-col workbench-shell-bg text-[var(--text-primary)]">
       <TitleBar kernel={props.kernel} />
 
       <main class="flex-1 min-h-0 flex relative px-2 pb-1.5 pt-0.5">
@@ -288,6 +319,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
       <StatusBar kernel={props.kernel} />
       <ConfirmDialog kernel={props.kernel} />
+      <SettingsDialog kernel={props.kernel} />
     </div>
   )
 }
