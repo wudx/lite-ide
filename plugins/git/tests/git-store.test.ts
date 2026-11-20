@@ -345,4 +345,106 @@ describe('git store (mock backend)', () => {
     expect(await store.commit()).toBe(false)
     expect(store.error()).toBe('没有已暂存的更改可供提交。')
   })
+
+  it('coalesces concurrent refresh calls and avoids duplicate ensureLoaded fetches', async () => {
+    let statusCalls = 0
+    let activeCalls = 0
+    let maxConcurrent = 0
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+
+    const slowBackend: GitBackend = {
+      status: async () => {
+        statusCalls += 1
+        activeCalls += 1
+        maxConcurrent = Math.max(maxConcurrent, activeCalls)
+        if (statusCalls === 1) {
+          await firstGate
+        }
+        activeCalls -= 1
+        return {
+          repo: true,
+          branch: 'main',
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+          entries: [],
+        }
+      },
+      stage: async () => {},
+      unstage: async () => {},
+      discard: async () => {},
+      commit: async () => ({ sha: 'abc1234' }),
+      branches: async () => [],
+      checkoutBranch: async () => {},
+    }
+
+    const store = createGitStore('coalesce', slowBackend)
+    const p1 = store.refresh()
+    const pEnsure = store.ensureLoaded()
+    // Multiple refreshes while one is in flight coalesce into a single follow-up.
+    const p2 = store.refresh()
+    const p3 = store.refresh()
+
+    releaseFirst()
+    await Promise.all([p1, pEnsure, p2, p3])
+    expect(maxConcurrent).toBe(1)
+    expect(statusCalls).toBe(2)
+
+    // Subsequent ensureLoaded does not re-fetch once loaded.
+    await store.ensureLoaded()
+    expect(statusCalls).toBe(2)
+  })
+
+  it('ignores noisy fsmonitor/lock/target deltas when scheduling refreshes', async () => {
+    vi.useFakeTimers()
+    try {
+      let statusCalls = 0
+      const backend: GitBackend = {
+        status: async () => {
+          statusCalls += 1
+          return {
+            repo: true,
+            branch: 'main',
+            upstream: null,
+            ahead: 0,
+            behind: 0,
+            entries: [],
+          }
+        },
+        stage: async () => {},
+        unstage: async () => {},
+        discard: async () => {},
+        commit: async () => ({ sha: 'abc1234' }),
+        branches: async () => [],
+        checkoutBranch: async () => {},
+      }
+
+      const store = createGitStore('delta-filter', backend)
+      await store.refresh()
+      expect(statusCalls).toBe(1)
+
+      store.handleFsDelta({
+        affectedPaths: [
+          '.git/fsmonitor--daemon/cookies/123',
+          '.git/index.lock',
+          'src-tauri/target/release/lite-ide.exe',
+        ],
+        overflow: false,
+      })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(statusCalls).toBe(1)
+
+      store.handleFsDelta({
+        affectedPaths: ['src/App.tsx'],
+        overflow: false,
+      })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(statusCalls).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

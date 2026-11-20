@@ -80,8 +80,18 @@ async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    // Avoid refreshing the index (and touching mtimes) for read-only commands.
+    // Avoid refreshing the index (and touching mtimes) for read-only commands,
+    // and never block waiting on interactive terminal prompts.
     cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    #[cfg(windows)]
+    {
+        // Prevent Windows GUI builds (`windows_subsystem = "windows"`) from
+        // spawning a flashing console window (and exhausting conhost handles)
+        // on every child `git` invocation.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     let output = cmd.output().await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {

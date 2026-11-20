@@ -6,6 +6,34 @@ import { batch, createSignal, type Accessor } from 'solid-js'
 /** FS-delta events coalesce into one debounced status refresh. */
 const FS_REFRESH_DEBOUNCE_MS = 400
 
+function isNoisyGitWatchPath(relPath: string): boolean {
+  const normalized = relPath.replace(/\\/g, '/')
+  if (normalized === '.git') return true
+  if (normalized.startsWith('.git/')) {
+    const gitRel = normalized.slice(5)
+    return (
+      gitRel === 'objects' ||
+      gitRel.startsWith('objects/') ||
+      gitRel === 'logs' ||
+      gitRel.startsWith('logs/') ||
+      gitRel === 'fsmonitor--daemon' ||
+      gitRel.startsWith('fsmonitor--daemon/') ||
+      gitRel === 'ugit' ||
+      gitRel.startsWith('ugit/') ||
+      gitRel.endsWith('.lock')
+    )
+  }
+  return normalized
+    .split('/')
+    .some(
+      (seg) =>
+        seg === 'node_modules' ||
+        seg === 'target' ||
+        seg === '.vite' ||
+        seg === '.pnpm-store',
+    )
+}
+
 export interface GitStore {
   readonly status: Accessor<GitStatus | null>
   /** True until the first status response arrives. */
@@ -21,6 +49,7 @@ export interface GitStore {
   readonly branchesLoading: Accessor<boolean>
   setCommitMessage(message: string): void
   refresh(): Promise<void>
+  ensureLoaded(): Promise<void>
   loadBranches(): Promise<void>
   checkoutBranch(name: string, create?: boolean): Promise<boolean>
   handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }): void
@@ -112,6 +141,10 @@ export function createGitStore(
   let branchRequestSeq = 0
   let fsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let writeChain: Promise<void> = Promise.resolve()
+  let statusInFlight: Promise<string | null> | null = null
+  let queuedStatusSyncError: boolean | null = null
+  let lastStatusResult: string | null = null
+  let hasStartedStatusLoad = false
 
   function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
     setPendingWrites((n) => n + 1)
@@ -126,37 +159,72 @@ export function createGitStore(
   }
 
   async function fetchStatus(syncError: boolean): Promise<string | null> {
-    const seq = ++requestSeq
-    const firstLoad = status() === null
-    if (firstLoad) {
-      setLoading(true)
-    } else {
-      setRefreshing(true)
+    hasStartedStatusLoad = true
+    while (statusInFlight) {
+      queuedStatusSyncError =
+        queuedStatusSyncError === null ? syncError : queuedStatusSyncError || syncError
+      await statusInFlight
+      if (queuedStatusSyncError === null) {
+        return statusInFlight ? await statusInFlight : lastStatusResult
+      }
+      syncError = queuedStatusSyncError
+      queuedStatusSyncError = null
     }
 
+    const run = (async (): Promise<string | null> => {
+      const seq = ++requestSeq
+      const firstLoad = status() === null
+      if (firstLoad) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+
+      try {
+        const next = await backend.status(projectId)
+        if (seq !== requestSeq) return null
+        batch(() => {
+          setStatus(next)
+          if (syncError) setError(null)
+        })
+        lastStatusResult = null
+        return null
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (seq !== requestSeq) return null
+        if (syncError) setError(message)
+        lastStatusResult = message
+        return message
+      } finally {
+        if (seq === requestSeq) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    })()
+
+    statusInFlight = run
     try {
-      const next = await backend.status(projectId)
-      if (seq !== requestSeq) return null
-      batch(() => {
-        setStatus(next)
-        if (syncError) setError(null)
-      })
-      return null
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (seq !== requestSeq) return null
-      if (syncError) setError(message)
-      return message
+      return await run
     } finally {
-      if (seq === requestSeq) {
-        setLoading(false)
-        setRefreshing(false)
+      if (statusInFlight === run) {
+        statusInFlight = null
       }
     }
   }
 
   async function refresh(): Promise<void> {
     await fetchStatus(true)
+  }
+
+  async function ensureLoaded(): Promise<void> {
+    if (hasStartedStatusLoad) {
+      if (statusInFlight) {
+        await statusInFlight
+      }
+      return
+    }
+    await refresh()
   }
 
   async function fetchBranches(syncError: boolean): Promise<string | null> {
@@ -220,6 +288,8 @@ export function createGitStore(
 
     refresh,
 
+    ensureLoaded,
+
     loadBranches,
 
     async checkoutBranch(name: string, create = false): Promise<boolean> {
@@ -248,10 +318,17 @@ export function createGitStore(
       })
     },
 
-    handleFsDelta(_delta: { affectedPaths: string[]; overflow: boolean }) {
+    handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }) {
       // Only track repositories; a folder outside version control never
       // changes its "not a repository" verdict from filesystem noise.
       if (!status()?.repo) return
+      if (
+        !delta.overflow &&
+        delta.affectedPaths.length > 0 &&
+        delta.affectedPaths.every(isNoisyGitWatchPath)
+      ) {
+        return
+      }
       if (fsRefreshTimer) clearTimeout(fsRefreshTimer)
       fsRefreshTimer = setTimeout(() => {
         fsRefreshTimer = null

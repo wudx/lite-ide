@@ -454,9 +454,9 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const BRANCH_LISTBOX_ID = 'git-branch-listbox'
   const branchOptionId = (index: number) => `git-branch-option-${index}`
 
-  // Kick off the initial status load when the view first mounts.
+  // Kick off the initial status load if the plugin lifecycle has not started it yet.
   onMount(() => {
-    void store.refresh()
+    void store.ensureLoaded()
   })
 
   onCleanup(() => {

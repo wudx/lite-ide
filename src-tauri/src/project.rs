@@ -348,13 +348,26 @@ pub fn normalize_rel_path(path: &Path) -> String {
 }
 
 fn is_noisy_watch_path(rel: &str) -> bool {
-    rel == ".git/index.lock"
-        || rel.starts_with(".git/objects/")
-        || rel.starts_with(".git/logs/")
-        || rel.starts_with("node_modules/")
-        || rel.starts_with("target/")
-        || rel.starts_with(".vite/")
-        || rel.starts_with(".pnpm-store/")
+    if rel == ".git" {
+        return true;
+    }
+    if let Some(git_rel) = rel.strip_prefix(".git/") {
+        return git_rel == "objects"
+            || git_rel.starts_with("objects/")
+            || git_rel == "logs"
+            || git_rel.starts_with("logs/")
+            || git_rel == "fsmonitor--daemon"
+            || git_rel.starts_with("fsmonitor--daemon/")
+            || git_rel == "ugit"
+            || git_rel.starts_with("ugit/")
+            || git_rel.ends_with(".lock");
+    }
+    rel.split('/').any(|seg| {
+        matches!(
+            seg,
+            "node_modules" | "target" | ".vite" | ".pnpm-store"
+        )
+    })
 }
 
 #[cfg(test)]
@@ -452,5 +465,25 @@ mod tests {
             resolve_safe_new_path(&root, "missing/file.ts"),
             Err(AppError::Io(_))
         ));
+    }
+
+    #[test]
+    fn filters_noisy_git_and_nested_build_watch_paths() {
+        assert!(is_noisy_watch_path(".git"));
+        assert!(is_noisy_watch_path(".git/index.lock"));
+        assert!(is_noisy_watch_path(".git/refs/heads/master.lock"));
+        assert!(is_noisy_watch_path(".git/objects/ab/cdef"));
+        assert!(is_noisy_watch_path(".git/logs/HEAD"));
+        assert!(is_noisy_watch_path(".git/fsmonitor--daemon/cookies/123"));
+        assert!(is_noisy_watch_path(".git/ugit/cache"));
+        assert!(is_noisy_watch_path("node_modules/pkg/index.js"));
+        assert!(is_noisy_watch_path("apps/desktop/node_modules/.vite/deps"));
+        assert!(is_noisy_watch_path("src-tauri/target/release/lite-ide.exe"));
+
+        // Meaningful git state and workspace files must continue emitting deltas.
+        assert!(!is_noisy_watch_path(".git/index"));
+        assert!(!is_noisy_watch_path(".git/HEAD"));
+        assert!(!is_noisy_watch_path(".git/refs/heads/master"));
+        assert!(!is_noisy_watch_path("src/main.rs"));
     }
 }
