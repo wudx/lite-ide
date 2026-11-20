@@ -130,3 +130,64 @@ test('diff preview survives stage/unstage round-trips and coexists with the code
 
   expect(consoleErrors).toEqual([])
 })
+
+test('diff preview toggles between unified and side-by-side views and persists', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+
+  const unstagedRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
+  await unstagedRow.click()
+  const diffView = page.getByTestId('git-diff-view')
+  await expect(diffView).toBeVisible()
+
+  // Default is the unified view.
+  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'unified')
+  await expect(diffView.locator('[data-git-diff-kind="del"]')).toHaveCount(2)
+
+  // Switch to the side-by-side view: old lines pair with new lines.
+  await diffView.locator('[data-testid="git-diff-view-toggle"][data-view="split"]').click()
+  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'split')
+  const splitRows = diffView.locator('[data-git-diff-split-row]')
+  await expect(splitRows).toHaveCount(10)
+  // The hunk pairs the two removed lines with the two added lines in order:
+  // pairs 0-4 are context, pair 5 pairs the button lines, pair 6 the texts.
+  await expect(splitRows.nth(5).locator('[data-git-diff-side="left"]')).toContainText(
+    '<button onClick=',
+  )
+  await expect(splitRows.nth(5).locator('[data-git-diff-side="right"]')).toContainText('counter-btn')
+  await expect(splitRows.nth(6).locator('[data-git-diff-side="left"]')).toContainText(
+    'Active Count: {count()}',
+  )
+  await expect(splitRows.nth(6).locator('[data-git-diff-side="right"]')).toContainText(
+    'Clicked {count()} times',
+  )
+  // Left gutters show old numbers, right gutters show new numbers.
+  await expect(splitRows.nth(5).locator('[data-git-diff-side="left"] span').first()).toHaveText('6')
+  await expect(splitRows.nth(5).locator('[data-git-diff-side="right"] span').first()).toHaveText('6')
+
+  await page.screenshot({ path: testInfo.outputPath('git-diff-split.png'), animations: 'disabled' })
+
+  // The preference persists across reload; reopening the diff restores split view.
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`).click()
+  await expect(page.getByTestId('git-diff-view')).toHaveAttribute('data-git-diff-view-mode', 'split')
+
+  // Switching back to unified restores the inline rows.
+  await page.getByTestId('git-diff-view').locator('[data-testid="git-diff-view-toggle"][data-view="unified"]').click()
+  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'unified')
+  await expect(diffView.locator('[data-git-diff-kind="del"]')).toHaveCount(2)
+  await expect(diffView.locator('[data-git-diff-split-row]')).toHaveCount(0)
+
+  expect(consoleErrors).toEqual([])
+})

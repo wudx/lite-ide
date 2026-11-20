@@ -2,11 +2,22 @@ import type { PreviewProps } from '@lite-ide/kernel'
 import { getI18n, WorkspaceBackendKey } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch, type Component } from 'solid-js'
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  Show,
+  Switch,
+  type Component,
+} from 'solid-js'
 import {
   diffStats,
   parseUnifiedDiff,
+  splitHunkRows,
   synthesizeAddedDiff,
+  type DiffRow,
 } from './diff-parse'
 import {
   GitBackendKey,
@@ -28,6 +39,60 @@ const MARKER_TONE: Record<string, string> = {
   add: 'text-[var(--diff-add-text)]',
   del: 'text-[var(--diff-del-text)]',
   context: 'text-transparent',
+}
+
+type DiffViewMode = 'unified' | 'split'
+
+const DIFF_VIEW_MODE_STORAGE_KEY = 'lite-ide:git:diff-view-mode'
+
+function readStoredDiffViewMode(): DiffViewMode {
+  if (typeof localStorage === 'undefined') return 'unified'
+  try {
+    return localStorage.getItem(DIFF_VIEW_MODE_STORAGE_KEY) === 'split' ? 'split' : 'unified'
+  } catch {
+    return 'unified'
+  }
+}
+
+function writeStoredDiffViewMode(mode: DiffViewMode): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(DIFF_VIEW_MODE_STORAGE_KEY, mode)
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+/** One column of a side-by-side row (old line left, new line right). */
+function SplitCell(props: { row: DiffRow | null; side: 'left' | 'right'; bordered: boolean }) {
+  return (
+    <div
+      data-git-diff-side={props.side}
+      class={`w-1/2 min-w-0 flex items-stretch ${props.bordered ? 'border-r border-[var(--border-subtle)]' : ''} ${
+        props.row ? (ROW_BG[props.row.kind] ?? '') : 'bg-[var(--bg-subtle)]'
+      }`}
+    >
+      <Show when={props.row} fallback={<span class="flex-1" />}>
+        {(row) => (
+          <>
+            <span class="w-9 shrink-0 pr-1.5 text-right text-[var(--text-muted)]/60 tabular-nums select-none">
+              {props.side === 'left' ? (row().oldNo ?? '') : (row().newNo ?? '')}
+            </span>
+            <span
+              class={`w-3.5 shrink-0 text-center select-none ${MARKER_TONE[row().kind] ?? ''}`}
+            >
+              {ROW_MARKERS[row().kind] ?? ''}
+            </span>
+            {/* Side-by-side halves wrap long lines: synchronized horizontal
+                scrolling between independent halves is not worth the wiring. */}
+            <span class="flex-1 whitespace-pre-wrap break-all pr-2 text-[var(--text-primary)]">
+              {row().text}
+            </span>
+          </>
+        )}
+      </Show>
+    </div>
+  )
 }
 
 /**
@@ -59,12 +124,18 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   }
 
   const [section, setSection] = createSignal<GitDiffSection>(initialSection())
+  const [viewMode, setViewMode] = createSignal<DiffViewMode>(readStoredDiffViewMode())
   const [rawDiff, setRawDiff] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(true)
   const [refreshTick, setRefreshTick] = createSignal(0)
   let fetchSeq = 0
   let trackedPath: string | null = null
+
+  function toggleViewMode(mode: DiffViewMode) {
+    setViewMode(mode)
+    writeStoredDiffViewMode(mode)
+  }
 
   // Follow later Git-panel clicks on the same file so re-opening a row swaps
   // the comparison without remounting the tab.
@@ -165,6 +236,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     <div
       data-testid="git-diff-view"
       data-git-diff-section={section()}
+      data-git-diff-view-mode={viewMode()}
       class="flex-1 min-h-0 flex flex-col"
     >
       {/* Toolbar: comparison switcher, +/− stats, refresh */}
@@ -225,6 +297,33 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
           </Show>
         </div>
 
+        <div
+          role="tablist"
+          aria-label={i18n.t('git.diff.switchView')}
+          class="shrink-0 flex items-center gap-0.5 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]"
+        >
+          <For each={['unified', 'split'] as const}>
+            {(mode) => (
+              <button
+                type="button"
+                role="tab"
+                data-testid="git-diff-view-toggle"
+                data-view={mode}
+                aria-selected={viewMode() === mode}
+                title={i18n.t(mode === 'unified' ? 'git.diff.view.unified' : 'git.diff.view.split')}
+                class={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-all duration-150 ${
+                  viewMode() === mode
+                    ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
+                }`}
+                onClick={() => toggleViewMode(mode)}
+              >
+                {i18n.t(mode === 'unified' ? 'git.diff.view.unified' : 'git.diff.view.split')}
+              </button>
+            )}
+          </For>
+        </div>
+
         <button
           type="button"
           aria-label={i18n.t('git.diff.refresh')}
@@ -283,43 +382,71 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
               </Match>
               <Match when={parsed()}>
                 {(diff) => (
-                  <div
-                    data-testid="git-diff-rows"
-                    class="flex-1 min-h-0 overflow-auto font-mono text-[11px] leading-[18px] select-none"
-                  >
-                    <For each={diff().hunks}>
-                      {(hunk) => (
-                        <>
-                          <div class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]">
-                            {hunk.header}
-                          </div>
-                          <For each={hunk.rows}>
-                            {(row) => (
-                              <div
-                                data-git-diff-kind={row.kind}
-                                class={`flex items-stretch ${ROW_BG[row.kind] ?? ''}`}
-                              >
-                                <span class="w-10 shrink-0 pr-1.5 text-right text-[var(--text-muted)]/60 tabular-nums select-none">
-                                  {row.oldNo ?? ''}
-                                </span>
-                                <span class="w-10 shrink-0 pr-1.5 text-right text-[var(--text-muted)]/60 tabular-nums select-none border-r border-[var(--border-subtle)] mr-1.5">
-                                  {row.newNo ?? ''}
-                                </span>
-                                <span
-                                  class={`w-3.5 shrink-0 text-center select-none ${MARKER_TONE[row.kind] ?? ''}`}
-                                >
-                                  {ROW_MARKERS[row.kind] ?? ''}
-                                </span>
-                                <span class="flex-1 whitespace-pre pr-4 text-[var(--text-primary)]">
-                                  {row.text}
-                                </span>
+                  <Switch>
+                    <Match when={viewMode() === 'split'}>
+                      <div
+                        data-testid="git-diff-rows"
+                        class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden font-mono text-[11px] leading-[18px] select-none"
+                      >
+                        <For each={diff().hunks}>
+                          {(hunk) => (
+                            <>
+                              <div class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]">
+                                {hunk.header}
                               </div>
-                            )}
-                          </For>
-                        </>
-                      )}
-                    </For>
-                  </div>
+                              <For each={splitHunkRows(hunk.rows)}>
+                                {(pair) => (
+                                  <div class="flex items-stretch" data-git-diff-split-row="">
+                                    <SplitCell row={pair.left} side="left" bordered={true} />
+                                    <SplitCell row={pair.right} side="right" bordered={false} />
+                                  </div>
+                                )}
+                              </For>
+                            </>
+                          )}
+                        </For>
+                      </div>
+                    </Match>
+                    <Match when={true}>
+                      <div
+                        data-testid="git-diff-rows"
+                        class="flex-1 min-h-0 overflow-auto font-mono text-[11px] leading-[18px] select-none"
+                      >
+                        <For each={diff().hunks}>
+                          {(hunk) => (
+                            <>
+                              <div class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]">
+                                {hunk.header}
+                              </div>
+                              <For each={hunk.rows}>
+                                {(row) => (
+                                  <div
+                                    data-git-diff-kind={row.kind}
+                                    class={`flex items-stretch ${ROW_BG[row.kind] ?? ''}`}
+                                  >
+                                    <span class="w-10 shrink-0 pr-1.5 text-right text-[var(--text-muted)]/60 tabular-nums select-none">
+                                      {row.oldNo ?? ''}
+                                    </span>
+                                    <span class="w-10 shrink-0 pr-1.5 text-right text-[var(--text-muted)]/60 tabular-nums select-none border-r border-[var(--border-subtle)] mr-1.5">
+                                      {row.newNo ?? ''}
+                                    </span>
+                                    <span
+                                      class={`w-3.5 shrink-0 text-center select-none ${MARKER_TONE[row.kind] ?? ''}`}
+                                    >
+                                      {ROW_MARKERS[row.kind] ?? ''}
+                                    </span>
+                                    <span class="flex-1 whitespace-pre pr-4 text-[var(--text-primary)]">
+                                      {row.text}
+                                    </span>
+                                  </div>
+                                )}
+                              </For>
+                            </>
+                          )}
+                        </For>
+                      </div>
+                    </Match>
+                  </Switch>
                 )}
               </Match>
             </Switch>

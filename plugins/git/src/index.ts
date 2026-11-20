@@ -37,6 +37,8 @@ export {
   type DiffHunk,
   type DiffRow,
   type ParsedDiff,
+  type SplitRow,
+  splitHunkRows,
 } from './diff-parse'
 export { GitView } from './GitView'
 export { GitStatusBarItem } from './GitStatusBarItem'

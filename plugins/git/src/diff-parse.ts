@@ -142,6 +142,46 @@ export function diffStats(parsed: ParsedDiff): DiffStats {
   return { additions, deletions }
 }
 
+/** One side-by-side row: old line on the left, new line on the right. */
+export interface SplitRow {
+  /** Deletion or context (old line); null when the right side has more rows. */
+  left: DiffRow | null
+  /** Addition or context (new line); null when the left side has more rows. */
+  right: DiffRow | null
+}
+
+/**
+ * Pairs unified rows into side-by-side rows: each run of deletions is zipped
+ * with the following run of additions, context rows appear on both sides, and
+ * whichever side runs longer keeps null-filled rows (blank cell in the view).
+ */
+export function splitHunkRows(rows: readonly DiffRow[]): SplitRow[] {
+  const paired: SplitRow[] = []
+  let i = 0
+  while (i < rows.length) {
+    if (rows[i].kind === 'context') {
+      paired.push({ left: rows[i], right: rows[i] })
+      i += 1
+      continue
+    }
+    const dels: DiffRow[] = []
+    const adds: DiffRow[] = []
+    while (i < rows.length && rows[i].kind === 'del') {
+      dels.push(rows[i])
+      i += 1
+    }
+    while (i < rows.length && rows[i].kind === 'add') {
+      adds.push(rows[i])
+      i += 1
+    }
+    const span = Math.max(dels.length, adds.length)
+    for (let k = 0; k < span; k += 1) {
+      paired.push({ left: dels[k] ?? null, right: adds[k] ?? null })
+    }
+  }
+  return paired
+}
+
 /**
  * Builds the added-file unified diff shown for untracked paths, which plain
  * `git diff` never reports. The payload goes through the same parser as real

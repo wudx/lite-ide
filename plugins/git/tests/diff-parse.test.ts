@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   diffStats,
   parseUnifiedDiff,
+  splitHunkRows,
   synthesizeAddedDiff,
 } from '../src/diff-parse'
 
@@ -164,5 +165,61 @@ describe('synthesizeAddedDiff', () => {
     const noTrailing = parseUnifiedDiff(synthesizeAddedDiff('a.txt', 'one\ntwo'))
     expect(diffStats(noTrailing)).toEqual({ additions: 2, deletions: 0 })
     expect(noTrailing.hunks[0].rows.at(-1)?.text).toBe('two')
+  })
+})
+
+describe('splitHunkRows', () => {
+  function rowsOf(raw: string) {
+    return parseUnifiedDiff(raw).hunks[0].rows
+  }
+
+  it('zips equal del/add runs and puts context on both sides', () => {
+    const rows = rowsOf(
+      ['--- a/x', '+++ b/x', '@@ -1,4 +1,4 @@', ' keep', '-old', '+new', ' tail'].join('\n'),
+    )
+    expect(splitHunkRows(rows)).toEqual([
+      { left: rows[0], right: rows[0] },
+      { left: rows[1], right: rows[2] },
+      { left: rows[3], right: rows[3] },
+    ])
+  })
+
+  it('null-fills the shorter side when runs are unbalanced', () => {
+    const rows = rowsOf(
+      ['--- a/x', '+++ b/x', '@@ -1,4 +1,3 @@', '-a', '-b', '-c', '+only', ' ctx'].join('\n'),
+    )
+    const paired = splitHunkRows(rows)
+    expect(paired).toHaveLength(4)
+    expect(paired[0]).toEqual({ left: rows[0], right: rows[3] })
+    expect(paired[1]).toEqual({ left: rows[1], right: null })
+    expect(paired[2]).toEqual({ left: rows[2], right: null })
+    expect(paired[3].left).toBe(rows[4])
+    expect(paired[3].right).toBe(rows[4])
+  })
+
+  it('handles additions without deletions and multiple runs', () => {
+    const rows = rowsOf(
+      ['--- a/x', '+++ b/x', '@@ -1,3 +1,5 @@', ' a', '+n1', '+n2', '+n3', ' b', '-z', '+y'].join(
+        '\n',
+      ),
+    )
+    const paired = splitHunkRows(rows)
+    expect(paired.map((p) => [p.left?.kind ?? null, p.right?.kind ?? null])).toEqual([
+      ['context', 'context'],
+      [null, 'add'],
+      [null, 'add'],
+      [null, 'add'],
+      ['context', 'context'],
+      ['del', 'add'],
+    ])
+  })
+
+  it('pairs every hunk of a full parsed diff', () => {
+    const parsed = parseUnifiedDiff(
+      ['--- a/x', '+++ b/x', '@@ -1,2 +1,2 @@', '-a', '+b', '@@ -10,1 +10,1 @@', ' c'].join('\n'),
+    )
+    const allPaired = parsed.hunks.flatMap((hunk) => splitHunkRows(hunk.rows))
+    expect(allPaired).toHaveLength(2)
+    expect(allPaired[0]).toEqual({ left: parsed.hunks[0].rows[0], right: parsed.hunks[0].rows[1] })
   })
 })
