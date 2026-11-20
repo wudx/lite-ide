@@ -111,6 +111,7 @@ export interface GitBackend {
     trackedPaths: string[],
   ): Promise<void>
   commit(projectId: string, message: string): Promise<GitCommitResult>
+  push(projectId: string): Promise<void>
   branches(projectId: string): Promise<GitBranchInfo[]>
   checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
 }

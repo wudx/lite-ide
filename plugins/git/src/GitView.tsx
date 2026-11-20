@@ -18,6 +18,7 @@ import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
 import RefreshCw from 'lucide-solid/icons/refresh-cw'
 import Undo2 from 'lucide-solid/icons/undo-2'
+import Upload from 'lucide-solid/icons/upload'
 import {
   createEffect,
   createMemo,
@@ -732,6 +733,28 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
               <RefreshCw
                 class={`w-3.5 h-3.5 ${store.refreshing() || manualSpinning() ? 'animate-spin' : ''}`}
               />
+            </button>
+            <button
+              type="button"
+              data-testid="git-push-button"
+              aria-label={i18n.t('git.push')}
+              title={i18n.t('git.push')}
+              disabled={
+                !repo() ||
+                !store.status()?.branch ||
+                store.pushing() ||
+                store.committing() ||
+                store.mutating()
+              }
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-all duration-150 active:scale-95"
+              onClick={() => void store.push()}
+            >
+              <Show
+                when={!store.pushing()}
+                fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
+              >
+                <Upload class="w-3.5 h-3.5" />
+              </Show>
             </button>
           </div>
         </div>

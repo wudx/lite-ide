@@ -35,6 +35,10 @@ export function createTauriGitBackend(): GitBackend {
       return invoke<GitCommitResult>('git_commit', { projectId, message })
     },
 
+    async push(projectId: string): Promise<void> {
+      await invoke<void>('git_push', { projectId })
+    },
+
     async branches(projectId: string): Promise<GitBranchInfo[]> {
       return invoke<GitBranchInfo[]>('git_branches', { projectId })
     },
@@ -208,6 +212,29 @@ export function createMockGitBackend(): GitBackend {
         .toString(16)
         .padStart(7, '0')
       return { sha }
+    },
+
+    async push(projectId: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      if (!state.branch) throw new Error('HEAD is detached')
+      if (!state.upstream) {
+        const remoteName = `origin/${state.branch}`
+        state.upstream = remoteName
+        const localBranch = state.branches.find((b) => !b.remote && b.name === state.branch)
+        if (localBranch) {
+          localBranch.upstream = remoteName
+        }
+        if (!state.branches.some((b) => b.remote && b.name === remoteName)) {
+          state.branches.push({
+            name: remoteName,
+            current: false,
+            remote: true,
+            upstream: null,
+          })
+        }
+      }
+      state.commitCount = 0
     },
 
     async branches(projectId: string): Promise<GitBranchInfo[]> {

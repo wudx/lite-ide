@@ -181,6 +181,7 @@ describe('git store (mock backend)', () => {
       unstage: unstageSpy,
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
       branches: async () => [],
       checkoutBranch: async () => {},
     }
@@ -232,6 +233,7 @@ describe('git store (mock backend)', () => {
       },
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
       branches: async () => [],
       checkoutBranch: async () => {},
     }
@@ -294,6 +296,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
       branches: async () => {
         callCount += 1
         if (callCount === 1) {
@@ -377,6 +380,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
       branches: async () => [],
       checkoutBranch: async () => {},
     }
@@ -418,6 +422,7 @@ describe('git store (mock backend)', () => {
         unstage: async () => {},
         discard: async () => {},
         commit: async () => ({ sha: 'abc1234' }),
+        push: async () => {},
         branches: async () => [],
         checkoutBranch: async () => {},
       }
@@ -446,5 +451,51 @@ describe('git store (mock backend)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('pushes committed changes, clears ahead count, and surfaces push errors', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+
+    store.setCommitMessage('feat: demo commit')
+    expect(await store.commit()).toBe(true)
+    expect(store.status()?.ahead).toBe(1)
+
+    expect(await store.push()).toBe(true)
+    expect(store.error()).toBeNull()
+    expect(store.pushing()).toBe(false)
+    expect(store.status()?.ahead).toBe(0)
+
+    // Pushing on a new local branch without an upstream sets one up in mock mode.
+    expect(await store.checkoutBranch('feat/new-push', true)).toBe(true)
+    expect(store.status()?.upstream).toBeNull()
+    expect(await store.push()).toBe(true)
+    expect(store.status()?.upstream).toBe('origin/feat/new-push')
+
+    // Backend push failures surface as store errors and reset pushing state.
+    const failingBackend: GitBackend = {
+      status: async () => ({
+        repo: true,
+        branch: 'main',
+        upstream: 'origin/main',
+        ahead: 1,
+        behind: 0,
+        entries: [],
+      }),
+      stage: async () => {},
+      unstage: async () => {},
+      discard: async () => {},
+      commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {
+        throw new Error('git push: failed to push some refs')
+      },
+      branches: async () => [],
+      checkoutBranch: async () => {},
+    }
+    const failingStore = createGitStore('fail-push', failingBackend)
+    await failingStore.refresh()
+    expect(await failingStore.push()).toBe(false)
+    expect(failingStore.pushing()).toBe(false)
+    expect(failingStore.error()).toContain('failed to push some refs')
   })
 })

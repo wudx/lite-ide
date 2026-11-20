@@ -271,6 +271,49 @@ pub async fn commit(canonical_root: &Path, message: &str) -> Result<GitCommitRes
     Ok(GitCommitResult { sha })
 }
 
+pub async fn push(canonical_root: &Path) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let has_upstream = run_git(
+        canonical_root,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .await
+    .is_ok();
+    if has_upstream {
+        run_git(canonical_root, &["push"]).await?;
+        return Ok(());
+    }
+
+    if let Ok(branch_raw) = run_git(canonical_root, &["symbolic-ref", "--short", "-q", "HEAD"]).await
+    {
+        let branch = branch_raw.trim();
+        if !branch.is_empty() {
+            let remotes_raw = run_git(canonical_root, &["remote"]).await?;
+            let remotes: Vec<&str> = remotes_raw
+                .lines()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            let target_remote = if remotes.contains(&"origin") {
+                Some("origin")
+            } else if remotes.len() == 1 {
+                Some(remotes[0])
+            } else {
+                None
+            };
+            if let Some(remote) = target_remote {
+                run_git(canonical_root, &["push", "-u", remote, branch]).await?;
+                return Ok(());
+            }
+        }
+    }
+
+    run_git(canonical_root, &["push"]).await?;
+    Ok(())
+}
+
 pub async fn branches(canonical_root: &Path) -> Result<Vec<GitBranchInfo>, AppError> {
     if !is_repo_root(canonical_root).await? {
         return Ok(Vec::new());
@@ -784,5 +827,40 @@ mod repo_tests {
         assert!(!st.repo);
         assert_eq!(st.branch, None);
         assert!(st.entries.is_empty());
+        assert!(push(&root).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn pushes_commits_and_sets_upstream_on_new_branch() {
+        let remote_dir = tempdir().unwrap();
+        let remote_root = std::fs::canonicalize(remote_dir.path()).unwrap();
+        git_ok(&remote_root, &["init", "-q", "--bare"]).await;
+
+        let local_dir = tempdir().unwrap();
+        let local_root = std::fs::canonicalize(local_dir.path()).unwrap();
+        git_ok(&local_root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&local_root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&local_root, &["config", "user.name", "Test"]).await;
+        let remote_url = remote_dir.path().to_string_lossy().into_owned();
+        git_ok(&local_root, &["remote", "add", "origin", &remote_url]).await;
+
+        std::fs::write(local_root.join("a.txt"), "one").unwrap();
+        git_ok(&local_root, &["add", "--", "a.txt"]).await;
+        commit(&local_root, "init").await.unwrap();
+
+        // First push without upstream auto-sets origin/main.
+        push(&local_root).await.unwrap();
+        let st = status(&local_root).await.unwrap();
+        assert_eq!(st.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(st.ahead, 0);
+
+        // Subsequent commit & push updates the existing upstream.
+        std::fs::write(local_root.join("a.txt"), "two").unwrap();
+        git_ok(&local_root, &["add", "--", "a.txt"]).await;
+        commit(&local_root, "second").await.unwrap();
+        assert_eq!(status(&local_root).await.unwrap().ahead, 1);
+
+        push(&local_root).await.unwrap();
+        assert_eq!(status(&local_root).await.unwrap().ahead, 0);
     }
 }

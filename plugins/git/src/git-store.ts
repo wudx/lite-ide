@@ -43,7 +43,8 @@ export interface GitStore {
   readonly error: Accessor<string | null>
   readonly commitMessage: Accessor<string>
   readonly committing: Accessor<boolean>
-  /** True while a stage/unstage/discard/checkout write action is in flight. */
+  readonly pushing: Accessor<boolean>
+  /** True while a stage/unstage/discard/checkout/push write action is in flight. */
   readonly mutating: Accessor<boolean>
   readonly branches: Accessor<GitBranchInfo[]>
   readonly branchesLoading: Accessor<boolean>
@@ -60,6 +61,8 @@ export interface GitStore {
   discard(untrackedPaths: string[], trackedPaths: string[]): Promise<void>
   /** Resolves false (with `error` set) when the commit was rejected. */
   commit(): Promise<boolean>
+  /** Resolves false (with `error` set) when the push failed. */
+  push(): Promise<boolean>
   /** Cancels pending debounced refreshes; called when the project scope closes. */
   dispose(): void
 }
@@ -132,6 +135,7 @@ export function createGitStore(
   const [error, setError] = createSignal<string | null>(null)
   const [commitMessage, setCommitMessage] = createSignal('')
   const [committing, setCommitting] = createSignal(false)
+  const [pushing, setPushing] = createSignal(false)
   const [pendingWrites, setPendingWrites] = createSignal(0)
   const mutating = () => pendingWrites() > 0
   const [branches, setBranches] = createSignal<GitBranchInfo[]>([])
@@ -278,6 +282,7 @@ export function createGitStore(
     error,
     commitMessage,
     committing,
+    pushing,
     mutating,
     branches,
     branchesLoading,
@@ -402,6 +407,30 @@ export function createGitStore(
         })
       } finally {
         setCommitting(false)
+      }
+    },
+
+    async push(): Promise<boolean> {
+      if (pushing() || committing() || mutating()) return false
+
+      setError(null)
+      setPushing(true)
+      try {
+        return await enqueueWrite(async () => {
+          let pushError: string | null = null
+          let ok = false
+          try {
+            await backend.push(projectId)
+            ok = true
+          } catch (err) {
+            pushError = err instanceof Error ? err.message : String(err)
+          }
+          const statusError = await fetchStatus(false)
+          setError(pushError ?? statusError)
+          return ok
+        })
+      } finally {
+        setPushing(false)
       }
     },
 

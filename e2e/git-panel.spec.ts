@@ -50,6 +50,14 @@ test('git panel lists changes, stages files and commits in mock mode', async ({
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('↑1')
   await page.screenshot({ path: testInfo.outputPath('git-panel-committed.png'), animations: 'disabled' })
 
+  // Push the commit via the button to the right of Refresh and verify ahead indicator clears.
+  const pushBtn = page.getByTestId('git-push-button')
+  await expect(pushBtn).toBeVisible()
+  await expect(pushBtn).toBeEnabled()
+  await pushBtn.click()
+  await expect(page.getByTestId('statusbar-git-branch')).not.toContainText('↑1')
+  await expect(page.getByTestId('git-branch-switcher')).not.toContainText('↑1')
+
   expect(consoleErrors).toEqual([])
 })
 
@@ -70,6 +78,7 @@ test('git panel shows the not-a-repository state for mock projects without git',
   await page.getByRole('button', { name: 'Git', exact: true }).click()
 
   await expect(page.getByText('当前目录不是 Git 仓库')).toBeVisible()
+  await expect(page.getByTestId('git-push-button')).toBeDisabled()
   // The statusbar branch indicator hides for non-repositories.
   await expect(page.getByTestId('statusbar-git-branch')).toHaveCount(0)
 
