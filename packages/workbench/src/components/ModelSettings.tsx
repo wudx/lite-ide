@@ -97,7 +97,7 @@ export function ModelSettings(props: ModelSettingsProps) {
                       {preset.label}
                     </div>
                     <div class="text-[10.5px] text-[var(--text-muted)] truncate font-mono leading-normal">
-                      {preset.defaultModel}
+                      {ai.providers()[preset.id]?.model || preset.defaultModel}
                     </div>
                   </div>
                   <Show when={isActive()}>
