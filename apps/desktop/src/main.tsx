@@ -1,4 +1,6 @@
 import './styles/app.css'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { explorerPlugin } from '@lite-ide/plugin-explorer'
 import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { previewFallbackPlugin } from '@lite-ide/plugin-preview-fallback'
@@ -91,4 +93,46 @@ if (rootEl) {
   render(() => <WorkbenchShell kernel={kernel} />, rootEl)
 }
 
-void restoreSession()
+// 桌面端：接住来自任务栏跳转列表 / 二次启动转发的「打开该项目文件夹」请求。
+// 冷启动参数在监听器就绪后、会话恢复完成前暂存，恢复完再打开以获得焦点。
+let launchProjectPath: string | null = null
+
+function openExternalProject(path: string): Promise<void> {
+  return kernel.openProject(path).then(
+    () => undefined,
+    () => undefined,
+  )
+}
+
+async function wireExternalProjectRequests(): Promise<void> {
+  if (backend.kind !== 'tauri') return
+  try {
+    await listen<string>('open-project-request', (event) => {
+      if (typeof event.payload === 'string' && event.payload.length > 0) {
+        void openExternalProject(event.payload)
+      }
+    })
+  } catch {
+    // Event wiring failed — jump list / second-launch opens stay inert,
+    // but normal usage and session restore must keep working.
+  }
+  try {
+    const launch = await invoke<string | null>('app_get_launch_project')
+    if (typeof launch === 'string' && launch.length > 0) {
+      launchProjectPath = launch
+    }
+  } catch {
+    // Command missing (older backend) — nothing to do.
+  }
+}
+
+async function start() {
+  await wireExternalProjectRequests()
+  await restoreSession()
+  if (launchProjectPath) {
+    await openExternalProject(launchProjectPath)
+    launchProjectPath = null
+  }
+}
+
+void start()
