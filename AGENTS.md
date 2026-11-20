@@ -11,9 +11,9 @@ LiteIDE 是基于 **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4** 的轻量跨�
 | `apps/desktop/` | `@lite-ide/desktop` | Vite + SolidJS 入口：`src/main.tsx` 装配后端、内核、内置插件及 `localStorage` 会话恢复；`src/styles/app.css` 定义主题变量与 Tailwind `@source` |
 | `packages/protocol/` | `@lite-ide/protocol` | 前后端契约 `WorkspaceBackend`：`tauri` IPC 实现、`mock` 浏览器演示后端、`workspace://` / `http://workspace.localhost/` 文件 URL 构造 |
 | `packages/kernel/` | `@lite-ide/kernel` | 微内核：`AppKernel`、`ProjectScope`、强类型 `ServiceKey` DI（scope → kernel 回退）、响应式贡献点、`EventBus`、`DisposableStore`、LRU 热项目保活 |
-| `packages/workbench/` | `@lite-ide/workbench` | 工作台壳层组件（`WorkbenchShell`、`TitleBar`、`ProjectWorkspace`、`PreviewHost`、`StatusBar`、`WelcomeEmpty`）与核心服务键（`WorkspaceBackendKey`、`ProjectSelectionKey`、`ProjectFsEventsKey`、`LayoutStateKey`） |
+| `packages/workbench/` | `@lite-ide/workbench` | 工作台壳层组件（`WorkbenchShell`、`TitleBar`、`ProjectWorkspace`、`PreviewHost`、`StatusBar`、`WelcomeEmpty`、`NavigationPanel`）与核心服务键（`WorkspaceBackendKey`、`ProjectSelectionKey`、`ProjectFsEventsKey`、`LayoutStateKey`、`SymbolIndexKey`（正则启发式符号索引，F12 跳转定义 / Shift+F12 查看引用 / Ctrl+F12 转到实现）、`CodeNavigationKey`（光标上下文、行级 reveal 与结果面板编排）） |
 | `plugins/explorer/` | `@lite-ide/plugin-explorer` | 文件树插件：贡献 `sidebar.view`，基于 `@tanstack/solid-virtual` 虚拟滚动与懒加载目录（服务键 `FileTreeStoreKey`）；贡献 `settings.section`（资源管理器）维护全局文件树排除 glob 规则（服务键 `ExplorerExcludeStateKey`，`localStorage` 持久化） |
-| `plugins/preview-code/` | `@lite-ide/plugin-preview-code` | 代码预览插件：贡献 `previewer.provider`（优先级 `10`）与 `statusbar.item`，懒加载 CodeMirror 6（服务键 `CodeStatsKey`） |
+| `plugins/preview-code/` | `@lite-ide/plugin-preview-code` | 代码预览插件：贡献 `previewer.provider`（优先级 `10`）与 `statusbar.item`，懒加载 CodeMirror 6（服务键 `CodeStatsKey`）；消费 `CodeNavigationKey` 实现光标上报、Ctrl+点击跳转定义与行级 reveal 闪烁高亮 |
 | `plugins/preview-markdown/` | `@lite-ide/plugin-preview-markdown` | Markdown 预览插件：`previewer.provider`（优先级 `50`），`markdown-it` + `DOMPurify`，重写相对图片与站内文件链接 |
 | `plugins/preview-image/` | `@lite-ide/plugin-preview-image` | 图片/SVG 预览插件：`previewer.provider`（优先级 `60`），棋盘格背景、缩放与拖拽 |
 | `plugins/preview-fallback/` | `@lite-ide/plugin-preview-fallback` | 兜底元信息卡片：`previewer.provider`（优先级 `0`），展示二进制或任意文件元数据 |

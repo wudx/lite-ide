@@ -11,12 +11,14 @@ import {
 import { EditorBufferKey } from '../editor-buffers'
 import { getI18n } from '../i18n'
 import { SettingsDialogKey } from '../dialogs'
+import { CodeNavigationKey } from '../navigation'
 import { LayoutStateKey, ProjectSelectionKey, ThemeStateKey } from '../services'
 import { QuickOpenKey } from '../quick-open'
 import { AppearanceSettings } from './AppearanceSettings'
 import { ConfirmDialog } from './ConfirmDialog'
 import { GeneralSettings } from './GeneralSettings'
 import { ModelSettings } from './ModelSettings'
+import { NavigationPanel } from './NavigationPanel'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { QuickOpenDialog } from './QuickOpenDialog'
 import { PluginSettings } from './PluginSettings'
@@ -120,6 +122,39 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         run: ({ kernel }) => {
           kernel.tryGet(QuickOpenKey)?.open()
         },
+      }),
+    )
+
+    // Code navigation: definition / references / implementations of the word
+    // under the editor cursor (F12 family). The actions run against the
+    // active project's symbol index.
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.gotoDefinition',
+        title: 'Go to Definition',
+        titleKey: 'command.gotoDefinition',
+        shortcut: 'F12',
+        run: ({ activeProject }) => activeProject?.tryGet(CodeNavigationKey)?.gotoDefinition(),
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.findReferences',
+        title: 'Find References',
+        titleKey: 'command.findReferences',
+        shortcut: 'Shift+F12',
+        run: ({ activeProject }) => activeProject?.tryGet(CodeNavigationKey)?.findReferences(),
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.gotoImplementation',
+        title: 'Go to Implementation',
+        titleKey: 'command.gotoImplementation',
+        shortcut: 'Ctrl+F12',
+        run: ({ activeProject }) => activeProject?.tryGet(CodeNavigationKey)?.gotoImplementation(),
       }),
     )
 
@@ -299,6 +334,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           return
         }
       }
+      if (e.key === 'F12' && !e.altKey) {
+        e.preventDefault()
+        void props.kernel.executeCommand(
+          e.ctrlKey || e.metaKey
+            ? 'workbench.gotoImplementation'
+            : e.shiftKey
+              ? 'workbench.findReferences'
+              : 'workbench.gotoDefinition',
+        )
+        return
+      }
       if (e.ctrlKey && !e.altKey && e.key === 'Tab') {
         e.preventDefault()
         void props.kernel.executeCommand(
@@ -392,6 +438,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       <ConfirmDialog kernel={props.kernel} />
       <SettingsDialog kernel={props.kernel} />
       <QuickOpenDialog kernel={props.kernel} />
+      <NavigationPanel kernel={props.kernel} />
     </div>
   )
 }

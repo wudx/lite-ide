@@ -18,8 +18,10 @@ import {
   untitledDisplayNameOf,
 } from './editor-buffers'
 import { createI18nState, I18nStateKey } from './i18n'
+import { createNavigationService, CodeNavigationKey } from './navigation'
 import { createPluginRegistry, PluginRegistryKey } from './plugin-registry'
 import { createQuickOpenService, QuickOpenKey } from './quick-open'
+import { createSymbolIndexService, SymbolIndexKey } from './symbol-index'
 
 export interface EditorTab {
   relPath: string
@@ -557,6 +559,15 @@ export function createKernelHostFromBackend(backend: WorkspaceBackend): KernelPr
             scope.provide(ProjectFsEventsKey, fsEvents)
             scope.provide(ProjectSelectionKey, selection)
             scope.provide(EditorBufferKey, buffers)
+
+            // Symbol index + navigation: dirty editor buffers override disk
+            // reads so positions stay in sync with what the user sees.
+            const symbolIndex = createSymbolIndexService(backend, scope.id, {
+              getContentOverride: (relPath) => buffers.getBuffer(relPath)?.content ?? null,
+            })
+            scope.provide(SymbolIndexKey, symbolIndex)
+            scope.provide(CodeNavigationKey, createNavigationService(selection, symbolIndex))
+            scope.onDispose(fsEvents.on('delta', () => symbolIndex.invalidate()))
 
             const unsub = fsEvents.on('delta', (delta) => {
               void buffers.handleFsDelta(delta)

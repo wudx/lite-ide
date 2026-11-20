@@ -16,8 +16,9 @@ import {
   search,
   searchKeymap,
 } from '@codemirror/search'
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
+import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
 import {
+  Decoration,
   drawSelection,
   EditorView,
   highlightActiveLine,
@@ -25,11 +26,13 @@ import {
   highlightSpecialChars,
   keymap,
   lineNumbers,
+  type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import type { PreviewProps } from '@lite-ide/kernel'
 import {
+  CodeNavigationKey,
   DEFAULT_BUFFER_MAX_BYTES,
   EditorBufferKey,
   formatBytes,
@@ -37,6 +40,7 @@ import {
   ProjectSelectionKey,
   ThemeStateKey,
   type DocumentBuffer,
+  type RevealLocationRequest,
   type ThemeAppearance,
 } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
@@ -56,6 +60,29 @@ const readOnlyCompartment = new Compartment()
 const listenerCompartment = new Compartment()
 const themeCompartment = new Compartment()
 const phrasesCompartment = new Compartment()
+
+// Navigation reveal highlight: flashes the target line after a jump
+// (F12 / references panel row) and auto-clears shortly afterwards.
+const flashLineEffect = StateEffect.define<number>()
+const clearFlashEffect = StateEffect.define<null>()
+
+const flashLineField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    value = value.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(flashLineEffect)) {
+        const pos = Math.min(Math.max(0, effect.value), tr.state.doc.length)
+        const line = tr.state.doc.lineAt(pos)
+        value = Decoration.set([Decoration.line({ class: 'cm-flashLine' }).range(line.from)])
+      } else if (effect.is(clearFlashEffect)) {
+        value = Decoration.none
+      }
+    }
+    return value
+  },
+  provide: (field) => EditorView.decorations.from(field),
+})
 
 const ideDarkHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#c49bff' },
@@ -155,6 +182,13 @@ const baseThemeStyles = {
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'transparent',
+  },
+  '.cm-line.cm-flashLine': {
+    backgroundColor: 'var(--accent-soft)',
+    transition: 'background-color 0.25s ease',
+  },
+  '&.cm-ctrlNav .cm-content': {
+    cursor: 'pointer',
   },
   '&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
     borderLeftColor: 'var(--accent)',
@@ -384,6 +418,7 @@ function buildEditorExtensions(
     drawSelection(),
     indentOnInput(),
     bracketMatching(),
+    flashLineField,
     themeCompartment.of(getEditorThemeExtension(themeId, appearance)),
     phrasesCompartment.of(getPhrasesExtension(locale)),
     search({ top: true }),
@@ -406,6 +441,7 @@ export default function CodePreview(props: PreviewProps) {
   const i18n = getI18n(props.scope)
   const codeStats = props.scope.tryGet(CodeStatsKey)
   const editorCache = props.scope.tryGet(CodeEditorCacheKey)
+  const navigation = props.scope.tryGet(CodeNavigationKey)
 
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
@@ -425,6 +461,42 @@ export default function CodePreview(props: PreviewProps) {
   let isApplyingExternal = false
   let readSeq = 0
   let langSeq = 0
+  let lastRevealSeq = -1
+  let flashTimer: ReturnType<typeof setTimeout> | undefined
+
+  /** Jump to a navigation location: place the cursor, center the line, flash. */
+  function performReveal(request: RevealLocationRequest) {
+    if (!view || !request) return
+    const doc = view.state.doc
+    const lineNo = Math.min(Math.max(1, request.line), doc.lines)
+    const line = doc.line(lineNo)
+    const column = Math.min(Math.max(1, request.column), Math.max(1, line.length))
+    const pos = line.from + column - 1
+
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: [
+        EditorView.scrollIntoView(pos, { y: 'center' }),
+        flashLineEffect.of(line.from),
+      ],
+    })
+
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => {
+      flashTimer = undefined
+      view?.dispatch({ effects: clearFlashEffect.of(null) })
+    }, 1600)
+  }
+
+  /** Consume a pending reveal that matches the currently mounted buffer. */
+  function consumePendingReveal() {
+    const request = navigation?.revealRequest()
+    if (!request || !view) return
+    if (request.relPath !== mountedRelPath) return
+    if (request.seq === lastRevealSeq) return
+    lastRevealSeq = request.seq
+    performReveal(request)
+  }
 
   function saveMountedToCache() {
     if (!view || !mountedRelPath || !editorCache) return
@@ -453,6 +525,20 @@ export default function CodePreview(props: PreviewProps) {
     })
   }
 
+  /** Publish the editor cursor (line/column/word) to the navigation service. */
+  function reportCursor(relPath: string) {
+    if (!navigation || !view) return
+    const head = view.state.selection.main.head
+    const lineInfo = view.state.doc.lineAt(head)
+    const word = view.state.wordAt(head)
+    navigation.setCursor({
+      relPath,
+      line: lineInfo.number,
+      column: head - lineInfo.from + 1,
+      word: word ? view.state.sliceDoc(word.from, word.to) : null,
+    })
+  }
+
   function createUpdateListener(relPath: string, language: string): Extension {
     return EditorView.updateListener.of((update: ViewUpdate) => {
       if (isApplyingExternal || mountedRelPath !== relPath) return
@@ -461,6 +547,7 @@ export default function CodePreview(props: PreviewProps) {
       }
       if (update.docChanged || update.selectionSet) {
         updateStatsFromView(relPath, language)
+        reportCursor(relPath)
       }
     })
   }
@@ -562,6 +649,40 @@ export default function CodePreview(props: PreviewProps) {
     }
 
     updateStatsFromView(buf.relPath, label)
+    // setState() swaps the document without running the update listener, so
+    // the navigation cursor must be re-published for the newly mounted file.
+    reportCursor(buf.relPath)
+    // A reveal for a newly mounted buffer (opened by a navigation jump) cannot
+    // be handled by the reactive effect below — mountedRelPath is not reactive
+    // — so consume it right after the buffer lands in the editor.
+    consumePendingReveal()
+  }
+
+  // Ctrl/Cmd held over the editor hints jumpability with a pointer cursor.
+  function updateCtrlNavClass(held: boolean) {
+    if (view) view.dom.classList.toggle('cm-ctrlNav', held)
+  }
+
+  // Ctrl/Cmd+click on an identifier jumps to its definition (VSCode-style).
+  function handleNavigationMouseDown(e: MouseEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.button !== 0 || !view || !navigation) return
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
+    if (pos === null) return
+    const word = view.state.wordAt(pos)
+    if (!word) return
+    e.preventDefault()
+    e.stopPropagation()
+    view.focus()
+    const relPath = mountedRelPath
+    if (!relPath) return
+    const lineInfo = view.state.doc.lineAt(word.from)
+    navigation.setCursor({
+      relPath,
+      line: lineInfo.number,
+      column: word.from - lineInfo.from + 1,
+      word: view.state.sliceDoc(word.from, word.to),
+    })
+    void navigation.gotoDefinition()
   }
 
   onMount(() => {
@@ -579,9 +700,32 @@ export default function CodePreview(props: PreviewProps) {
         ),
       }),
     })
+    // Capture phase: intercept before CodeMirror's own selection handling.
+    view.dom.addEventListener('mousedown', handleNavigationMouseDown, true)
+    window.addEventListener('keydown', handleCtrlTrackKeyDown, true)
+    window.addEventListener('keyup', handleCtrlTrackKeyUp, true)
+    window.addEventListener('blur', handleCtrlTrackBlur)
   })
 
+  function handleCtrlTrackKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Control' || e.key === 'Meta') updateCtrlNavClass(true)
+  }
+
+  function handleCtrlTrackKeyUp(e: KeyboardEvent) {
+    if (e.key === 'Control' || e.key === 'Meta') updateCtrlNavClass(false)
+  }
+
+  function handleCtrlTrackBlur() {
+    updateCtrlNavClass(false)
+  }
+
   onCleanup(() => {
+    if (view) view.dom.removeEventListener('mousedown', handleNavigationMouseDown, true)
+    window.removeEventListener('keydown', handleCtrlTrackKeyDown, true)
+    window.removeEventListener('keyup', handleCtrlTrackKeyUp, true)
+    window.removeEventListener('blur', handleCtrlTrackBlur)
+    if (flashTimer) clearTimeout(flashTimer)
+    navigation?.setCursor(null)
     saveMountedToCache()
     codeStats?.setStats(null)
     view?.destroy()
@@ -628,6 +772,22 @@ export default function CodePreview(props: PreviewProps) {
       },
     ),
   )
+
+  // Consume navigation reveal requests targeting the mounted buffer. Runs on
+  // both the request and buffer identity changes: a reveal for an already
+  // mounted file must fire, and a buffer swap re-checks any pending reveal
+  // (applyBufferToView also consumes it for paths the effect never sees).
+  createEffect(() => {
+    const request = navigation?.revealRequest()
+    const buf = activeBuffer()
+    if (!request || !buf) return
+    if (request.relPath !== buf.relPath) return
+    if (request.seq === lastRevealSeq) return
+    // Buffer content may still be loading; applyBufferToView will consume it.
+    if (buf.relPath !== mountedRelPath) return
+    lastRevealSeq = request.seq
+    performReveal(request)
+  })
 
   createEffect(() => {
     const relPath = props.file.relPath
@@ -859,7 +1019,7 @@ export default function CodePreview(props: PreviewProps) {
       <div class="absolute bottom-3.5 right-4 z-10 flex items-center">
         <button
           type="button"
-          title={i18n.t('previewCode.findReplaceTitle')}
+          title={`${i18n.t('previewCode.findReplaceTitle')}\n${i18n.t('previewCode.navHint')}`}
           class="glass-pill rounded-full px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98]"
           onClick={openSearchPanel}
         >

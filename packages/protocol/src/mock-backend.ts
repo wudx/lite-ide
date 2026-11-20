@@ -202,9 +202,40 @@ export function activateDemo() {
 }
 `,
       },
+      // 跨文件符号演示：services.ts 引用 kernel.ts 的 createServiceKey，
+      // 定义 FileStore 接口并由 MemoryFileStore 实现，App.tsx 再引用之。
+      'src/services.ts': {
+        mime: 'text/typescript',
+        content: `import { createServiceKey } from './kernel'
+
+export interface FileStore {
+  load(path: string): Promise<string>
+  store(path: string, content: string): Promise<void>
+}
+
+export function createFileStoreKey() {
+  return createServiceKey<FileStore>('demo.fileStore')
+}
+
+export class MemoryFileStore implements FileStore {
+  private entries = new Map<string, string>()
+
+  async load(path: string): Promise<string> {
+    return this.entries.get(path) ?? ''
+  }
+
+  async store(path: string, content: string): Promise<void> {
+    this.entries.set(path, content)
+  }
+}
+`,
+      },
       'src/App.tsx': {
         mime: 'text/typescript',
         content: `import { createSignal } from 'solid-js'
+import { MemoryFileStore } from './services'
+
+const store = new MemoryFileStore()
 
 export function Counter() {
   const [count, setCount] = createSignal(0)
@@ -213,6 +244,10 @@ export function Counter() {
       Active Count: {count()}
     </button>
   )
+}
+
+export async function persistState(snapshot: string) {
+  await store.store('state.json', snapshot)
 }
 `,
       },
@@ -271,11 +306,43 @@ notify = "8"
       },
       'src/main.rs': {
         mime: 'text/x-rust',
-        content: `use std::path::Path;
+        content: `mod scanner;
+
+use std::path::Path;
+
+use scanner::{PrintVisitor, scan_workspace};
 
 fn main() {
     let root = Path::new(".");
     println!("Scanning workspace at {}", root.display());
+    let mut visitor = PrintVisitor { label: String::from("found") };
+    scan_workspace(&mut visitor);
+}
+`,
+      },
+      // Rust 侧跨文件符号演示：trait PathVisitor + impl for PrintVisitor，
+      // main.rs 引用 scan_workspace / PrintVisitor。
+      'src/scanner.rs': {
+        mime: 'text/x-rust',
+        content: `pub trait PathVisitor {
+    fn visit(&mut self, path: &str);
+}
+
+pub struct PrintVisitor {
+    pub label: String,
+}
+
+impl PathVisitor for PrintVisitor {
+    fn visit(&mut self, path: &str) {
+        println!("{}: {}", self.label, path);
+    }
+}
+
+pub fn scan_workspace(visitor: &mut dyn PathVisitor) {
+    let paths = ["src/main.rs", "Cargo.toml"];
+    for path in paths {
+        visitor.visit(path);
+    }
 }
 `,
       },

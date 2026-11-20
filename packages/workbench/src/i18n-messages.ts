@@ -159,6 +159,21 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'quickOpen.hintOpen': 'Enter 打开',
   'quickOpen.hintClose': 'Esc 关闭',
 
+  // NavigationPanel（代码导航：定义 / 引用 / 实现）
+  'navigation.panelAria': '代码导航结果',
+  'navigation.resultsAria': '导航结果列表',
+  'navigation.mode.definitions': '定义',
+  'navigation.mode.references': '引用',
+  'navigation.mode.implementations': '实现',
+  'navigation.resultCount': '{count} 个结果',
+  'navigation.indexing': '正在索引项目符号…',
+  'navigation.noCursor': '请先将光标放在代码中的符号上，再执行跳转或查找引用。',
+  'navigation.notFound': '未找到“{symbol}”的{mode}。',
+  'navigation.definitionBadge': '定义',
+  'navigation.hintNavigate': '↑↓ 切换',
+  'navigation.hintJump': 'Enter 跳转',
+  'navigation.hintClose': 'Esc 关闭',
+
   // Commands
   'command.openProject': '打开项目文件夹',
   'command.saveFile': '保存当前文件',
@@ -166,6 +181,9 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'command.closeTab': '关闭当前编辑器页签',
   'command.closeProject': '关闭当前项目',
   'command.quickOpen': '按名称快速打开文件',
+  'command.gotoDefinition': '转到定义',
+  'command.findReferences': '查看引用',
+  'command.gotoImplementation': '转到实现',
   'command.toggleSidebar': '切换侧边栏',
   'command.toggleTheme': '切换颜色主题',
   'command.openSettings': '打开设置',
@@ -374,6 +392,21 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'quickOpen.hintOpen': 'Enter Open',
   'quickOpen.hintClose': 'Esc Close',
 
+  // NavigationPanel (code navigation: definitions / references / implementations)
+  'navigation.panelAria': 'Code navigation results',
+  'navigation.resultsAria': 'Navigation result list',
+  'navigation.mode.definitions': 'Definitions',
+  'navigation.mode.references': 'References',
+  'navigation.mode.implementations': 'Implementations',
+  'navigation.resultCount': '{count} results',
+  'navigation.indexing': 'Indexing project symbols…',
+  'navigation.noCursor': 'Put the cursor on a symbol in the code first.',
+  'navigation.notFound': 'No {mode} found for "{symbol}".',
+  'navigation.definitionBadge': 'Definition',
+  'navigation.hintNavigate': '↑↓ Navigate',
+  'navigation.hintJump': 'Enter Jump',
+  'navigation.hintClose': 'Esc Close',
+
   // Commands
   'command.openProject': 'Open Project Folder',
   'command.saveFile': 'Save Active File',
@@ -381,6 +414,9 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'command.closeTab': 'Close Active Editor Tab',
   'command.closeProject': 'Close Active Project',
   'command.quickOpen': 'Quick Open File by Name',
+  'command.gotoDefinition': 'Go to Definition',
+  'command.findReferences': 'Find References',
+  'command.gotoImplementation': 'Go to Implementation',
   'command.toggleSidebar': 'Toggle Sidebar',
   'command.toggleTheme': 'Cycle Color Theme',
   'command.openSettings': 'Open Settings',
