@@ -97,8 +97,8 @@ export function createTauriGitBackend(): GitBackend {
       return invoke<GitStashEntry[]>('git_stash_list', { projectId })
     },
 
-    async stashPop(projectId: string, index: number): Promise<void> {
-      await invoke<void>('git_stash_pop', { projectId, index })
+    async stashRestore(projectId: string, index: number): Promise<void> {
+      await invoke<void>('git_stash_restore', { projectId, index })
     },
 
     async stashDrop(projectId: string, index: number): Promise<void> {
@@ -831,12 +831,13 @@ export function createMockGitBackend(): GitBackend {
       }))
     },
 
-    async stashPop(projectId: string, index: number): Promise<void> {
+    async stashRestore(projectId: string, index: number): Promise<void> {
       const state = getState(projectId)
       if (!state.repo) throw new Error('not a git repository')
+      // Apply-only: the entry stays in the stack so it can be re-applied or
+      // dropped explicitly (mirrors real `git stash apply`).
       const stash = getStash(state, index)
       restoreSnapshot(state, stash.snapshot)
-      state.stashes.splice(index, 1)
     },
 
     async stashDrop(projectId: string, index: number): Promise<void> {

@@ -717,13 +717,14 @@ pub async fn stash_list(canonical_root: &Path) -> Result<Vec<GitStashEntry>, App
     Ok(parse_stash_list(&stdout))
 }
 
-/// Applies `stash@{index}` and removes it from the stack (`git stash pop`).
-/// On merge conflicts git keeps the stash entry and reports the failure.
-pub async fn stash_pop(canonical_root: &Path, index: usize) -> Result<(), AppError> {
+/// Applies `stash@{index}` to the worktree without removing the entry
+/// (`git stash apply`). On merge conflicts git reports the failure and the
+/// stash entry stays untouched; drop it explicitly afterwards if unwanted.
+pub async fn stash_restore(canonical_root: &Path, index: usize) -> Result<(), AppError> {
     if !is_repo_root(canonical_root).await? {
         return Err(AppError::Git("not a git repository".into()));
     }
-    run_git(canonical_root, &["stash", "pop", &stash_ref_name(index)]).await?;
+    run_git(canonical_root, &["stash", "apply", &stash_ref_name(index)]).await?;
     Ok(())
 }
 
@@ -1491,10 +1492,14 @@ mod repo_tests {
         assert!(list[0].message.starts_with("WIP on "), "{}", list[0].message);
         assert!(!list[0].date.is_empty());
 
-        // Restore (pop) reinstates the worktree state and empties the stack.
-        stash_pop(&root, 0).await.unwrap();
+        // Restore (apply) reinstates the worktree state and keeps the entry.
+        stash_restore(&root, 0).await.unwrap();
         assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two");
         assert!(root.join("b.txt").exists());
+        assert_eq!(stash_list(&root).await.unwrap().len(), 1);
+
+        // Dropping the restored entry clears the stack again.
+        stash_drop(&root, 0).await.unwrap();
         assert!(stash_list(&root).await.unwrap().is_empty());
 
         // A named message round-trips through the stash subject; the worktree
@@ -1554,7 +1559,7 @@ mod repo_tests {
         assert!(stash_all(&root, None).await.is_err());
         assert!(stash_all(&root, Some("msg")).await.is_err());
         assert!(stash_paths(&root, &["a.txt".into()]).await.is_err());
-        assert!(stash_pop(&root, 0).await.is_err());
+        assert!(stash_restore(&root, 0).await.is_err());
         assert!(stash_drop(&root, 0).await.is_err());
     }
 

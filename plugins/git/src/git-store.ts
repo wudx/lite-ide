@@ -103,8 +103,8 @@ export interface GitStore {
   stashAll(message?: string): Promise<void>
   /** Stashes only the given paths' changes (tracked and untracked). */
   stashPaths(relPaths: string[]): Promise<void>
-  /** Applies stash@{index} and removes it from the stack. */
-  stashPop(index: number): Promise<void>
+  /** Applies stash@{index} to the worktree, keeping the entry in the stack. */
+  stashRestore(index: number): Promise<void>
   /** Removes stash@{index} without applying it. */
   stashDrop(index: number): Promise<void>
   /** Resolves false (with `error` set) when the commit was rejected. */
@@ -598,8 +598,8 @@ export function createGitStore(
       return runStashAction(() => backend.stashPaths(projectId, relPaths))
     },
 
-    stashPop(index: number) {
-      return runStashAction(() => backend.stashPop(projectId, index))
+    stashRestore(index: number) {
+      return runStashAction(() => backend.stashRestore(projectId, index))
     },
 
     stashDrop(index: number) {

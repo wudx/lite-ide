@@ -882,7 +882,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   }
 
   async function restoreStash(entry: GitStashEntry) {
-    await store.stashPop(entry.index)
+    await store.stashRestore(entry.index)
   }
 
   async function dropStash(entry: GitStashEntry) {

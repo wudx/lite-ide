@@ -318,20 +318,21 @@ test('git panel stashes changes, restores them and manages the stash list', asyn
   await expect(page.getByText('存储 (4)', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('git-stash-all.png'), animations: 'disabled' })
 
-  // 还原: popping the newest entry restores the staged change.
+  // 还原: applying the newest entry restores the staged change and keeps
+  // the stash entry in the stack.
   const newestStashRow = page.locator('[data-git-stash="stash@{0}"]')
   await newestStashRow.hover()
   await page.getByTestId('git-stash-restore-0').click()
   await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
-  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
+  await expect(page.getByText('存储 (4)', { exact: true })).toBeVisible()
 
-  // 删除存储: dropping requires confirmation.
+  // 删除存储: dropping the kept entry requires confirmation.
   await newestStashRow.hover()
   await page.getByTestId('git-stash-drop-0').click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('git-stash-drop-confirm.png'), animations: 'disabled' })
   await page.getByRole('dialog').getByText('删除', { exact: true }).click()
-  await expect(page.getByText('存储 (2)', { exact: true })).toBeVisible()
+  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
 
   expect(consoleErrors).toEqual([])
 })

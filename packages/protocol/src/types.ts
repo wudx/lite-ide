@@ -180,8 +180,8 @@ export interface GitBackend {
   stashPaths(projectId: string, relPaths: string[]): Promise<void>
   /** The project's stash stack, newest entry first. */
   stashList(projectId: string): Promise<GitStashEntry[]>
-  /** Applies the stash entry and removes it from the stack (git stash pop). */
-  stashPop(projectId: string, index: number): Promise<void>
+  /** Applies the stash entry to the worktree without removing it (git stash apply). */
+  stashRestore(projectId: string, index: number): Promise<void>
   /** Removes a stash entry without applying it (git stash drop). */
   stashDrop(projectId: string, index: number): Promise<void>
 }

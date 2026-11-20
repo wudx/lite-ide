@@ -193,7 +193,7 @@ describe('git store (mock backend)', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
@@ -253,7 +253,7 @@ describe('git store (mock backend)', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
@@ -335,7 +335,7 @@ describe('git store (mock backend)', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
@@ -416,7 +416,7 @@ describe('git store (mock backend)', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
@@ -466,7 +466,7 @@ describe('git store (mock backend)', () => {
         stashAll: async () => {},
         stashPaths: async () => {},
         stashList: async () => [],
-        stashPop: async () => {},
+        stashRestore: async () => {},
         stashDrop: async () => {},
         log: async () => [],
         show: async () => [],
@@ -540,7 +540,7 @@ describe('git store (mock backend)', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async () => [],
       show: async () => [],
@@ -566,7 +566,7 @@ describe('git store (mock backend)', () => {
     expect(stashes[0].message).toContain('WIP on main')
   })
 
-  it('stashes all changes, restores them via pop and clears via drop', async () => {
+  it('stashes all changes, restores them via apply and drops the entry', async () => {
     const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
     await store.refresh()
     await store.loadStashes()
@@ -580,15 +580,21 @@ describe('git store (mock backend)', () => {
     expect(store.stashes().length).toBe(presetCount + 1)
     expect(store.stashes()[0].refName).toBe('stash@{0}')
 
-    // Pop restores the worktree state (README staged, App unstaged) and
-    // removes the entry from the stack.
-    await store.stashPop(0)
+    // Restore (apply) reinstates the worktree state while keeping the entry
+    // in the stack.
+    await store.stashRestore(0)
+    expect(store.stashes().length).toBe(presetCount + 1)
+    expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
+    expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
+
+    // Dropping the kept entry leaves the restored worktree untouched.
+    await store.stashDrop(0)
     expect(store.stashes().length).toBe(presetCount)
     expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
 
-    // Drop removes the entry without touching the (already stashed-clean)
-    // worktree: the second stashAll swept README and App away again.
+    // The next stashAll sweeps the worktree away again; drop only removes
+    // the entry.
     await store.stashAll()
     expect(store.status()?.entries.length).toBe(0)
     expect(store.stashes().length).toBe(presetCount + 1)
@@ -609,9 +615,9 @@ describe('git store (mock backend)', () => {
     expect(store.status()?.entries.some((e) => e.relPath === 'src/App.tsx')).toBe(false)
     expect(store.stashes().length).toBe(presetCount + 1)
 
-    await store.stashPop(0)
+    await store.stashRestore(0)
     expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
-    expect(store.stashes().length).toBe(presetCount)
+    expect(store.stashes().length).toBe(presetCount + 1)
   })
 
   it('surfaces stash failures as store errors', async () => {
@@ -627,7 +633,7 @@ describe('git store (mock backend)', () => {
     expect(store.stashes()).toHaveLength(0)
     expect(store.error()).toBeNull()
 
-    await store.stashPop(0)
+    await store.stashRestore(0)
     expect(store.error()).toContain('not a git repository')
     await store.stashDrop(0)
     expect(store.error()).toContain('not a git repository')
@@ -636,7 +642,7 @@ describe('git store (mock backend)', () => {
   it('routes stash writes through the backend with project id and payload', async () => {
     const stashAllSpy = vi.fn(async () => {})
     const stashPathsSpy = vi.fn(async () => {})
-    const stashPopSpy = vi.fn(async () => {})
+    const stashRestoreSpy = vi.fn(async () => {})
     const stashDropSpy = vi.fn(async () => {})
     const fakeBackend: GitBackend = {
       status: async () => ({
@@ -658,7 +664,7 @@ describe('git store (mock backend)', () => {
       stashAll: stashAllSpy,
       stashPaths: stashPathsSpy,
       stashList: async () => [],
-      stashPop: stashPopSpy,
+      stashRestore: stashRestoreSpy,
       stashDrop: stashDropSpy,
       log: async () => [],
       show: async () => [],
@@ -675,8 +681,8 @@ describe('git store (mock backend)', () => {
     await store.stashPaths(['new.ts', 'old.ts'])
     expect(stashPathsSpy).toHaveBeenCalledWith('stash-project', ['new.ts', 'old.ts'])
 
-    await store.stashPop(0)
-    expect(stashPopSpy).toHaveBeenCalledWith('stash-project', 0)
+    await store.stashRestore(0)
+    expect(stashRestoreSpy).toHaveBeenCalledWith('stash-project', 0)
 
     await store.stashDrop(1)
     expect(stashDropSpy).toHaveBeenCalledWith('stash-project', 1)
@@ -762,7 +768,7 @@ describe('git store history pagination', () => {
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
-      stashPop: async () => {},
+      stashRestore: async () => {},
       stashDrop: async () => {},
       log: async (_projectId, options) => {
         const skip = options?.skip ?? 0

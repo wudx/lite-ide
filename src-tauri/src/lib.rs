@@ -259,13 +259,13 @@ async fn git_stash_list(
 }
 
 #[tauri::command]
-async fn git_stash_pop(
+async fn git_stash_restore(
     manager: State<'_, Arc<ProjectManager>>,
     project_id: String,
     index: usize,
 ) -> Result<(), AppError> {
     let root = manager.get_canonical_root(&project_id)?;
-    git::stash_pop(&root, index).await
+    git::stash_restore(&root, index).await
 }
 
 #[tauri::command]
@@ -377,7 +377,7 @@ pub fn run() {
             git_stash_all,
             git_stash_paths,
             git_stash_list,
-            git_stash_pop,
+            git_stash_restore,
             git_stash_drop,
             git_log,
             git_show,
