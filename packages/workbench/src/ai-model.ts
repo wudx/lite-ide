@@ -5,10 +5,13 @@ import {
   isTauriEnvironment,
   type AiChatRequest,
 } from '@lite-ide/protocol'
-import { createSignal, type Accessor } from 'solid-js'
+import { createMemo, createSignal, type Accessor } from 'solid-js'
 
-/** Providers shipped with the built-in model settings section. */
-export type AiProviderId = 'zai' | 'deepseek'
+/**
+ * Provider id. Built-in ids get literal autocomplete; the open `(string & {})`
+ * arm carries user-added custom providers.
+ */
+export type AiProviderId = 'zai' | 'deepseek' | 'minimax' | (string & {})
 
 export interface AiProviderPreset {
   id: AiProviderId
@@ -18,8 +21,11 @@ export interface AiProviderPreset {
   defaultModel: string
   /** Suggested model ids offered as completion hints. */
   models: readonly string[]
+  /** True for user-added providers (enables the delete affordance). */
+  custom?: boolean
 }
 
+/** Built-in presets shipped with the workbench. */
 export const AI_PROVIDER_PRESETS: readonly AiProviderPreset[] = [
   {
     id: 'zai',
@@ -35,7 +41,22 @@ export const AI_PROVIDER_PRESETS: readonly AiProviderPreset[] = [
     defaultModel: 'deepseek-chat',
     models: ['deepseek-chat', 'deepseek-reasoner'],
   },
+  {
+    id: 'minimax',
+    label: 'MiniMax',
+    defaultBaseUrl: 'https://api.minimaxi.com/v1',
+    defaultModel: 'MiniMax-M2',
+    models: ['MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.1', 'MiniMax-M2'],
+  },
 ]
+
+/** Metadata of a user-added provider; creation values double as reset defaults. */
+export interface AiCustomProviderMeta {
+  id: string
+  label: string
+  defaultBaseUrl: string
+  defaultModel: string
+}
 
 export interface AiProviderConfig {
   apiKey: string
@@ -43,10 +64,11 @@ export interface AiProviderConfig {
   model: string
 }
 
-export type AiProviderConfigs = Readonly<Record<AiProviderId, AiProviderConfig>>
+export type AiProviderConfigs = Readonly<Record<string, AiProviderConfig>>
 
 export interface AiModelService {
-  readonly presets: readonly AiProviderPreset[]
+  /** Built-in presets followed by the user's custom providers (reactive). */
+  readonly presets: Accessor<readonly AiProviderPreset[]>
   readonly providerId: Accessor<AiProviderId>
   readonly providers: Accessor<AiProviderConfigs>
   /** Custom commit-message system prompt; empty string means the default. */
@@ -57,6 +79,13 @@ export interface AiModelService {
   /** Restores the preset base URL / model (keeps the API key). */
   resetProvider(id: AiProviderId): void
   setCommitPrompt(prompt: string): void
+  /**
+   * Registers a user-defined provider with empty API key, selects it and
+   * returns its generated id.
+   */
+  addCustomProvider(input: { label: string; baseUrl: string; model: string }): AiProviderId
+  /** Deletes a user-defined provider; falls back to the default when active. */
+  removeCustomProvider(id: AiProviderId): void
   /** True when the active provider has an API key configured. */
   isConfigured(): boolean
   /**
@@ -72,20 +101,47 @@ export const DEFAULT_AI_PROVIDER_ID: AiProviderId = 'deepseek'
 
 export const AiModelKey = createServiceKey<AiModelService>('workbench.aiModel')
 
-function presetOf(id: string): AiProviderPreset {
-  return (
-    AI_PROVIDER_PRESETS.find((p) => p.id === id) ??
-    AI_PROVIDER_PRESETS.find((p) => p.id === DEFAULT_AI_PROVIDER_ID)!
-  )
+const CUSTOM_LABEL_FALLBACK = 'Custom'
+
+function nextCustomProviderId(takenIds: readonly string[]): string {
+  const taken = new Set(takenIds)
+  let id = ''
+  do {
+    id = `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  } while (taken.has(id))
+  return id
 }
 
-function defaultProviderConfig(id: AiProviderId): AiProviderConfig {
-  const preset = presetOf(id)
+/** Maps a stored custom-provider meta to a preset-like record for the UI.
+ *  Results are cached per meta object so unchanged rows keep a stable
+ *  reference across `<For>` reconciliations. */
+const customPresetCache = new WeakMap<AiCustomProviderMeta, AiProviderPreset>()
+
+function customPresetOf(meta: AiCustomProviderMeta): AiProviderPreset {
+  let preset = customPresetCache.get(meta)
+  if (!preset) {
+    preset = {
+      id: meta.id,
+      label: meta.label,
+      defaultBaseUrl: meta.defaultBaseUrl,
+      defaultModel: meta.defaultModel,
+      models: meta.defaultModel ? [meta.defaultModel] : [],
+      custom: true,
+    }
+    customPresetCache.set(meta, preset)
+  }
+  return preset
+}
+
+function defaultProviderConfig(preset: Pick<AiProviderPreset, 'defaultBaseUrl' | 'defaultModel'>): AiProviderConfig {
   return { apiKey: '', baseUrl: preset.defaultBaseUrl, model: preset.defaultModel }
 }
 
-function sanitizeProviderConfig(raw: unknown, id: AiProviderId): AiProviderConfig {
-  const defaults = defaultProviderConfig(id)
+function sanitizeProviderConfig(
+  raw: unknown,
+  preset: Pick<AiProviderPreset, 'defaultBaseUrl' | 'defaultModel'>,
+): AiProviderConfig {
+  const defaults = defaultProviderConfig(preset)
   if (typeof raw !== 'object' || raw === null) return defaults
   const record = raw as Record<string, unknown>
   return {
@@ -99,17 +155,60 @@ function sanitizeProviderConfig(raw: unknown, id: AiProviderId): AiProviderConfi
   }
 }
 
-function readStoredSettings(): {
+/** Validates stored custom-provider metas; drops junk and built-in id collisions. */
+function sanitizeCustomMetas(raw: unknown): AiCustomProviderMeta[] {
+  if (!Array.isArray(raw)) return []
+  const builtinIds = new Set(AI_PROVIDER_PRESETS.map((p) => p.id))
+  const seen = new Set<string>()
+  const metas: AiCustomProviderMeta[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const record = item as Record<string, unknown>
+    const id = typeof record.id === 'string' ? record.id : ''
+    if (!id || builtinIds.has(id) || seen.has(id)) continue
+    const label =
+      typeof record.label === 'string' && record.label.trim()
+        ? record.label.trim()
+        : CUSTOM_LABEL_FALLBACK
+    const defaultBaseUrl =
+      typeof record.defaultBaseUrl === 'string' && record.defaultBaseUrl.trim()
+        ? record.defaultBaseUrl.trim()
+        : ''
+    const defaultModel =
+      typeof record.defaultModel === 'string' && record.defaultModel.trim()
+        ? record.defaultModel.trim()
+        : ''
+    metas.push({ id, label, defaultBaseUrl, defaultModel })
+    seen.add(id)
+  }
+  return metas
+}
+
+function resolveStoredProviderId(raw: unknown, customMetas: readonly AiCustomProviderMeta[]): AiProviderId {
+  if (typeof raw !== 'string') return DEFAULT_AI_PROVIDER_ID
+  if (
+    AI_PROVIDER_PRESETS.some((p) => p.id === raw) ||
+    customMetas.some((m) => m.id === raw)
+  ) {
+    return raw
+  }
+  return DEFAULT_AI_PROVIDER_ID
+}
+
+interface StoredSettings {
   providerId: AiProviderId
   providers: AiProviderConfigs
+  customProviders: readonly AiCustomProviderMeta[]
   commitPrompt: string
-} {
-  const fallback = {
+}
+
+function readStoredSettings(): StoredSettings {
+  const fallback: StoredSettings = {
     providerId: DEFAULT_AI_PROVIDER_ID,
-    providers: {
-      zai: defaultProviderConfig('zai'),
-      deepseek: defaultProviderConfig('deepseek'),
-    },
+    providers: Object.fromEntries(
+      AI_PROVIDER_PRESETS.map((preset) => [preset.id, defaultProviderConfig(preset)]),
+    ),
+    customProviders: [],
     commitPrompt: '',
   }
   if (typeof localStorage === 'undefined') return fallback
@@ -123,16 +222,18 @@ function readStoredSettings(): {
       typeof record.providers === 'object' && record.providers !== null
         ? (record.providers as Record<string, unknown>)
         : {}
-    const providerId: AiProviderId =
-      record.providerId === 'zai' || record.providerId === 'deepseek'
-        ? record.providerId
-        : DEFAULT_AI_PROVIDER_ID
+    const customProviders = sanitizeCustomMetas(record.customProviders)
+    const providers: Record<string, AiProviderConfig> = {}
+    for (const preset of AI_PROVIDER_PRESETS) {
+      providers[preset.id] = sanitizeProviderConfig(rawProviders[preset.id], preset)
+    }
+    for (const meta of customProviders) {
+      providers[meta.id] = sanitizeProviderConfig(rawProviders[meta.id], meta)
+    }
     return {
-      providerId,
-      providers: {
-        zai: sanitizeProviderConfig(rawProviders.zai, 'zai'),
-        deepseek: sanitizeProviderConfig(rawProviders.deepseek, 'deepseek'),
-      },
+      providerId: resolveStoredProviderId(record.providerId, customProviders),
+      providers,
+      customProviders,
       commitPrompt: typeof record.commitPrompt === 'string' ? record.commitPrompt : '',
     }
   } catch {
@@ -140,11 +241,7 @@ function readStoredSettings(): {
   }
 }
 
-function persistSettings(settings: {
-  providerId: AiProviderId
-  providers: AiProviderConfigs
-  commitPrompt: string
-}) {
+function persistSettings(settings: StoredSettings) {
   if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(AI_MODEL_STORAGE_KEY, JSON.stringify(settings))
@@ -157,18 +254,35 @@ export function createAiModelService(): AiModelService {
   const stored = readStoredSettings()
   const [providerId, setProviderIdSignal] = createSignal<AiProviderId>(stored.providerId)
   const [providers, setProviders] = createSignal<AiProviderConfigs>(stored.providers)
+  const [customMetas, setCustomMetas] = createSignal<readonly AiCustomProviderMeta[]>(
+    stored.customProviders,
+  )
   const [commitPrompt, setCommitPromptSignal] = createSignal(stored.commitPrompt)
+
+  const presets = createMemo<readonly AiProviderPreset[]>(() => [
+    ...AI_PROVIDER_PRESETS,
+    ...customMetas().map(customPresetOf),
+  ])
+
+  function presetOf(id: AiProviderId): AiProviderPreset {
+    const builtin = AI_PROVIDER_PRESETS.find((p) => p.id === id)
+    if (builtin) return builtin
+    const meta = customMetas().find((m) => m.id === id)
+    if (meta) return customPresetOf(meta)
+    return AI_PROVIDER_PRESETS.find((p) => p.id === DEFAULT_AI_PROVIDER_ID)!
+  }
 
   function persist() {
     persistSettings({
       providerId: providerId(),
       providers: providers(),
+      customProviders: customMetas(),
       commitPrompt: commitPrompt(),
     })
   }
 
   return {
-    presets: AI_PROVIDER_PRESETS,
+    presets,
     providerId,
     providers,
     commitPrompt,
@@ -181,11 +295,14 @@ export function createAiModelService(): AiModelService {
     },
 
     updateProvider(id: AiProviderId, patch: Partial<AiProviderConfig>) {
+      // Ignore unknown ids instead of seeding a partial config.
+      if (!providers()[id]) return
       setProviders((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
       persist()
     },
 
     resetProvider(id: AiProviderId) {
+      if (!providers()[id]) return
       const preset = presetOf(id)
       setProviders((prev) => ({
         ...prev,
@@ -199,14 +316,41 @@ export function createAiModelService(): AiModelService {
       persist()
     },
 
+    addCustomProvider(input: { label: string; baseUrl: string; model: string }) {
+      const label = input.label.trim() || CUSTOM_LABEL_FALLBACK
+      const baseUrl = input.baseUrl.trim()
+      const model = input.model.trim()
+      if (!baseUrl || !model) {
+        throw new Error('custom provider requires a non-empty base URL and model')
+      }
+      const id = nextCustomProviderId(customMetas().map((m) => m.id))
+      setCustomMetas((prev) => [...prev, { id, label, defaultBaseUrl: baseUrl, defaultModel: model }])
+      setProviders((prev) => ({ ...prev, [id]: { apiKey: '', baseUrl, model } }))
+      setProviderIdSignal(id)
+      persist()
+      return id
+    },
+
+    removeCustomProvider(id: AiProviderId) {
+      if (!customMetas().some((m) => m.id === id)) return
+      setCustomMetas((prev) => prev.filter((m) => m.id !== id))
+      setProviders((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      if (providerId() === id) setProviderIdSignal(DEFAULT_AI_PROVIDER_ID)
+      persist()
+    },
+
     isConfigured() {
-      return providers()[providerId()].apiKey.trim().length > 0
+      return providers()[providerId()]?.apiKey.trim().length > 0
     },
 
     async chat({ system, user }) {
       const id = providerId()
       const config = providers()[id]
-      if (!config.apiKey.trim()) {
+      if (!config?.apiKey.trim()) {
         throw new Error('ai model API key is not configured')
       }
       const request: AiChatRequest = {

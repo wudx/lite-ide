@@ -181,7 +181,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }),
     )
 
-    // Built-in models section: AI provider configuration (Z.ai / DeepSeek).
+    // Built-in models section: AI provider configuration (built-in presets
+    // plus user-added custom providers).
     disposables.add(
       props.kernel.contribute('settings.section', {
         id: 'workbench.models',

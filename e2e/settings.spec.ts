@@ -326,9 +326,10 @@ test('models section switches providers, stores the API key locally and persists
   await dialog.getByRole('button', { name: '模型' }).click()
   await expect(dialog.getByRole('heading', { name: '模型服务' })).toBeVisible()
 
-  // Two providers contributed: Z.ai (GLM) and DeepSeek; DeepSeek is default.
+  // Three providers contributed: Z.ai (GLM), DeepSeek and MiniMax; DeepSeek is default.
   await expect(dialog.getByTestId('ai-provider-zai')).toBeVisible()
   await expect(dialog.getByTestId('ai-provider-deepseek')).toBeVisible()
+  await expect(dialog.getByTestId('ai-provider-minimax')).toBeVisible()
   await expect(dialog.getByTestId('ai-provider-deepseek')).toHaveAttribute('aria-pressed', 'true')
   await page.screenshot({
     path: testInfo.outputPath('settings-models-default.png'),
@@ -384,6 +385,62 @@ test('models section switches providers, stores the API key locally and persists
   await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.z.ai/api/paas/v4')
   await expect(dialog.getByTestId('ai-model')).toHaveValue('glm-4.6')
   await expect(dialog.getByTestId('ai-api-key')).toHaveValue('sk-zai-test-456')
+
+  // MiniMax preset: switching applies its endpoint and model.
+  await dialog.getByTestId('ai-provider-minimax').click()
+  await expect(dialog.getByTestId('ai-provider-minimax')).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.minimaxi.com/v1')
+  await expect(dialog.getByTestId('ai-model')).toHaveValue('MiniMax-M2')
+
+  // Custom provider: the confirm stays disabled until all fields are filled.
+  await dialog.getByTestId('ai-add-custom').click()
+  const customConfirm = dialog.getByTestId('ai-custom-confirm')
+  await expect(customConfirm).toBeDisabled()
+  await dialog.getByTestId('ai-custom-name').fill('LAN Ollama')
+  await dialog.getByTestId('ai-custom-base-url').fill('http://127.0.0.1:11434/v1')
+  await dialog.getByTestId('ai-custom-model').fill('llama3')
+  await expect(customConfirm).toBeEnabled()
+  await customConfirm.click()
+
+  const customCard = dialog.getByRole('button', { name: /LAN Ollama/ })
+  await expect(customCard).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('http://127.0.0.1:11434/v1')
+  await expect(dialog.getByTestId('ai-model')).toHaveValue('llama3')
+  await page.screenshot({
+    path: testInfo.outputPath('settings-models-custom.png'),
+    animations: 'disabled',
+  })
+
+  const storedAfterAdd = JSON.parse(
+    await page.evaluate((k) => localStorage.getItem(k), AI_MODEL_STORAGE_KEY),
+  )
+  expect(storedAfterAdd.providerId).toMatch(/^custom-/)
+  expect(storedAfterAdd.customProviders).toHaveLength(1)
+  expect(storedAfterAdd.customProviders[0].label).toBe('LAN Ollama')
+  expect(storedAfterAdd.customProviders[0].defaultBaseUrl).toBe('http://127.0.0.1:11434/v1')
+
+  // Reload: the custom provider and its selection are restored from localStorage.
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.keyboard.press('Control+,')
+  await dialog.getByRole('button', { name: '模型', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: /LAN Ollama/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('http://127.0.0.1:11434/v1')
+
+  // Deleting needs a second confirming click; selection falls back to the default.
+  await dialog.getByRole('button', { name: '删除该自定义提供商' }).click()
+  await dialog.getByRole('button', { name: '再次点击确认删除' }).click()
+  await expect(dialog.getByRole('button', { name: /LAN Ollama/ })).toHaveCount(0)
+  await expect(dialog.getByTestId('ai-provider-deepseek')).toHaveAttribute('aria-pressed', 'true')
+  const storedAfterDelete = JSON.parse(
+    await page.evaluate((k) => localStorage.getItem(k), AI_MODEL_STORAGE_KEY),
+  )
+  expect(storedAfterDelete.customProviders).toHaveLength(0)
+  expect(storedAfterDelete.providerId).toBe('deepseek')
 
   expect(consoleErrors).toEqual([])
 })

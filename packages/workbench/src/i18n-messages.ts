@@ -112,6 +112,15 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'settings.models.noApiKey': '请先填写 API Key',
   'settings.models.showApiKey': '显示 API Key',
   'settings.models.hideApiKey': '隐藏 API Key',
+  'settings.models.addCustom': '添加自定义提供商',
+  'settings.models.customName': '名称',
+  'settings.models.customNamePlaceholder': '名称，例如 OpenRouter',
+  'settings.models.customBaseUrlPlaceholder': '接口地址，例如 https://api.example.com/v1',
+  'settings.models.customHint': '要求提供商兼容 OpenAI Chat Completions 接口。',
+  'settings.models.customAdd': '添加',
+  'settings.models.customCancel': '取消',
+  'settings.models.deleteCustomTitle': '删除该自定义提供商',
+  'settings.models.deleteCustomConfirm': '再次点击确认删除',
 
   // QuickOpenDialog
   'quickOpen.dialogAria': '快速打开',
@@ -293,6 +302,15 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'settings.models.noApiKey': 'Enter an API key first',
   'settings.models.showApiKey': 'Show API Key',
   'settings.models.hideApiKey': 'Hide API Key',
+  'settings.models.addCustom': 'Add custom provider',
+  'settings.models.customName': 'Name',
+  'settings.models.customNamePlaceholder': 'Name, e.g. OpenRouter',
+  'settings.models.customBaseUrlPlaceholder': 'Base URL, e.g. https://api.example.com/v1',
+  'settings.models.customHint': 'The provider must be OpenAI Chat Completions compatible.',
+  'settings.models.customAdd': 'Add',
+  'settings.models.customCancel': 'Cancel',
+  'settings.models.deleteCustomTitle': 'Delete this custom provider',
+  'settings.models.deleteCustomConfirm': 'Click again to confirm',
 
   // QuickOpenDialog
   'quickOpen.dialogAria': 'Quick Open',
