@@ -74,6 +74,12 @@ const NORD_VARIABLES: Record<string, string> = {
   '--warning-btn-hover': 'rgba(235, 203, 139, 0.30)',
   '--success-text': '#a3be8c',
 
+  /* Diff preview tones (Aurora green / red) */
+  '--diff-add-bg': 'rgba(163, 190, 140, 0.12)',
+  '--diff-add-text': '#a3be8c',
+  '--diff-del-bg': 'rgba(191, 97, 106, 0.12)',
+  '--diff-del-text': '#e5b0b5',
+
   /* File icon palette */
   '--icon-folder': 'rgba(136, 192, 208, 0.90)',
   '--icon-folder-ignored': '#616981',

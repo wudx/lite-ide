@@ -4,13 +4,14 @@ import { getI18n, ProjectFsEventsKey } from '@lite-ide/workbench'
 import GitBranch from 'lucide-solid/icons/git-branch'
 import { GitView } from './GitView'
 import { GitStatusBarItem } from './GitStatusBarItem'
-import { createGitStore, GitBackendKey, GitStoreKey } from './git-store'
+import { createGitStore, GitBackendKey, GIT_DIFF_PREVIEWER_ID, GitStoreKey } from './git-store'
 import { GIT_EN_US, GIT_ZH_CN } from './i18n'
 
 export {
   createGitStore,
   GitBackendKey,
   GitStoreKey,
+  GIT_DIFF_PREVIEWER_ID,
   hasStagedChanges,
   hasUnstagedChanges,
   isStageableEntry,
@@ -18,6 +19,8 @@ export {
   isUntrackedEntry,
   statusLetter,
   unstagePathsForEntry,
+  type GitDiffFocus,
+  type GitDiffSection,
   type GitStore,
 } from './git-store'
 export {
@@ -27,6 +30,14 @@ export {
   type GitTreeRoot,
   type GitTreeRow,
 } from './git-tree'
+export {
+  diffStats,
+  parseUnifiedDiff,
+  synthesizeAddedDiff,
+  type DiffHunk,
+  type DiffRow,
+  type ParsedDiff,
+} from './diff-parse'
 export { GitView } from './GitView'
 export { GitStatusBarItem } from './GitStatusBarItem'
 
@@ -76,6 +87,18 @@ export const gitPlugin: Plugin = {
       order: 20,
       icon: GitBranch,
       component: GitView,
+    })
+
+    // Diff previewer: lowest text priority so ordinary file opens keep their
+    // regular previewer; the Git panel requests it explicitly via
+    // preferredPreviewerId, and the pill switcher exposes it everywhere else.
+    ctx.contribute('previewer.provider', {
+      id: GIT_DIFF_PREVIEWER_ID,
+      label: 'Diff',
+      labelKey: 'git.diff.label',
+      priority: 5,
+      canHandle: (file) => !file.isBinary,
+      load: () => import('./GitDiffPreview'),
     })
 
     ctx.contribute('statusbar.item', {

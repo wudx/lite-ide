@@ -50,7 +50,13 @@ export interface GitStore {
   readonly mutating: Accessor<boolean>
   readonly branches: Accessor<GitBranchInfo[]>
   readonly branchesLoading: Accessor<boolean>
+  /**
+   * Last Git-panel row the user asked a diff for; the diff previewer reads it
+   * to pick the staged/unstaged comparison for the file it renders.
+   */
+  readonly diffFocus: Accessor<GitDiffFocus | null>
   setCommitMessage(message: string): void
+  setDiffFocus(focus: GitDiffFocus | null): void
   refresh(): Promise<void>
   ensureLoaded(): Promise<void>
   loadBranches(): Promise<void>
@@ -68,6 +74,17 @@ export interface GitStore {
   /** Cancels pending debounced refreshes; called when the project scope closes. */
   dispose(): void
 }
+
+/** Which comparison a Git-panel row points at when opening the diff preview. */
+export type GitDiffSection = 'staged' | 'unstaged'
+
+export interface GitDiffFocus {
+  relPath: string
+  section: GitDiffSection
+}
+
+/** previewer.provider id contributed by this plugin for diff previews. */
+export const GIT_DIFF_PREVIEWER_ID = 'git-diff'
 
 export const GitStoreKey = createServiceKey<GitStore>('plugin.git.store')
 
@@ -142,6 +159,7 @@ export function createGitStore(
   const mutating = () => pendingWrites() > 0
   const [branches, setBranches] = createSignal<GitBranchInfo[]>([])
   const [branchesLoading, setBranchesLoading] = createSignal(false)
+  const [diffFocus, setDiffFocus] = createSignal<GitDiffFocus | null>(null)
 
   let requestSeq = 0
   let branchRequestSeq = 0
@@ -291,9 +309,14 @@ export function createGitStore(
     mutating,
     branches,
     branchesLoading,
+    diffFocus,
 
     setCommitMessage(message: string) {
       setCommitMessage(message)
+    },
+
+    setDiffFocus(focus: GitDiffFocus | null) {
+      setDiffFocus(focus)
     },
 
     refresh,

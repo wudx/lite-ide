@@ -69,6 +69,12 @@
   --warning-btn-hover: rgba(245, 158, 11, 0.30);
   --success-text: #4ade80;
 
+  /* Diff preview tones (added vs removed lines) */
+  --diff-add-bg: rgba(74, 222, 128, 0.09);
+  --diff-add-text: #4ade80;
+  --diff-del-bg: rgba(239, 68, 68, 0.10);
+  --diff-del-text: #f87171;
+
   /* File icon palette */
   --icon-folder: rgba(122, 162, 255, 0.90);
   --icon-folder-ignored: #5b6273;
@@ -154,6 +160,12 @@
   --warning-btn-bg: rgba(217, 119, 6, 0.14);
   --warning-btn-hover: rgba(217, 119, 6, 0.22);
   --success-text: #16a34a;
+
+  /* Diff preview tones */
+  --diff-add-bg: rgba(22, 163, 74, 0.10);
+  --diff-add-text: #15803d;
+  --diff-del-bg: rgba(220, 38, 38, 0.08);
+  --diff-del-text: #b91c1c;
 
   /* Light file icon palette */
   --icon-folder: #3b6ff6;
@@ -241,6 +253,12 @@
   --warning-btn-bg: rgba(181, 137, 0, 0.14);
   --warning-btn-hover: rgba(181, 137, 0, 0.22);
   --success-text: #5c7a00;
+
+  /* Diff preview tones — Solarized green #859900 / red #DC322F */
+  --diff-add-bg: rgba(133, 153, 0, 0.12);
+  --diff-add-text: #5c7a00;
+  --diff-del-bg: rgba(220, 50, 47, 0.09);
+  --diff-del-text: #a82a27;
 
   /* Solarized file icon palette */
   --icon-folder: #268bd2;

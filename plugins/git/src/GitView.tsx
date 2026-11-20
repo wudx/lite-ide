@@ -42,6 +42,8 @@ import {
   statusLetter,
   unstagePathsForEntry,
   GitBackendKey,
+  GIT_DIFF_PREVIEWER_ID,
+  type GitDiffSection,
   GitStoreKey,
 } from './git-store'
 import { buildGitTree, type GitTreeDirNode } from './git-tree'
@@ -97,13 +99,13 @@ interface ChangeRowProps {
   disabled: boolean
   depth?: number
   showFolder?: boolean
+  onOpenDiff: (entry: GitFileStatus, section: GitDiffSection) => void
   onStage: (entry: GitFileStatus) => void
   onUnstage: (entry: GitFileStatus) => void
   onDiscard: (entry: GitFileStatus) => void
 }
 
 function ChangeRow(props: ChangeRowProps) {
-  const selection = props.scope.get(ProjectSelectionKey)
   const i18n = getI18n(props.scope)
   const letter = () => statusLetter(props.entry, props.section)
   const unmerged = () => isUnmergedEntry(props.entry)
@@ -138,7 +140,7 @@ function ChangeRow(props: ChangeRowProps) {
       style={
         props.depth ? { 'padding-left': `${8 + props.depth * 14}px` } : undefined
       }
-      onClick={() => void selection.selectFile(props.entry.relPath)}
+      onClick={() => props.onOpenDiff(props.entry, props.section)}
     >
       <FileIcon name={name()} isDir={false} />
       <span class="truncate flex-1 leading-normal min-w-0">{name()}</span>
@@ -217,6 +219,7 @@ interface TreeDirBranchProps {
   collapsedDirs: Readonly<Record<string, boolean>>
   disabled: boolean
   onToggleDir: (key: string) => void
+  onOpenDiff: (entry: GitFileStatus, section: GitDiffSection) => void
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
@@ -287,6 +290,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               collapsedDirs={props.collapsedDirs}
               disabled={props.disabled}
               onToggleDir={props.onToggleDir}
+              onOpenDiff={props.onOpenDiff}
               onStageEntries={props.onStageEntries}
               onUnstageEntries={props.onUnstageEntries}
               onDiscardEntry={props.onDiscardEntry}
@@ -302,6 +306,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               disabled={props.disabled}
               depth={props.depth + 1}
               showFolder={false}
+              onOpenDiff={props.onOpenDiff}
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
@@ -321,6 +326,7 @@ interface ChangeSectionContentProps {
   collapsedDirs: Readonly<Record<string, boolean>>
   disabled: boolean
   onToggleDir: (key: string) => void
+  onOpenDiff: (entry: GitFileStatus, section: GitDiffSection) => void
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
@@ -342,6 +348,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
               entry={entry}
               section={props.section}
               disabled={props.disabled}
+              onOpenDiff={props.onOpenDiff}
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
@@ -362,6 +369,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 collapsedDirs={props.collapsedDirs}
                 disabled={props.disabled}
                 onToggleDir={props.onToggleDir}
+                onOpenDiff={props.onOpenDiff}
                 onStageEntries={props.onStageEntries}
                 onUnstageEntries={props.onUnstageEntries}
                 onDiscardEntry={props.onDiscardEntry}
@@ -377,6 +385,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 disabled={props.disabled}
                 depth={0}
                 showFolder={false}
+                onOpenDiff={props.onOpenDiff}
                 onStage={(item) => props.onStageEntries([item])}
                 onUnstage={(item) => props.onUnstageEntries([item])}
                 onDiscard={props.onDiscardEntry}
@@ -441,6 +450,7 @@ function SectionHeader(props: SectionHeaderProps) {
 export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
+  const selection = props.scope.get(ProjectSelectionKey)
   const i18n = getI18n(props.scope)
 
   const [sectionCollapsed, setSectionCollapsed] = createSignal<Record<string, boolean>>({})
@@ -619,6 +629,21 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     const next: GitViewMode = viewMode() === 'list' ? 'tree' : 'list'
     setViewMode(next)
     writeStoredViewMode(next)
+  }
+
+  /**
+   * Opens the diff preview for a change row: the focused section tells the
+   * `git-diff` previewer which comparison to render (staged rows compare
+   * HEAD↔index, unstaged rows index↔worktree). `allowMissing` lets
+   * worktree-deleted rows (D) through stat: their diff comes from git, not
+   * the file on disk.
+   */
+  function openDiff(entry: GitFileStatus, section: GitDiffSection) {
+    store.setDiffFocus({ relPath: entry.relPath, section })
+    void selection.selectFile(entry.relPath, {
+      preferredPreviewerId: GIT_DIFF_PREVIEWER_ID,
+      allowMissing: true,
+    })
   }
 
   function stageEntries(entries: GitFileStatus[]) {
@@ -1052,6 +1077,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   collapsedDirs={dirCollapsed()}
                   disabled={store.committing() || store.mutating()}
                   onToggleDir={toggleDir}
+                  onOpenDiff={openDiff}
                   onStageEntries={stageEntries}
                   onUnstageEntries={unstageEntries}
                   onDiscardEntry={discardEntry}
@@ -1080,6 +1106,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   collapsedDirs={dirCollapsed()}
                   disabled={store.committing() || store.mutating()}
                   onToggleDir={toggleDir}
+                  onOpenDiff={openDiff}
                   onStageEntries={stageEntries}
                   onUnstageEntries={unstageEntries}
                   onDiscardEntry={discardEntry}

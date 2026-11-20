@@ -40,7 +40,16 @@ export interface ProjectSelectionService {
   setPreferredPreviewerId(id: string | null): void
   selectFile(
     relPath: string,
-    options?: { preferredPreviewerId?: string | null },
+    options?: {
+      preferredPreviewerId?: string | null
+      /**
+       * When stat fails (path no longer exists, e.g. a Git panel row for a
+       * worktree-deleted file), synthesize a stub FileMeta instead of
+       * surfacing the error, so previewers that render from other sources
+       * (like the git diff view) can still take over.
+       */
+      allowMissing?: boolean
+    },
   ): Promise<void>
   openUntitledTab(relPath: string, name: string): void
   requestSaveAs(relPath: string, presetError?: string | null): void
@@ -121,6 +130,12 @@ function baseNameOf(relPath: string): string {
   return idx === -1 ? normalized : normalized.slice(idx + 1)
 }
 
+function fileExtOf(relPath: string): string {
+  const name = baseNameOf(relPath)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+}
+
 function remapPath(target: string, oldRelPath: string, newRelPath: string, isDir: boolean): string | null {
   if (target === oldRelPath) return newRelPath
   if (isDir) {
@@ -186,7 +201,7 @@ export function createProjectSelection(
     setLoading(false)
   }
 
-  async function loadMeta(relPath: string, nextPreferred: string | null) {
+  async function loadMeta(relPath: string, nextPreferred: string | null, allowMissing = false) {
     const seq = ++requestSeq
     setSelectedPath(relPath)
     setPreferredPreviewerIdState(nextPreferred)
@@ -199,6 +214,20 @@ export function createProjectSelection(
       setFileMeta(meta)
     } catch (err) {
       if (seq !== requestSeq) return
+      if (allowMissing) {
+        setFileMeta({
+          projectId,
+          relPath,
+          name: baseNameOf(relPath),
+          ext: fileExtOf(relPath),
+          size: 0,
+          modifiedMs: 0,
+          mime: 'text/plain',
+          isBinary: false,
+          encoding: '',
+        })
+        return
+      }
       setFileMeta(null)
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -229,7 +258,10 @@ export function createProjectSelection(
       )
     },
 
-    async selectFile(relPath: string, options?: { preferredPreviewerId?: string | null }) {
+    async selectFile(
+      relPath: string,
+      options?: { preferredPreviewerId?: string | null; allowMissing?: boolean },
+    ) {
       // Untitled buffers have no disk file to stat; activate their tab directly.
       if (isUntitledPath(relPath)) {
         openUntitledTabImpl(relPath, untitledDisplayNameOf(relPath))
@@ -268,7 +300,7 @@ export function createProjectSelection(
         return
       }
 
-      await loadMeta(relPath, targetPreferred)
+      await loadMeta(relPath, targetPreferred, options?.allowMissing ?? false)
     },
 
     openUntitledTab(relPath: string, name: string) {

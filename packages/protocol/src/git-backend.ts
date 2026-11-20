@@ -78,8 +78,42 @@ interface MockGitRepoState {
   /** Unstaged tracked entries: relPath -> worktree status letter. */
   unstaged: Map<string, string>
   untracked: Set<string>
+  /** Preset unified diffs shown for staged entries (HEAD ↔ index). */
+  stagedDiffs: Map<string, string>
+  /** Preset unified diffs shown for unstaged entries (index ↔ worktree). */
+  unstagedDiffs: Map<string, string>
   commitCount: number
 }
+
+const README_STAGED_DIFF = `diff --git a/README.md b/README.md
+index 3d2f4a1..b8c9e02 100644
+--- a/README.md
++++ b/README.md
+@@ -7,3 +7,3 @@
+ - **Top Project Tabs**: One tab per project with isolated \`ProjectScope\` and LRU DOM keep-alive.
+ - **Virtual File Tree**: Lazy directory loading + \`@tanstack/solid-virtual\`.
+-- **Lazy Previewers**: CodeMirror 6, Markdown, Image/SVG, and Binary fallback loaded on demand.
++- **Lazy Previewers**: CodeMirror 6, Markdown, Image/SVG, Audio waveform, and Binary fallback loaded on demand.
+`
+
+const APP_TSX_UNSTAGED_DIFF = `diff --git a/src/App.tsx b/src/App.tsx
+index 91c3e77..4e7f2a9 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,10 +1,10 @@
+ import { createSignal } from 'solid-js'
+
+ export function Counter() {
+   const [count, setCount] = createSignal(0)
+   return (
+-    <button onClick={() => setCount((c) => c + 1)}>
+-      Active Count: {count()}
++    <button class="counter-btn" onClick={() => setCount((c) => c + 1)}>
++      Clicked {count()} times
+     </button>
+   )
+ }
+`
 
 const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
   // The demo repo starts with one staged and one unstaged modification so the
@@ -98,6 +132,8 @@ const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
     staged: new Map([['README.md', 'M']]),
     unstaged: new Map([['src/App.tsx', 'M']]),
     untracked: new Set(),
+    stagedDiffs: new Map([['README.md', README_STAGED_DIFF]]),
+    unstagedDiffs: new Map([['src/App.tsx', APP_TSX_UNSTAGED_DIFF]]),
   },
 }
 
@@ -110,6 +146,8 @@ function defaultMockState(): MockGitRepoState {
     staged: new Map(),
     unstaged: new Map(),
     untracked: new Set(),
+    stagedDiffs: new Map(),
+    unstagedDiffs: new Map(),
     commitCount: 0,
   }
 }
@@ -168,6 +206,8 @@ export function createMockGitBackend(): GitBackend {
       state.staged = new Map(MOCK_REPO_INITIAL[projectId]?.staged ?? [])
       state.unstaged = new Map(MOCK_REPO_INITIAL[projectId]?.unstaged ?? [])
       state.untracked = new Set(MOCK_REPO_INITIAL[projectId]?.untracked ?? [])
+      state.stagedDiffs = new Map(MOCK_REPO_INITIAL[projectId]?.stagedDiffs ?? [])
+      state.unstagedDiffs = new Map(MOCK_REPO_INITIAL[projectId]?.unstagedDiffs ?? [])
       state.branches = (MOCK_REPO_INITIAL[projectId]?.branches ?? []).map((b) => ({ ...b }))
       repoStates.set(projectId, state)
     }
@@ -214,6 +254,13 @@ export function createMockGitBackend(): GitBackend {
             state.staged.set(relPath, unstaged)
           }
           state.unstaged.delete(relPath)
+          // The diff payload travels with the change so the diff preview keeps
+          // showing it under the section it now lives in.
+          const diffPayload = state.unstagedDiffs.get(relPath)
+          if (diffPayload !== undefined) {
+            state.stagedDiffs.set(relPath, diffPayload)
+            state.unstagedDiffs.delete(relPath)
+          }
         } else if (state.untracked.has(relPath)) {
           state.untracked.delete(relPath)
           state.staged.set(relPath, 'A')
@@ -228,11 +275,16 @@ export function createMockGitBackend(): GitBackend {
         const staged = state.staged.get(relPath)
         if (staged === undefined) continue
         state.staged.delete(relPath)
+        const diffPayload = state.stagedDiffs.get(relPath)
+        state.stagedDiffs.delete(relPath)
         if (staged === 'A') {
           state.untracked.add(relPath)
           state.unstaged.delete(relPath)
         } else {
           state.unstaged.set(relPath, staged)
+          if (diffPayload !== undefined) {
+            state.unstagedDiffs.set(relPath, diffPayload)
+          }
         }
       }
     },
@@ -249,6 +301,7 @@ export function createMockGitBackend(): GitBackend {
       }
       for (const relPath of trackedPaths) {
         state.unstaged.delete(relPath)
+        state.unstagedDiffs.delete(relPath)
       }
     },
 
@@ -260,6 +313,8 @@ export function createMockGitBackend(): GitBackend {
         throw new Error('nothing to commit, working tree clean')
       }
       state.staged.clear()
+      // Committed changes no longer differ from HEAD.
+      state.stagedDiffs.clear()
       state.commitCount += 1
       // Deterministic pseudo-sha so assertions stay stable across runs.
       const sha = (0x1000000 + state.commitCount * 0x9e3779)
@@ -298,9 +353,15 @@ export function createMockGitBackend(): GitBackend {
       const files: GitDiffFile[] = []
       // Untracked files have no diff content (mirrors real `git diff`).
       const source = options.staged ? state.staged : state.unstaged
+      const payloads = options.staged ? state.stagedDiffs : state.unstagedDiffs
       for (const [relPath, letter] of source) {
         if (wanted && !wanted.includes(relPath)) continue
-        files.push({ relPath, patch: buildMockPatch(relPath, letter) })
+        // Preset payloads give the demo files realistic patches; everything
+        // else falls back to the generic pseudo-patch.
+        files.push({
+          relPath,
+          patch: payloads.get(relPath) ?? buildMockPatch(relPath, letter),
+        })
       }
       return files
     },
