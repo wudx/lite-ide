@@ -271,6 +271,24 @@ export function PreviewHost(props: PreviewHostProps) {
     }
   })
 
+  // Mouse wheel over the tab strip scrolls it horizontally (vertical wheel
+  // delta is the dominant input on mouse wheels, horizontal delta covers
+  // shift+wheel and trackpads). Ctrl+wheel is left untouched so browser
+  // pinch/page zoom keeps working. Only claim the event while the strip
+  // actually overflows, so shorter tab lists keep native scrolling of
+  // ancestors intact.
+  function handleTabStripWheel(event: WheelEvent & { currentTarget: HTMLDivElement }) {
+    const strip = event.currentTarget
+    if (event.ctrlKey) return
+    if (strip.scrollWidth <= strip.clientWidth) return
+    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1
+    const dominant = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+    const delta = dominant * scale
+    if (delta === 0) return
+    event.preventDefault()
+    strip.scrollLeft += delta
+  }
+
   async function handleSaveCurrent() {
     const path = selection.selectedPath()
     if (!path) return
@@ -318,6 +336,7 @@ export function PreviewHost(props: PreviewHostProps) {
             ref={(el) => (tabStrip = el)}
             role="tablist"
             aria-label={i18n.t('preview.editorTabsAria')}
+            onWheel={handleTabStripWheel}
             class="flex-1 min-w-0 h-full px-2 pt-1.5 flex items-end gap-1 overflow-x-auto no-scrollbar"
           >
             <For each={selection.openTabs()}>
