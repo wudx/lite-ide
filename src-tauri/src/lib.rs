@@ -13,7 +13,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::error::AppError;
 use crate::fs::{DirEntry, FileMeta, TextPayload, WriteTextResult};
-use crate::git::{GitBranchInfo, GitCommitResult, GitDiffFile, GitStatus};
+use crate::git::{GitBranchInfo, GitCommitResult, GitDiffFile, GitStashEntry, GitStatus};
 use crate::project::{FsDelta, ProjectInfo, ProjectManager};
 
 #[tauri::command]
@@ -227,6 +227,55 @@ async fn git_checkout_branch(
     git::checkout_branch(&root, &name, create.unwrap_or(false)).await
 }
 
+#[tauri::command]
+async fn git_stash_all(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    message: Option<String>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stash_all(&root, message.as_deref()).await
+}
+
+#[tauri::command]
+async fn git_stash_paths(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stash_paths(&root, &paths).await
+}
+
+#[tauri::command]
+async fn git_stash_list(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+) -> Result<Vec<GitStashEntry>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stash_list(&root).await
+}
+
+#[tauri::command]
+async fn git_stash_pop(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    index: usize,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stash_pop(&root, index).await
+}
+
+#[tauri::command]
+async fn git_stash_drop(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    index: usize,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stash_drop(&root, index).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 任务栏跳转列表依赖 AUMID 在首个窗口创建前声明，必须最先执行。
@@ -301,6 +350,11 @@ pub fn run() {
             git_diff,
             git_branches,
             git_checkout_branch,
+            git_stash_all,
+            git_stash_paths,
+            git_stash_list,
+            git_stash_pop,
+            git_stash_drop,
             ai_chat
         ])
         .run(tauri::generate_context!())

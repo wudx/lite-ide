@@ -106,6 +106,17 @@ export interface GitBranchInfo {
   upstream?: string | null
 }
 
+/** One entry from `git stash list`; `index` 0 is the newest entry. */
+export interface GitStashEntry {
+  index: number
+  /** Reflog selector, e.g. `stash@{0}`. */
+  refName: string
+  /** Stash subject line ("WIP on main: abc1234 msg" or "On main: msg"). */
+  message: string
+  /** Relative committer date for display, e.g. "2 hours ago". */
+  date: string
+}
+
 /**
  * Version-control operations for one opened project. Implementations must
  * scope every call to the project and only accept project-relative paths.
@@ -129,6 +140,16 @@ export interface GitBackend {
   diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>
   branches(projectId: string): Promise<GitBranchInfo[]>
   checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
+  /** Stashes all tracked + untracked changes; optional stash message. */
+  stashAll(projectId: string, message?: string): Promise<void>
+  /** Stashes only the given paths' changes (tracked and untracked). */
+  stashPaths(projectId: string, relPaths: string[]): Promise<void>
+  /** The project's stash stack, newest entry first. */
+  stashList(projectId: string): Promise<GitStashEntry[]>
+  /** Applies the stash entry and removes it from the stack (git stash pop). */
+  stashPop(projectId: string, index: number): Promise<void>
+  /** Removes a stash entry without applying it (git stash drop). */
+  stashDrop(projectId: string, index: number): Promise<void>
 }
 
 export interface WorkspaceBackend {

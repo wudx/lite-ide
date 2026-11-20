@@ -185,6 +185,11 @@ describe('git store (mock backend)', () => {
       branches: async () => [],
       diff: async () => [],
       checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
     }
 
     const store = createGitStore('custom', fakeBackend)
@@ -238,6 +243,11 @@ describe('git store (mock backend)', () => {
       branches: async () => [],
       diff: async () => [],
       checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
     }
 
     const store = createGitStore('slow', slowBackend)
@@ -313,6 +323,11 @@ describe('git store (mock backend)', () => {
       },
       diff: async () => [],
       checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
     }
 
     const store = createGitStore('race', racyBackend)
@@ -387,6 +402,11 @@ describe('git store (mock backend)', () => {
       branches: async () => [],
       diff: async () => [],
       checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
     }
 
     const store = createGitStore('coalesce', slowBackend)
@@ -430,6 +450,11 @@ describe('git store (mock backend)', () => {
         branches: async () => [],
         diff: async () => [],
         checkoutBranch: async () => {},
+        stashAll: async () => {},
+        stashPaths: async () => {},
+        stashList: async () => [],
+        stashPop: async () => {},
+        stashDrop: async () => {},
       }
 
       const store = createGitStore('delta-filter', backend)
@@ -497,11 +522,143 @@ describe('git store (mock backend)', () => {
       branches: async () => [],
       diff: async () => [],
       checkoutBranch: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashPop: async () => {},
+      stashDrop: async () => {},
     }
     const failingStore = createGitStore('fail-push', failingBackend)
     await failingStore.refresh()
     expect(await failingStore.push()).toBe(false)
     expect(failingStore.pushing()).toBe(false)
     expect(failingStore.error()).toContain('failed to push some refs')
+  })
+
+  it('lists preset stashes for the demo repository', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    expect(store.stashesLoading()).toBe(false)
+
+    await store.loadStashes()
+
+    expect(store.stashesLoading()).toBe(false)
+    const stashes = store.stashes()
+    expect(stashes.length).toBeGreaterThanOrEqual(2)
+    expect(stashes[0].index).toBe(0)
+    expect(stashes[0].refName).toBe('stash@{0}')
+    expect(stashes[0].message).toContain('WIP on main')
+  })
+
+  it('stashes all changes, restores them via pop and clears via drop', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+    await store.loadStashes()
+    expect(store.status()?.entries.length).toBe(2)
+    const presetCount = store.stashes().length
+
+    await store.stashAll()
+
+    expect(store.status()?.entries.length).toBe(0)
+    expect(store.stashes().length).toBe(presetCount + 1)
+    expect(store.stashes()[0].refName).toBe('stash@{0}')
+
+    // Pop restores the worktree state (README staged, App unstaged) and
+    // removes the entry from the stack.
+    await store.stashPop(0)
+    expect(store.stashes().length).toBe(presetCount)
+    expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
+    expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
+
+    // Drop removes the entry without touching the (already stashed-clean)
+    // worktree: the second stashAll swept README and App away again.
+    await store.stashAll()
+    expect(store.status()?.entries.length).toBe(0)
+    expect(store.stashes().length).toBe(presetCount + 1)
+    await store.stashDrop(0)
+    expect(store.stashes().length).toBe(presetCount)
+    expect(store.status()?.entries.length).toBe(0)
+  })
+
+  it('stashes only the selected paths and restores them', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+    await store.loadStashes()
+    const presetCount = store.stashes().length
+
+    await store.stashPaths(['src/App.tsx'])
+
+    expect(entryOf(store, 'README.md')).toMatchObject({ x: 'M', y: ' ' })
+    expect(store.status()?.entries.some((e) => e.relPath === 'src/App.tsx')).toBe(false)
+    expect(store.stashes().length).toBe(presetCount + 1)
+
+    await store.stashPop(0)
+    expect(entryOf(store, 'src/App.tsx')).toMatchObject({ x: ' ', y: 'M' })
+    expect(store.stashes().length).toBe(presetCount)
+  })
+
+  it('surfaces stash failures as store errors', async () => {
+    const store = createGitStore(PLAIN_PROJECT, createMockGitBackend())
+    await store.refresh()
+
+    await store.stashAll()
+    expect(store.error()).toContain('not a git repository')
+
+    // The list call mirrors the Rust backend and resolves to an empty stack
+    // for folders outside version control (no error).
+    await store.loadStashes()
+    expect(store.stashes()).toHaveLength(0)
+    expect(store.error()).toBeNull()
+
+    await store.stashPop(0)
+    expect(store.error()).toContain('not a git repository')
+    await store.stashDrop(0)
+    expect(store.error()).toContain('not a git repository')
+  })
+
+  it('routes stash writes through the backend with project id and payload', async () => {
+    const stashAllSpy = vi.fn(async () => {})
+    const stashPathsSpy = vi.fn(async () => {})
+    const stashPopSpy = vi.fn(async () => {})
+    const stashDropSpy = vi.fn(async () => {})
+    const fakeBackend: GitBackend = {
+      status: async () => ({
+        repo: true,
+        branch: 'main',
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        entries: [{ x: ' ', y: 'M', relPath: 'a.ts' }],
+      }),
+      stage: async () => {},
+      unstage: async () => {},
+      discard: async () => {},
+      commit: async () => ({ sha: 'abc1234' }),
+      push: async () => {},
+      branches: async () => [],
+      diff: async () => [],
+      checkoutBranch: async () => {},
+      stashAll: stashAllSpy,
+      stashPaths: stashPathsSpy,
+      stashList: async () => [],
+      stashPop: stashPopSpy,
+      stashDrop: stashDropSpy,
+    }
+
+    const store = createGitStore('stash-project', fakeBackend)
+    await store.refresh()
+
+    await store.stashAll('demo message')
+    expect(stashAllSpy).toHaveBeenCalledWith('stash-project', 'demo message')
+
+    // Pathspecs pass through verbatim (rename paths are resolved by the view).
+    await store.refresh()
+    await store.stashPaths(['new.ts', 'old.ts'])
+    expect(stashPathsSpy).toHaveBeenCalledWith('stash-project', ['new.ts', 'old.ts'])
+
+    await store.stashPop(0)
+    expect(stashPopSpy).toHaveBeenCalledWith('stash-project', 0)
+
+    await store.stashDrop(1)
+    expect(stashDropSpy).toHaveBeenCalledWith('stash-project', 1)
   })
 })

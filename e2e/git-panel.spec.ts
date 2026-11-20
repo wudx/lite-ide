@@ -277,6 +277,93 @@ test('git panel switches branches and creates a new branch in mock mode', async 
   expect(consoleErrors).toEqual([])
 })
 
+test('git panel stashes changes, restores them and manages the stash list', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+
+  // The demo repo ships with two preset stash entries.
+  await expect(page.getByText('存储 (2)', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-git-stash="stash@{0}"]')).toBeVisible()
+
+  // 选择存储: stash a single unstaged file via its row hover action.
+  const unstagedRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
+  await unstagedRow.hover()
+  await unstagedRow.getByRole('button', { name: `存储 ${UNSTAGED_FILE}` }).click()
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(0)
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
+
+  // 全部存储: stash the remaining staged change via the more-actions menu.
+  await page.getByTestId('git-more-button').click()
+  const morePopover = page.getByTestId('git-more-popover')
+  await expect(morePopover).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('git-more-menu.png'), animations: 'disabled' })
+  await page.getByTestId('git-stash-all').click()
+  await expect(morePopover).toHaveCount(0)
+  await expect(page.getByText('工作区干净')).toBeVisible()
+  await expect(page.getByText('存储 (4)', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('git-stash-all.png'), animations: 'disabled' })
+
+  // 还原: popping the newest entry restores the staged change.
+  const newestStashRow = page.locator('[data-git-stash="stash@{0}"]')
+  await newestStashRow.hover()
+  await page.getByTestId('git-stash-restore-0').click()
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
+
+  // 删除存储: dropping requires confirmation.
+  await newestStashRow.hover()
+  await page.getByTestId('git-stash-drop-0').click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('git-stash-drop-confirm.png'), animations: 'disabled' })
+  await page.getByRole('dialog').getByText('删除', { exact: true }).click()
+  await expect(page.getByText('存储 (2)', { exact: true })).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('git panel discards all unstaged changes after confirmation', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  // 全部撤销: discards every unstaged change (staged ones stay untouched).
+  await page.getByTestId('git-more-button').click()
+  await page.getByTestId('git-discard-all').click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('git-discard-all-confirm.png'), animations: 'disabled' })
+  await page.getByRole('dialog').getByText('全部撤销', { exact: true }).click()
+
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(0)
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+
+  // Disabling: with no unstaged changes left the menu item is disabled.
+  await page.getByTestId('git-more-button').click()
+  await expect(page.getByTestId('git-discard-all')).toBeDisabled()
+  await page.getByTestId('git-stash-all').click()
+  await expect(page.getByText('工作区干净')).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})
+
 // AI commit-message generation (mock git backend + intercepted provider API).
 const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
 

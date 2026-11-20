@@ -6,6 +6,7 @@ import type {
   GitDiffFile,
   GitDiffOptions,
   GitStatus,
+  GitStashEntry,
 } from './types'
 
 /**
@@ -65,6 +66,26 @@ export function createTauriGitBackend(): GitBackend {
     ): Promise<void> {
       await invoke<void>('git_checkout_branch', { projectId, name, create })
     },
+
+    async stashAll(projectId: string, message?: string): Promise<void> {
+      await invoke<void>('git_stash_all', { projectId, message: message ?? null })
+    },
+
+    async stashPaths(projectId: string, relPaths: string[]): Promise<void> {
+      await invoke<void>('git_stash_paths', { projectId, paths: relPaths })
+    },
+
+    async stashList(projectId: string): Promise<GitStashEntry[]> {
+      return invoke<GitStashEntry[]>('git_stash_list', { projectId })
+    },
+
+    async stashPop(projectId: string, index: number): Promise<void> {
+      await invoke<void>('git_stash_pop', { projectId, index })
+    },
+
+    async stashDrop(projectId: string, index: number): Promise<void> {
+      await invoke<void>('git_stash_drop', { projectId, index })
+    },
   }
 }
 
@@ -82,8 +103,27 @@ interface MockGitRepoState {
   stagedDiffs: Map<string, string>
   /** Preset unified diffs shown for unstaged entries (index ↔ worktree). */
   unstagedDiffs: Map<string, string>
+  /** Stash stack, newest entry first; each entry snapshots what it holds. */
+  stashes: MockStash[]
   commitCount: number
 }
+
+/** Worktree state captured by a stash entry so pop can restore it. */
+interface MockStashSnapshot {
+  staged: Array<[string, string]>
+  stagedDiffs: Array<[string, string]>
+  unstaged: Array<[string, string]>
+  unstagedDiffs: Array<[string, string]>
+  untracked: string[]
+}
+
+interface MockStash {
+  message: string
+  date: string
+  snapshot: MockStashSnapshot
+}
+
+const MOCK_STASH_DATE = '刚刚'
 
 const README_STAGED_DIFF = `diff --git a/README.md b/README.md
 index 3d2f4a1..b8c9e02 100644
@@ -134,6 +174,32 @@ const MOCK_REPO_INITIAL: Record<string, Partial<MockGitRepoState>> = {
     untracked: new Set(),
     stagedDiffs: new Map([['README.md', README_STAGED_DIFF]]),
     unstagedDiffs: new Map([['src/App.tsx', APP_TSX_UNSTAGED_DIFF]]),
+    stashes: [
+      {
+        message: 'WIP on main: 3d2f4a1 feat: settings dialog',
+        date: '10 分钟前',
+        snapshot: {
+          staged: [['src/legacy-feature.ts', 'M']],
+          stagedDiffs: [
+            ['src/legacy-feature.ts', buildMockPatch('src/legacy-feature.ts', 'M')],
+          ],
+          unstaged: [],
+          unstagedDiffs: [],
+          untracked: ['docs/scratch-notes.md'],
+        },
+      },
+      {
+        message: 'On main: tidy styles',
+        date: '2 小时前',
+        snapshot: {
+          staged: [],
+          stagedDiffs: [],
+          unstaged: [],
+          unstagedDiffs: [],
+          untracked: [],
+        },
+      },
+    ],
   },
 }
 
@@ -148,6 +214,7 @@ function defaultMockState(): MockGitRepoState {
     untracked: new Set(),
     stagedDiffs: new Map(),
     unstagedDiffs: new Map(),
+    stashes: [],
     commitCount: 0,
   }
 }
@@ -209,6 +276,17 @@ export function createMockGitBackend(): GitBackend {
       state.stagedDiffs = new Map(MOCK_REPO_INITIAL[projectId]?.stagedDiffs ?? [])
       state.unstagedDiffs = new Map(MOCK_REPO_INITIAL[projectId]?.unstagedDiffs ?? [])
       state.branches = (MOCK_REPO_INITIAL[projectId]?.branches ?? []).map((b) => ({ ...b }))
+      state.stashes = (MOCK_REPO_INITIAL[projectId]?.stashes ?? []).map((stash) => ({
+        message: stash.message,
+        date: stash.date,
+        snapshot: {
+          staged: [...stash.snapshot.staged],
+          stagedDiffs: [...stash.snapshot.stagedDiffs],
+          unstaged: [...stash.snapshot.unstaged],
+          unstagedDiffs: [...stash.snapshot.unstagedDiffs],
+          untracked: [...stash.snapshot.untracked],
+        },
+      }))
       repoStates.set(projectId, state)
     }
     return state
@@ -237,6 +315,50 @@ export function createMockGitBackend(): GitBackend {
       behind: 0,
       entries,
     }
+  }
+
+  function captureSnapshot(state: MockGitRepoState): MockStashSnapshot {
+    return {
+      staged: [...state.staged],
+      stagedDiffs: [...state.stagedDiffs],
+      unstaged: [...state.unstaged],
+      unstagedDiffs: [...state.unstagedDiffs],
+      untracked: [...state.untracked],
+    }
+  }
+
+  function restoreSnapshot(state: MockGitRepoState, snapshot: MockStashSnapshot): void {
+    for (const [relPath, letter] of snapshot.staged) {
+      state.staged.set(relPath, letter)
+    }
+    for (const [relPath, patch] of snapshot.stagedDiffs) {
+      state.stagedDiffs.set(relPath, patch)
+    }
+    for (const [relPath, letter] of snapshot.unstaged) {
+      state.unstaged.set(relPath, letter)
+    }
+    for (const [relPath, patch] of snapshot.unstagedDiffs) {
+      state.unstagedDiffs.set(relPath, patch)
+    }
+    for (const relPath of snapshot.untracked) {
+      state.untracked.add(relPath)
+    }
+  }
+
+  function removeSnapshotFromWorktree(state: MockGitRepoState, snapshot: MockStashSnapshot): void {
+    for (const [relPath] of snapshot.staged) state.staged.delete(relPath)
+    for (const [relPath] of snapshot.stagedDiffs) state.stagedDiffs.delete(relPath)
+    for (const [relPath] of snapshot.unstaged) state.unstaged.delete(relPath)
+    for (const [relPath] of snapshot.unstagedDiffs) state.unstagedDiffs.delete(relPath)
+    for (const relPath of snapshot.untracked) state.untracked.delete(relPath)
+  }
+
+  function getStash(state: MockGitRepoState, index: number): MockStash {
+    const stash = state.stashes[index]
+    if (!stash) {
+      throw new Error(`stash@{${index}} is not a valid reference`)
+    }
+    return stash
   }
 
   return {
@@ -438,6 +560,83 @@ export function createMockGitBackend(): GitBackend {
       }
 
       throw new Error(`error: pathspec '${name}' did not match any file(s) known to git`)
+    },
+
+    async stashAll(projectId: string, message?: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const snapshot = captureSnapshot(state)
+      if (
+        snapshot.staged.length === 0 &&
+        snapshot.unstaged.length === 0 &&
+        snapshot.untracked.length === 0
+      ) {
+        // Nothing to save: real git prints "No local changes to save" and
+        // exits with code 0, so this is a silent no-op.
+        return
+      }
+      const trimmed = message?.trim()
+      const subject = trimmed
+        ? `On ${state.branch}: ${trimmed}`
+        : `WIP on ${state.branch}: mock stash snapshot`
+      state.stashes.unshift({ message: subject, date: MOCK_STASH_DATE, snapshot })
+      removeSnapshotFromWorktree(state, snapshot)
+    },
+
+    async stashPaths(projectId: string, relPaths: string[]): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const wanted = new Set(relPaths)
+      const snapshot: MockStashSnapshot = {
+        staged: [...state.staged].filter(([relPath]) => wanted.has(relPath)),
+        stagedDiffs: [...state.stagedDiffs].filter(([relPath]) => wanted.has(relPath)),
+        unstaged: [...state.unstaged].filter(([relPath]) => wanted.has(relPath)),
+        unstagedDiffs: [...state.unstagedDiffs].filter(([relPath]) => wanted.has(relPath)),
+        untracked: [...state.untracked].filter((relPath) => wanted.has(relPath)),
+      }
+      if (
+        snapshot.staged.length === 0 &&
+        snapshot.unstaged.length === 0 &&
+        snapshot.untracked.length === 0
+      ) {
+        // Nothing matched: real git prints "No local changes to save" and
+        // succeeds without creating a stash entry.
+        return
+      }
+      state.stashes.unshift({
+        message: `WIP on ${state.branch}: stashed ${snapshot.staged.length + snapshot.unstaged.length + snapshot.untracked.length} path(s)`,
+        date: MOCK_STASH_DATE,
+        snapshot,
+      })
+      removeSnapshotFromWorktree(state, snapshot)
+    },
+
+    async stashList(projectId: string): Promise<GitStashEntry[]> {
+      const state = getState(projectId)
+      // Mirrors the Rust backend: folders outside version control resolve to
+      // an empty stack instead of an error.
+      if (!state.repo) return []
+      return state.stashes.map((stash, index) => ({
+        index,
+        refName: `stash@{${index}}`,
+        message: stash.message,
+        date: stash.date,
+      }))
+    },
+
+    async stashPop(projectId: string, index: number): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const stash = getStash(state, index)
+      restoreSnapshot(state, stash.snapshot)
+      state.stashes.splice(index, 1)
+    },
+
+    async stashDrop(projectId: string, index: number): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      getStash(state, index)
+      state.stashes.splice(index, 1)
     },
   }
 }

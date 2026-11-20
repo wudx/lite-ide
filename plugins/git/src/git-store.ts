@@ -1,5 +1,11 @@
 import { createServiceKey } from '@lite-ide/kernel'
-import type { GitBackend, GitBranchInfo, GitFileStatus, GitStatus } from '@lite-ide/protocol'
+import type {
+  GitBackend,
+  GitBranchInfo,
+  GitFileStatus,
+  GitStatus,
+  GitStashEntry,
+} from '@lite-ide/protocol'
 import type { TranslateFn } from '@lite-ide/workbench'
 import { batch, createSignal, type Accessor } from 'solid-js'
 
@@ -50,6 +56,9 @@ export interface GitStore {
   readonly mutating: Accessor<boolean>
   readonly branches: Accessor<GitBranchInfo[]>
   readonly branchesLoading: Accessor<boolean>
+  /** The project's stash stack, newest entry first. */
+  readonly stashes: Accessor<GitStashEntry[]>
+  readonly stashesLoading: Accessor<boolean>
   /**
    * Last Git-panel row the user asked a diff for; the diff previewer reads it
    * to pick the staged/unstaged comparison for the file it renders.
@@ -60,6 +69,8 @@ export interface GitStore {
   refresh(): Promise<void>
   ensureLoaded(): Promise<void>
   loadBranches(): Promise<void>
+  /** Fetches the stash stack; called when the panel opens and after stash writes. */
+  loadStashes(): Promise<void>
   checkoutBranch(name: string, create?: boolean): Promise<boolean>
   handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }): void
   stage(relPaths: string[]): Promise<void>
@@ -67,6 +78,14 @@ export interface GitStore {
   stageAll(): Promise<void>
   unstageAll(): Promise<void>
   discard(untrackedPaths: string[], trackedPaths: string[]): Promise<void>
+  /** Stashes all tracked + untracked changes; optional stash message. */
+  stashAll(message?: string): Promise<void>
+  /** Stashes only the given paths' changes (tracked and untracked). */
+  stashPaths(relPaths: string[]): Promise<void>
+  /** Applies stash@{index} and removes it from the stack. */
+  stashPop(index: number): Promise<void>
+  /** Removes stash@{index} without applying it. */
+  stashDrop(index: number): Promise<void>
   /** Resolves false (with `error` set) when the commit was rejected. */
   commit(): Promise<boolean>
   /** Resolves false (with `error` set) when the push failed. */
@@ -159,10 +178,13 @@ export function createGitStore(
   const mutating = () => pendingWrites() > 0
   const [branches, setBranches] = createSignal<GitBranchInfo[]>([])
   const [branchesLoading, setBranchesLoading] = createSignal(false)
+  const [stashes, setStashes] = createSignal<GitStashEntry[]>([])
+  const [stashesLoading, setStashesLoading] = createSignal(false)
   const [diffFocus, setDiffFocus] = createSignal<GitDiffFocus | null>(null)
 
   let requestSeq = 0
   let branchRequestSeq = 0
+  let stashRequestSeq = 0
   let fsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let writeChain: Promise<void> = Promise.resolve()
   let statusInFlight: Promise<string | null> | null = null
@@ -278,6 +300,33 @@ export function createGitStore(
     await fetchBranches(true)
   }
 
+  async function fetchStashes(syncError: boolean): Promise<string | null> {
+    const seq = ++stashRequestSeq
+    setStashesLoading(true)
+    try {
+      const next = await backend.stashList(projectId)
+      if (seq !== stashRequestSeq) return null
+      batch(() => {
+        setStashes(next)
+        if (syncError) setError(null)
+      })
+      return null
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (seq !== stashRequestSeq) return null
+      if (syncError) setError(message)
+      return message
+    } finally {
+      if (seq === stashRequestSeq) {
+        setStashesLoading(false)
+      }
+    }
+  }
+
+  async function loadStashes(): Promise<void> {
+    await fetchStashes(true)
+  }
+
   function runAction(action: () => Promise<void>): Promise<void> {
     return enqueueWrite(async () => {
       let actionError: string | null = null
@@ -295,6 +344,26 @@ export function createGitStore(
     })
   }
 
+  /**
+   * Like `runAction`, but also refreshes the stash stack: every stash write
+   * mutates both the worktree (status) and the stash list.
+   */
+  function runStashAction(action: () => Promise<void>): Promise<void> {
+    return enqueueWrite(async () => {
+      let actionError: string | null = null
+      try {
+        await action()
+      } catch (err) {
+        actionError = err instanceof Error ? err.message : String(err)
+      }
+      const [statusError, stashError] = await Promise.all([
+        fetchStatus(true),
+        fetchStashes(false),
+      ])
+      setError(actionError ?? statusError ?? stashError)
+    })
+  }
+
   return {
     status,
     loading,
@@ -309,6 +378,8 @@ export function createGitStore(
     mutating,
     branches,
     branchesLoading,
+    stashes,
+    stashesLoading,
     diffFocus,
 
     setCommitMessage(message: string) {
@@ -324,6 +395,8 @@ export function createGitStore(
     ensureLoaded,
 
     loadBranches,
+
+    loadStashes,
 
     async checkoutBranch(name: string, create = false): Promise<boolean> {
       const trimmed = name.trim()
@@ -404,6 +477,23 @@ export function createGitStore(
         return Promise.resolve()
       }
       return runAction(() => backend.discard(projectId, untrackedPaths, trackedPaths))
+    },
+
+    stashAll(message?: string) {
+      return runStashAction(() => backend.stashAll(projectId, message))
+    },
+
+    stashPaths(relPaths: string[]) {
+      if (relPaths.length === 0) return Promise.resolve()
+      return runStashAction(() => backend.stashPaths(projectId, relPaths))
+    },
+
+    stashPop(index: number) {
+      return runStashAction(() => backend.stashPop(projectId, index))
+    },
+
+    stashDrop(index: number) {
+      return runStashAction(() => backend.stashDrop(projectId, index))
     },
 
     async commit(): Promise<boolean> {

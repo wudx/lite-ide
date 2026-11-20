@@ -79,6 +79,19 @@ pub struct GitBranchInfo {
     pub upstream: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStashEntry {
+    /// Position in the stash stack; `0` is the newest entry.
+    pub index: usize,
+    /// Reflog selector of the entry, e.g. `stash@{0}`.
+    pub ref_name: String,
+    /// Stash subject line ("WIP on main: abc1234 msg" or "On main: msg").
+    pub message: String,
+    /// Relative committer date for display, e.g. "2 hours ago".
+    pub date: String,
+}
+
 /// Runs `git` in the project root and returns stdout on success.
 async fn run_git(root: &Path, args: &[&str]) -> Result<String, AppError> {
     let mut cmd = Command::new("git");
@@ -472,6 +485,126 @@ pub async fn checkout_branch(
     Err(AppError::Git(format!("branch '{name}' does not exist")))
 }
 
+/// Validates an explicit stash message before handing it to `git stash push -m`.
+fn sanitize_stash_message(message: &str) -> Result<&str, AppError> {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Git("stash message must not be empty".into()));
+    }
+    if trimmed.chars().count() > 200 {
+        return Err(AppError::Git("stash message is too long".into()));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(AppError::Git(
+            "stash message contains control characters".into(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+fn stash_ref_name(index: usize) -> String {
+    format!("stash@{{{index}}}")
+}
+
+/// Stashes all tracked and untracked changes of the project root
+/// (`git stash push --include-untracked`). Like real git, a worktree without
+/// any local changes resolves to a no-op ("No local changes to save").
+pub async fn stash_all(canonical_root: &Path, message: Option<&str>) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let mut args: Vec<&str> = vec!["stash", "push", "--include-untracked"];
+    let owned_message;
+    if let Some(message) = message {
+        owned_message = sanitize_stash_message(message)?.to_string();
+        args.push("-m");
+        args.push(owned_message.as_str());
+    }
+    run_git(canonical_root, &args).await?;
+    Ok(())
+}
+
+/// Stashes only the given paths' changes (`git stash push --include-untracked
+/// -- <paths>`). All paths must go into one stash entry, so this is a single
+/// git invocation rather than a batched one; a row-level action passes 1-2
+/// pathspecs, staying far below the Windows command-line limit.
+pub async fn stash_paths(canonical_root: &Path, paths: &[String]) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    validate_pathspecs(paths)?;
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut args: Vec<&str> = vec!["stash", "push", "--include-untracked", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    run_git(canonical_root, &args).await?;
+    Ok(())
+}
+
+/// The project's stash stack, newest entry first. A folder outside version
+/// control (or a subdirectory of a repo) resolves to an empty list.
+pub async fn stash_list(canonical_root: &Path) -> Result<Vec<GitStashEntry>, AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Ok(Vec::new());
+    }
+    let stdout = run_git(
+        canonical_root,
+        &["stash", "list", "--format=%gd%x1f%gs%x1f%cr"],
+    )
+    .await?;
+    Ok(parse_stash_list(&stdout))
+}
+
+/// Applies `stash@{index}` and removes it from the stack (`git stash pop`).
+/// On merge conflicts git keeps the stash entry and reports the failure.
+pub async fn stash_pop(canonical_root: &Path, index: usize) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    run_git(canonical_root, &["stash", "pop", &stash_ref_name(index)]).await?;
+    Ok(())
+}
+
+/// Removes `stash@{index}` without applying it (`git stash drop`).
+pub async fn stash_drop(canonical_root: &Path, index: usize) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    run_git(canonical_root, &["stash", "drop", &stash_ref_name(index)]).await?;
+    Ok(())
+}
+
+/// Parses `git stash list --format=%gd%x1f%gs%x1f%cr` output.
+///
+/// Each record is one line of ASCII unit-separator (0x1f) fields — a byte
+/// that cannot appear in stash subjects — so tabs or newlines inside a
+/// message cannot desynchronize the columns. Malformed lines are skipped.
+pub fn parse_stash_list(raw: &str) -> Vec<GitStashEntry> {
+    let mut items = Vec::new();
+    for line in raw.lines() {
+        let mut parts = line.splitn(3, '\u{1f}');
+        let (Some(ref_name), Some(message), Some(date)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let index = ref_name
+            .strip_prefix("stash@{")
+            .and_then(|rest| rest.strip_suffix('}'))
+            .and_then(|digits| digits.parse::<usize>().ok());
+        let Some(index) = index else { continue };
+        items.push(GitStashEntry {
+            index,
+            ref_name: ref_name.to_string(),
+            message: message.to_string(),
+            date: date.trim().to_string(),
+        });
+    }
+    items.sort_by_key(|entry| entry.index);
+    items
+}
+
 pub fn parse_branches(raw: &str) -> Vec<GitBranchInfo> {
     let mut items = Vec::new();
     for line in raw.lines() {
@@ -830,6 +963,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_stash_list_entries() {
+        let raw = concat!(
+            "stash@{0}\u{1f}WIP on main: abc1234 demo\u{1f}2 hours ago\n",
+            "stash@{1}\u{1f}On dev: manual save\u{1f}3 days ago\n",
+        );
+        let items = parse_stash_list(raw);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].index, 0);
+        assert_eq!(items[0].ref_name, "stash@{0}");
+        assert_eq!(items[0].message, "WIP on main: abc1234 demo");
+        assert_eq!(items[0].date, "2 hours ago");
+        assert_eq!(items[1].index, 1);
+        assert_eq!(items[1].message, "On dev: manual save");
+        assert_eq!(items[1].date, "3 days ago");
+
+        // Malformed records are skipped instead of poisoning the stack.
+        assert!(parse_stash_list("not a stash line\n\nstash@{x}\u{1f}msg\u{1f}now").is_empty());
+    }
+
+    #[test]
+    fn validates_stash_messages() {
+        assert!(sanitize_stash_message("  fix bug  ").is_ok());
+        assert!(sanitize_stash_message("   ").is_err());
+        assert!(sanitize_stash_message("").is_err());
+        assert!(sanitize_stash_message("a\u{0007}b").is_err());
+        assert!(sanitize_stash_message(&"x".repeat(201)).is_err());
+        assert!(sanitize_stash_message(&"x".repeat(200)).is_ok());
+    }
+
+    #[test]
     fn validates_branch_names_and_parses_refs() {
         assert!(validate_branch_name("main").is_ok());
         assert!(validate_branch_name("feat/git-panel").is_ok());
@@ -1095,6 +1258,99 @@ mod repo_tests {
         assert!(checkout_branch(&root, "--orphan", true).await.is_err());
         assert!(checkout_branch(&root, "origin/HEAD", false).await.is_err());
         assert!(checkout_branch(&root, "@", false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn stashes_restores_and_drops_entries() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        // Stash all sweeps tracked modifications and untracked files alike.
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        std::fs::write(root.join("b.txt"), "new").unwrap();
+        stash_all(&root, None).await.unwrap();
+        assert_eq!(status_letters(&root).await, Vec::<(char, char, String)>::new());
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+        assert!(!root.join("b.txt").exists());
+
+        let list = stash_list(&root).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].index, 0);
+        assert_eq!(list[0].ref_name, "stash@{0}");
+        assert!(list[0].message.starts_with("WIP on "), "{}", list[0].message);
+        assert!(!list[0].date.is_empty());
+
+        // Restore (pop) reinstates the worktree state and empties the stack.
+        stash_pop(&root, 0).await.unwrap();
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two");
+        assert!(root.join("b.txt").exists());
+        assert!(stash_list(&root).await.unwrap().is_empty());
+
+        // A named message round-trips through the stash subject; the worktree
+        // resets to HEAD ("one"), while the stashed "three" state is kept.
+        std::fs::write(root.join("a.txt"), "three").unwrap();
+        stash_all(&root, Some("demo stash")).await.unwrap();
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+        let list = stash_list(&root).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].message.contains("demo stash"), "{}", list[0].message);
+
+        // Dropping removes the entry without touching the worktree.
+        stash_drop(&root, 0).await.unwrap();
+        assert!(stash_list(&root).await.unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+
+        assert!(stash_all(&root, Some("   ")).await.is_err());
+        assert!(stash_all(&root, Some("bad\u{7}msg")).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn stashes_only_selected_paths() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        std::fs::write(root.join("b.txt"), "keep").unwrap();
+        git_ok(&root, &["add", "--", "a.txt", "b.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        // Pathspec stash takes only the requested file into the stash.
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        std::fs::write(root.join("b.txt"), "changed").unwrap();
+        std::fs::write(root.join("c.txt"), "untracked").unwrap();
+        stash_paths(&root, &["a.txt".into(), "c.txt".into()])
+            .await
+            .unwrap();
+        let letters = status_letters(&root).await;
+        assert_eq!(letters, vec![(' ', 'M', "b.txt".into())]);
+        assert!(!root.join("c.txt").exists());
+        assert_eq!(stash_list(&root).await.unwrap().len(), 1);
+
+        // Pathspecs are validated before reaching git.
+        assert!(stash_paths(&root, &["../escape.txt".into()]).await.is_err());
+        assert!(stash_paths(&root, &[]).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn stash_ops_outside_repository_error() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("plain.txt"), "no git here").unwrap();
+
+        assert!(stash_list(&root).await.unwrap().is_empty());
+        assert!(stash_all(&root, None).await.is_err());
+        assert!(stash_all(&root, Some("msg")).await.is_err());
+        assert!(stash_paths(&root, &["a.txt".into()]).await.is_err());
+        assert!(stash_pop(&root, 0).await.is_err());
+        assert!(stash_drop(&root, 0).await.is_err());
     }
 
     #[tokio::test]

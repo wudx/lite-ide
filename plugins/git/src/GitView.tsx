@@ -1,5 +1,5 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import type { GitFileStatus } from '@lite-ide/protocol'
+import type { GitFileStatus, GitStashEntry } from '@lite-ide/protocol'
 import {
   AiModelKey,
   ConfirmDialogKey,
@@ -7,9 +7,12 @@ import {
   getI18n,
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
+import Archive from 'lucide-solid/icons/archive'
+import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import Check from 'lucide-solid/icons/check'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
+import EllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import GitBranch from 'lucide-solid/icons/git-branch'
 import Globe from 'lucide-solid/icons/globe'
 import List from 'lucide-solid/icons/list'
@@ -19,6 +22,7 @@ import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
 import RefreshCw from 'lucide-solid/icons/refresh-cw'
 import Sparkles from 'lucide-solid/icons/sparkles'
+import Trash from 'lucide-solid/icons/trash'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
 import {
@@ -103,6 +107,7 @@ interface ChangeRowProps {
   onStage: (entry: GitFileStatus) => void
   onUnstage: (entry: GitFileStatus) => void
   onDiscard: (entry: GitFileStatus) => void
+  onStash?: (entry: GitFileStatus) => void
 }
 
 function ChangeRow(props: ChangeRowProps) {
@@ -191,6 +196,21 @@ function ChangeRow(props: ChangeRowProps) {
             <Minus class="w-3.5 h-3.5" />
           </button>
         </Show>
+        <Show when={!unmerged() && props.section === 'unstaged' && props.onStash}>
+          <button
+            type="button"
+            aria-label={i18n.t('git.action.stashPath', { path: props.entry.relPath })}
+            title={i18n.t('git.action.stash')}
+            disabled={props.disabled}
+            class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onStash?.(props.entry)
+            }}
+          >
+            <Archive class="w-3.5 h-3.5" />
+          </button>
+        </Show>
         <Show when={!unmerged() && props.section === 'unstaged'}>
           <button
             type="button"
@@ -223,6 +243,7 @@ interface TreeDirBranchProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
+  onStashEntry?: (entry: GitFileStatus) => void
 }
 
 function TreeDirBranch(props: TreeDirBranchProps) {
@@ -294,6 +315,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               onStageEntries={props.onStageEntries}
               onUnstageEntries={props.onUnstageEntries}
               onDiscardEntry={props.onDiscardEntry}
+              onStashEntry={props.onStashEntry}
             />
           )}
         </For>
@@ -310,6 +332,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
+              onStash={props.onStashEntry}
             />
           )}
         </For>
@@ -330,6 +353,7 @@ interface ChangeSectionContentProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
+  onStashEntry?: (entry: GitFileStatus) => void
 }
 
 function ChangeSectionContent(props: ChangeSectionContentProps) {
@@ -352,6 +376,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
+              onStash={props.onStashEntry}
             />
           )}
         </For>
@@ -373,6 +398,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 onStageEntries={props.onStageEntries}
                 onUnstageEntries={props.onUnstageEntries}
                 onDiscardEntry={props.onDiscardEntry}
+                onStashEntry={props.onStashEntry}
               />
             )}
           </For>
@@ -389,6 +415,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 onStage={(item) => props.onStageEntries([item])}
                 onUnstage={(item) => props.onUnstageEntries([item])}
                 onDiscard={props.onDiscardEntry}
+                onStash={props.onStashEntry}
               />
             )}
           </For>
@@ -447,6 +474,82 @@ function SectionHeader(props: SectionHeaderProps) {
   )
 }
 
+interface StashSectionProps {
+  scope: ProjectScope
+  stashes: GitStashEntry[]
+  disabled: boolean
+  onRestore: (entry: GitStashEntry) => void
+  onDrop: (entry: GitStashEntry) => void
+}
+
+/** The project's stash stack with per-entry restore (pop) and drop actions. */
+function StashSection(props: StashSectionProps) {
+  const i18n = getI18n(props.scope)
+  const [collapsed, setCollapsed] = createSignal(false)
+
+  return (
+    <div class="mt-2">
+      <SectionHeader
+        title={i18n.t('git.stash.section')}
+        count={props.stashes.length}
+        collapsed={collapsed()}
+        onToggle={() => setCollapsed((prev) => !prev)}
+        class="pt-1"
+      />
+      <Show when={!collapsed()}>
+        <Show
+          when={props.stashes.length > 0}
+          fallback={
+            <div class="mx-1.5 px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">
+              {i18n.t('git.stash.empty')}
+            </div>
+          }
+        >
+          <For each={props.stashes}>
+            {(stash) => (
+              <div
+                data-git-stash={stash.refName}
+                title={stash.message}
+                class="group/row mx-1.5 rounded-lg flex items-center gap-1.5 pr-1.5 pl-2 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors duration-100"
+              >
+                <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span class="truncate flex-1 leading-normal min-w-0">{stash.message}</span>
+                <span class="shrink-0 text-[10px] text-[var(--text-muted)] leading-normal">
+                  {stash.date}
+                </span>
+                <span class="shrink-0 hidden group-hover/row:flex group-focus-within/row:flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    data-testid={`git-stash-restore-${stash.index}`}
+                    aria-label={i18n.t('git.stash.restorePath', { ref: stash.refName })}
+                    title={i18n.t('git.stash.restore')}
+                    disabled={props.disabled}
+                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    onClick={() => props.onRestore(stash)}
+                  >
+                    <RotateCcw class="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`git-stash-drop-${stash.index}`}
+                    aria-label={i18n.t('git.stash.dropPath', { ref: stash.refName })}
+                    title={i18n.t('git.stash.drop')}
+                    disabled={props.disabled}
+                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    onClick={() => props.onDrop(stash)}
+                  >
+                    <Trash class="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              </div>
+            )}
+          </For>
+        </Show>
+      </Show>
+    </div>
+  )
+}
+
 export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
@@ -460,11 +563,14 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [branchMenuOpen, setBranchMenuOpen] = createSignal(false)
   const [branchQuery, setBranchQuery] = createSignal('')
   const [branchActiveIdx, setBranchActiveIdx] = createSignal(0)
+  const [moreMenuOpen, setMoreMenuOpen] = createSignal(false)
   let spinTimer: ReturnType<typeof setTimeout> | null = null
   let branchBtnRef: HTMLButtonElement | undefined
   let branchPopoverRef: HTMLDivElement | undefined
   let branchListRef: HTMLDivElement | undefined
   let branchInputRef: HTMLInputElement | undefined
+  let moreMenuBtnRef: HTMLButtonElement | undefined
+  let moreMenuPopoverRef: HTMLDivElement | undefined
 
   const BRANCH_LISTBOX_ID = 'git-branch-listbox'
   const branchOptionId = (index: number) => `git-branch-option-${index}`
@@ -492,6 +598,22 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
         return
       }
       setBranchMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    onCleanup(() => document.removeEventListener('pointerdown', onPointerDown))
+  })
+
+  createEffect(() => {
+    if (!moreMenuOpen()) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (
+        target &&
+        (moreMenuPopoverRef?.contains(target) || moreMenuBtnRef?.contains(target))
+      ) {
+        return
+      }
+      setMoreMenuOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     onCleanup(() => document.removeEventListener('pointerdown', onPointerDown))
@@ -528,9 +650,24 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     setBranchActiveIdx(0)
   })
 
+  // Fetch the stash stack when the repository becomes available (panel opened
+  // or project switched); stash writes refresh it themselves afterwards. Guard
+  // with a flag so status-only refreshes don't re-run `git stash list`.
+  let stashesLoadedForRepo = false
   createEffect(() => {
-    if (!repo() && branchMenuOpen()) {
-      setBranchMenuOpen(false)
+    if (!repo()) {
+      if (branchMenuOpen()) {
+        setBranchMenuOpen(false)
+      }
+      if (moreMenuOpen()) {
+        setMoreMenuOpen(false)
+      }
+      stashesLoadedForRepo = false
+      return
+    }
+    if (!stashesLoadedForRepo) {
+      stashesLoadedForRepo = true
+      void store.loadStashes()
     }
   })
 
@@ -616,6 +753,24 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const stageableEntries = createMemo(() =>
     unstagedEntries().filter(isStageableEntry),
   )
+  /** Paths discard-all reverts: every unstaged entry except merge conflicts. */
+  const discardablePaths = createMemo(() => ({
+    untracked: unstagedEntries().filter(isUntrackedEntry).map((e) => e.relPath),
+    tracked: unstagedEntries()
+      .filter((e) => !isUntrackedEntry(e) && !isUnmergedEntry(e))
+      .map((e) => e.relPath),
+  }))
+  const discardableCount = createMemo(() => {
+    const { untracked, tracked } = discardablePaths()
+    return untracked.length + tracked.length
+  })
+  /** Entries stash-all can sweep; unmerged conflicts block a real `git stash`. */
+  const stashableCount = createMemo(
+    () =>
+      (store.status()?.entries ?? []).filter(
+        (e) => hasStagedChanges(e) || (hasUnstagedChanges(e) && !isUnmergedEntry(e)),
+      ).length,
+  )
 
   function toggleSection(id: string) {
     setSectionCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -674,6 +829,59 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     })
     if (choice !== 'discard') return
     void store.discard(untracked ? [entry.relPath] : [], untracked ? [] : [entry.relPath])
+  }
+
+  /**
+   * Discards every unstaged change at once (worktree back to the index):
+   * tracked entries are restored, untracked entries are deleted. Unmerged
+   * conflicts are skipped — per-row discard excludes them for the same
+   * reason (`checkout -- <unmerged>` fails).
+   */
+  async function discardAllChanges() {
+    if (!dialogs) return
+    setMoreMenuOpen(false)
+    const { untracked, tracked } = discardablePaths()
+    if (untracked.length === 0 && tracked.length === 0) return
+    const total = untracked.length + tracked.length
+    const choice = await dialogs.confirm({
+      title: i18n.t('git.discardAll.title'),
+      message: i18n.t('git.discardAll.message', { count: total }),
+      details: [...untracked, ...tracked].slice(0, 8),
+      actions: [
+        { id: 'discard', label: i18n.t('git.discardAll.confirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+      ],
+      cancelId: 'cancel',
+    })
+    if (choice !== 'discard') return
+    void store.discard(untracked, tracked)
+  }
+
+  /** Stashes a single entry's changes (rename source included). */
+  function stashEntry(entry: GitFileStatus) {
+    const paths = entry.origPath ? [entry.relPath, entry.origPath] : [entry.relPath]
+    void store.stashPaths(paths)
+  }
+
+  async function restoreStash(entry: GitStashEntry) {
+    await store.stashPop(entry.index)
+  }
+
+  async function dropStash(entry: GitStashEntry) {
+    // Fail closed: dropping a stash entry is irreversible.
+    if (!dialogs) return
+    const choice = await dialogs.confirm({
+      title: i18n.t('git.stash.dropTitle'),
+      message: i18n.t('git.stash.dropMessage', { ref: entry.refName }),
+      details: [entry.message],
+      actions: [
+        { id: 'drop', label: i18n.t('git.stash.dropConfirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+      ],
+      cancelId: 'cancel',
+    })
+    if (choice !== 'drop') return
+    void store.stashDrop(entry.index)
   }
 
   async function commitFromBox() {
@@ -833,8 +1041,72 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 <Upload class="w-3.5 h-3.5" />
               </Show>
             </button>
+            <button
+              type="button"
+              data-testid="git-more-button"
+              aria-label={i18n.t('git.menu.more')}
+              title={i18n.t('git.menu.more')}
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen()}
+              disabled={!repo()}
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-all duration-150 active:scale-95"
+              onClick={() => setMoreMenuOpen((open) => !open)}
+            >
+              <EllipsisVertical class="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
+
+        {/* More-actions popover: bulk stash / discard */}
+        <Show when={repo() && moreMenuOpen()}>
+          <div
+            ref={moreMenuPopoverRef}
+            data-testid="git-more-popover"
+            role="menu"
+            aria-label={i18n.t('git.menu.more')}
+            class="absolute right-2 top-[calc(100%-2px)] z-30 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-1 flex flex-col min-w-[180px]"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setMoreMenuOpen(false)
+                moreMenuBtnRef?.focus()
+              }
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="git-stash-all"
+              title={i18n.t('git.stash.allTitle')}
+              disabled={
+                stashableCount() === 0 || store.committing() || store.mutating()
+              }
+              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={() => {
+                setMoreMenuOpen(false)
+                void store.stashAll()
+              }}
+            >
+              <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+              <span class="truncate leading-normal min-w-0">
+                {i18n.t('git.stash.all')}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="git-discard-all"
+              disabled={discardableCount() === 0 || store.committing() || store.mutating()}
+              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={() => void discardAllChanges()}
+            >
+              <Undo2 class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+              <span class="truncate leading-normal min-w-0">
+                {i18n.t('git.discardAll.title')}
+              </span>
+            </button>
+          </div>
+        </Show>
 
         {/* Branch switcher popover */}
         <Show when={repo() && branchMenuOpen()}>
@@ -1110,10 +1382,20 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   onStageEntries={stageEntries}
                   onUnstageEntries={unstageEntries}
                   onDiscardEntry={discardEntry}
+                  onStashEntry={stashEntry}
                 />
               </Show>
             </Show>
           </Show>
+
+          {/* Stash stack stays visible even when the working tree is clean. */}
+          <StashSection
+            scope={props.scope}
+            stashes={store.stashes()}
+            disabled={store.committing() || store.mutating()}
+            onRestore={(entry) => void restoreStash(entry)}
+            onDrop={(entry) => void dropStash(entry)}
+          />
         </div>
       </Show>
     </div>
