@@ -41,6 +41,8 @@ export interface GitStore {
   /** True while a non-initial status refresh is in flight (refresh spinner). */
   readonly refreshing: Accessor<boolean>
   readonly error: Accessor<string | null>
+  /** Surfaces non-store failures (e.g. AI generation) in the error banner. */
+  setError(message: string | null): void
   readonly commitMessage: Accessor<string>
   readonly committing: Accessor<boolean>
   readonly pushing: Accessor<boolean>
@@ -280,6 +282,9 @@ export function createGitStore(
     loading,
     refreshing,
     error,
+    setError(message: string | null) {
+      setError(message)
+    },
     commitMessage,
     committing,
     pushing,

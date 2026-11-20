@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
 const LOCALE_STORAGE_KEY = 'lite-ide.locale.v1'
 const EXCLUDE_STORAGE_KEY = 'lite-ide.explorer.exclude.v1'
+const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
 const SOLARIZED_EDITOR_BG = 'rgb(253, 246, 227)' // --bg-editor #FDF6E3
 
 function trackConsoleErrors(page: Page): string[] {
@@ -305,6 +306,84 @@ test('general section switches display language across the IDE and persists acro
   expect(await page.evaluate((k) => localStorage.getItem(k), LOCALE_STORAGE_KEY)).toBe('system')
   await expect(dialog.getByRole('heading', { name: '设置' })).toBeVisible()
   await expect(page.getByText('项目: 2')).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('models section switches providers, stores the API key locally and persists', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  await page.keyboard.press('Control+,')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+
+  // The built-in models section shows up between General and plugin sections.
+  await expect(dialog.getByRole('button', { name: '模型' })).toBeVisible()
+  await dialog.getByRole('button', { name: '模型' }).click()
+  await expect(dialog.getByRole('heading', { name: '模型服务' })).toBeVisible()
+
+  // Two providers contributed: Z.ai (GLM) and DeepSeek; DeepSeek is default.
+  await expect(dialog.getByTestId('ai-provider-zai')).toBeVisible()
+  await expect(dialog.getByTestId('ai-provider-deepseek')).toBeVisible()
+  await expect(dialog.getByTestId('ai-provider-deepseek')).toHaveAttribute('aria-pressed', 'true')
+  await page.screenshot({
+    path: testInfo.outputPath('settings-models-default.png'),
+    animations: 'disabled',
+  })
+
+  // API key input is masked by default and toggleable.
+  const apiKey = dialog.getByTestId('ai-api-key')
+  await expect(apiKey).toHaveAttribute('type', 'password')
+  await apiKey.fill('sk-deepseek-test-123')
+  await expect(apiKey).toHaveAttribute('type', 'password')
+
+  // Default DeepSeek endpoint and model ship as presets.
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.deepseek.com')
+  await expect(dialog.getByTestId('ai-model')).toHaveValue('deepseek-chat')
+
+  // Switch to Z.ai: its preset endpoint/model apply and the selection persists.
+  await dialog.getByTestId('ai-provider-zai').click()
+  await expect(dialog.getByTestId('ai-provider-zai')).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.z.ai/api/paas/v4')
+  await expect(dialog.getByTestId('ai-model')).toHaveValue('glm-4.6')
+
+  await dialog.getByTestId('ai-api-key').fill('sk-zai-test-456')
+  await dialog.getByTestId('ai-commit-prompt').fill('使用英文提交信息')
+  await page.screenshot({
+    path: testInfo.outputPath('settings-models-zai.png'),
+    animations: 'disabled',
+  })
+
+  const stored = JSON.parse(
+    await page.evaluate((k) => localStorage.getItem(k), AI_MODEL_STORAGE_KEY),
+  )
+  expect(stored.providerId).toBe('zai')
+  expect(stored.providers.zai.apiKey).toBe('sk-zai-test-456')
+  expect(stored.providers.deepseek.apiKey).toBe('sk-deepseek-test-123')
+  expect(stored.commitPrompt).toBe('使用英文提交信息')
+
+  // Reload: provider, key and custom prompt are restored from localStorage.
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.keyboard.press('Control+,')
+  // Reopen lands on the first section; switch to the models section explicitly.
+  await dialog.getByRole('button', { name: '模型', exact: true }).click()
+  await expect(dialog.getByTestId('ai-provider-zai')).toHaveAttribute('aria-pressed', 'true')
+  await expect(dialog.getByTestId('ai-api-key')).toHaveValue('sk-zai-test-456')
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.z.ai/api/paas/v4')
+  await expect(dialog.getByTestId('ai-commit-prompt')).toHaveValue('使用英文提交信息')
+
+  // Reset-to-defaults restores the preset base URL/model but keeps the key.
+  await dialog.getByTestId('ai-base-url').fill('https://proxy.example.com/v4')
+  await dialog.getByRole('button', { name: '恢复默认' }).click()
+  await expect(dialog.getByTestId('ai-base-url')).toHaveValue('https://api.z.ai/api/paas/v4')
+  await expect(dialog.getByTestId('ai-model')).toHaveValue('glm-4.6')
+  await expect(dialog.getByTestId('ai-api-key')).toHaveValue('sk-zai-test-456')
 
   expect(consoleErrors).toEqual([])
 })

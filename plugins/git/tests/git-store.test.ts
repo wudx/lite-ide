@@ -183,6 +183,7 @@ describe('git store (mock backend)', () => {
       commit: async () => ({ sha: 'abc1234' }),
       push: async () => {},
       branches: async () => [],
+      diff: async () => [],
       checkoutBranch: async () => {},
     }
 
@@ -235,6 +236,7 @@ describe('git store (mock backend)', () => {
       commit: async () => ({ sha: 'abc1234' }),
       push: async () => {},
       branches: async () => [],
+      diff: async () => [],
       checkoutBranch: async () => {},
     }
 
@@ -309,6 +311,7 @@ describe('git store (mock backend)', () => {
         }
         throw new Error('branch list unavailable')
       },
+      diff: async () => [],
       checkoutBranch: async () => {},
     }
 
@@ -382,6 +385,7 @@ describe('git store (mock backend)', () => {
       commit: async () => ({ sha: 'abc1234' }),
       push: async () => {},
       branches: async () => [],
+      diff: async () => [],
       checkoutBranch: async () => {},
     }
 
@@ -424,6 +428,7 @@ describe('git store (mock backend)', () => {
         commit: async () => ({ sha: 'abc1234' }),
         push: async () => {},
         branches: async () => [],
+        diff: async () => [],
         checkoutBranch: async () => {},
       }
 
@@ -490,6 +495,7 @@ describe('git store (mock backend)', () => {
         throw new Error('git push: failed to push some refs')
       },
       branches: async () => [],
+      diff: async () => [],
       checkoutBranch: async () => {},
     }
     const failingStore = createGitStore('fail-push', failingBackend)

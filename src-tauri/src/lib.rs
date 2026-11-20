@@ -1,3 +1,4 @@
+mod ai;
 mod error;
 mod fs;
 mod git;
@@ -12,7 +13,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::error::AppError;
 use crate::fs::{DirEntry, FileMeta, TextPayload, WriteTextResult};
-use crate::git::{GitBranchInfo, GitCommitResult, GitStatus};
+use crate::git::{GitBranchInfo, GitCommitResult, GitDiffFile, GitStatus};
 use crate::project::{FsDelta, ProjectInfo, ProjectManager};
 
 #[tauri::command]
@@ -191,6 +192,22 @@ async fn git_push(
 }
 
 #[tauri::command]
+async fn git_diff(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    staged: bool,
+    paths: Vec<String>,
+) -> Result<Vec<GitDiffFile>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::diff(&root, staged, &paths).await
+}
+
+#[tauri::command]
+async fn ai_chat(request: ai::AiChatRequest) -> Result<ai::AiChatResult, AppError> {
+    ai::chat(request).await
+}
+
+#[tauri::command]
 async fn git_branches(
     manager: State<'_, Arc<ProjectManager>>,
     project_id: String,
@@ -281,8 +298,10 @@ pub fn run() {
             git_discard,
             git_commit,
             git_push,
+            git_diff,
             git_branches,
-            git_checkout_branch
+            git_checkout_branch,
+            ai_chat
         ])
         .run(tauri::generate_context!())
         .expect("error while running LiteIDE");

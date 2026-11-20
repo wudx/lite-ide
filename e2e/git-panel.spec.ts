@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // Mock-mode demo project opened automatically on a fresh localStorage.
 const STAGED_FILE = 'README.md'
@@ -273,6 +273,152 @@ test('git panel switches branches and creates a new branch in mock mode', async 
   await expect(popover).toHaveCount(0)
   await expect(page.getByTestId('git-branch-name')).toHaveText('feat/e2e-branch')
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('feat/e2e-branch')
+
+  expect(consoleErrors).toEqual([])
+})
+
+// AI commit-message generation (mock git backend + intercepted provider API).
+const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
+
+function seedAiModelConfig(options?: { apiKey?: string; commitPrompt?: string }) {
+  return (page: Page) => {
+    const config = {
+      providerId: 'deepseek',
+      providers: {
+        zai: { apiKey: '', baseUrl: 'https://api.z.ai/api/paas/v4', model: 'glm-4.6' },
+        deepseek: {
+          apiKey: options?.apiKey ?? '',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-chat',
+        },
+      },
+      commitPrompt: options?.commitPrompt ?? '',
+    }
+    page.addInitScript(
+      ([key, value]) => localStorage.setItem(key, value),
+      [AI_MODEL_STORAGE_KEY, JSON.stringify(config)] as [string, string],
+    )
+  }
+}
+
+function trackErrors(page: Page): string[] {
+  const errors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text())
+  })
+  page.on('pageerror', (err) => errors.push(String(err)))
+  return errors
+}
+
+test('AI generate fills the commit message from staged changes via the provider API', async ({
+  page,
+}, testInfo) => {
+  seedAiModelConfig({ apiKey: 'sk-e2e-test' })(page)
+  const consoleErrors = trackErrors(page)
+
+  const chatRequests: Array<Record<string, unknown>> = []
+  await page.route('https://api.deepseek.com/chat/completions', async (route) => {
+    chatRequests.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: 'feat(e2e): AI 生成的提交信息' } }],
+      }),
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  const generateBtn = page.getByTestId('git-ai-generate')
+  await expect(generateBtn).toBeVisible()
+  await generateBtn.click()
+
+  // The intercepted provider response lands in the commit textarea.
+  const textarea = page.getByPlaceholder('输入提交信息 (Ctrl+Enter 提交)')
+  await expect(textarea).toHaveValue('feat(e2e): AI 生成的提交信息')
+  await page.screenshot({
+    path: testInfo.outputPath('git-ai-generated.png'),
+    animations: 'disabled',
+  })
+
+  // The prompt carries the staged file overview and its mock diff patch.
+  expect(chatRequests).toHaveLength(1)
+  const body = chatRequests[0] as {
+    model: string
+    messages: Array<{ role: string; content: string }>
+  }
+  expect(body.model).toBe('deepseek-chat')
+  expect(body.messages[0].role).toBe('system')
+  expect(body.messages[0].content).toContain('Git 提交信息')
+  const userContent = body.messages[body.messages.length - 1].content
+  expect(userContent).toContain('[M] README.md')
+  expect(userContent).toContain('文件：README.md')
+  expect(userContent).toContain('diff --git a/README.md b/README.md')
+  expect(userContent).not.toContain('src/App.tsx')
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('AI generate surfaces a friendly error when the API key is missing', async ({ page }) => {
+  seedAiModelConfig()(page)
+  const consoleErrors = trackErrors(page)
+
+  let apiCalled = false
+  await page.route('https://api.deepseek.com/chat/completions', async (route) => {
+    apiCalled = true
+    await route.fulfill({ status: 200, body: '{}' })
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  await page.getByTestId('git-ai-generate').click()
+  await expect(
+    page.getByText('未配置模型 API Key，请在「设置 → 模型」中填写。'),
+  ).toBeVisible()
+  expect(apiCalled).toBe(false)
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('AI generate uses the custom commit prompt as the system instruction', async ({ page }) => {
+  seedAiModelConfig({ apiKey: 'sk-e2e-test', commitPrompt: '用一句话英文描述变更' })(page)
+  const consoleErrors = trackErrors(page)
+
+  const chatRequests: Array<Record<string, unknown>> = []
+  await page.route('https://api.deepseek.com/chat/completions', async (route) => {
+    chatRequests.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: 'Update demo files' } }],
+      }),
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  await page.getByTestId('git-ai-generate').click()
+  await expect(page.getByPlaceholder('输入提交信息 (Ctrl+Enter 提交)')).toHaveValue(
+    'Update demo files',
+  )
+
+  const body = chatRequests[0] as {
+    messages: Array<{ role: string; content: string }>
+  }
+  expect(body.messages[0]).toEqual({ role: 'system', content: '用一句话英文描述变更' })
+  // The default instruction must not leak into the request.
+  expect(body.messages[0].content).not.toContain('Conventional Commits')
 
   expect(consoleErrors).toEqual([])
 })

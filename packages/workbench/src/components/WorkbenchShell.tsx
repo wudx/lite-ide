@@ -16,6 +16,7 @@ import { QuickOpenKey } from '../quick-open'
 import { AppearanceSettings } from './AppearanceSettings'
 import { ConfirmDialog } from './ConfirmDialog'
 import { GeneralSettings } from './GeneralSettings'
+import { ModelSettings } from './ModelSettings'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { QuickOpenDialog } from './QuickOpenDialog'
 import { SettingsDialog } from './SettingsDialog'
@@ -177,6 +178,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         titleKey: 'settings.section.general',
         order: 5,
         component: GeneralSettings,
+      }),
+    )
+
+    // Built-in models section: AI provider configuration (Z.ai / DeepSeek).
+    disposables.add(
+      props.kernel.contribute('settings.section', {
+        id: 'workbench.models',
+        title: '模型',
+        titleKey: 'settings.section.models',
+        order: 10,
+        component: ModelSettings,
       }),
     )
 

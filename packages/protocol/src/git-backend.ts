@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { GitBackend, GitBranchInfo, GitCommitResult, GitStatus } from './types'
+import type {
+  GitBackend,
+  GitBranchInfo,
+  GitCommitResult,
+  GitDiffFile,
+  GitDiffOptions,
+  GitStatus,
+} from './types'
 
 /**
  * Desktop implementation backed by the system `git` executable. Every call is
@@ -37,6 +44,14 @@ export function createTauriGitBackend(): GitBackend {
 
     async push(projectId: string): Promise<void> {
       await invoke<void>('git_push', { projectId })
+    },
+
+    async diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]> {
+      return invoke<GitDiffFile[]>('git_diff', {
+        projectId,
+        staged: options.staged,
+        paths: options.relPaths ?? [],
+      })
     },
 
     async branches(projectId: string): Promise<GitBranchInfo[]> {
@@ -97,6 +112,45 @@ function defaultMockState(): MockGitRepoState {
     untracked: new Set(),
     commitCount: 0,
   }
+}
+
+/**
+ * Deterministic pseudo-patch so consumers (AI commit-message generation and
+ * its e2e coverage) always see a plausible unified diff in mock mode.
+ */
+function buildMockPatch(relPath: string, letter: string): string {
+  const name = relPath.split('/').pop() ?? relPath
+  if (letter === 'A') {
+    return [
+      `diff --git a/${relPath} b/${relPath}`,
+      'new file mode 100644',
+      'index 0000000..1a2b3c4',
+      '--- /dev/null',
+      `+++ b/${relPath}`,
+      '@@ -0,0 +1,1 @@',
+      `+// added ${name}`,
+    ].join('\n')
+  }
+  if (letter === 'D') {
+    return [
+      `diff --git a/${relPath} b/${relPath}`,
+      'deleted file mode 100644',
+      'index 1a2b3c4..0000000',
+      `--- a/${relPath}`,
+      '+++ /dev/null',
+      '@@ -1,1 +0,0 @@',
+      `-// removed ${name}`,
+    ].join('\n')
+  }
+  return [
+    `diff --git a/${relPath} b/${relPath}`,
+    'index 1a2b3c4..5d6e7f8 100644',
+    `--- a/${relPath}`,
+    `+++ b/${relPath}`,
+    '@@ -1,1 +1,1 @@',
+    `-// original ${name}`,
+    `+// modified ${name}`,
+  ].join('\n')
 }
 
 /**
@@ -235,6 +289,20 @@ export function createMockGitBackend(): GitBackend {
         }
       }
       state.commitCount = 0
+    },
+
+    async diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const wanted = options.relPaths
+      const files: GitDiffFile[] = []
+      // Untracked files have no diff content (mirrors real `git diff`).
+      const source = options.staged ? state.staged : state.unstaged
+      for (const [relPath, letter] of source) {
+        if (wanted && !wanted.includes(relPath)) continue
+        files.push({ relPath, patch: buildMockPatch(relPath, letter) })
+      }
+      return files
     },
 
     async branches(projectId: string): Promise<GitBranchInfo[]> {

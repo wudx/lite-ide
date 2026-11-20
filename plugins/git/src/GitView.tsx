@@ -1,6 +1,7 @@
 import type { ProjectScope } from '@lite-ide/kernel'
 import type { GitFileStatus } from '@lite-ide/protocol'
 import {
+  AiModelKey,
   ConfirmDialogKey,
   FileIcon,
   getI18n,
@@ -17,6 +18,7 @@ import Loader2 from 'lucide-solid/icons/loader-circle'
 import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
 import RefreshCw from 'lucide-solid/icons/refresh-cw'
+import Sparkles from 'lucide-solid/icons/sparkles'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
 import {
@@ -30,6 +32,7 @@ import {
   type Component,
 } from 'solid-js'
 import type { GitBranchInfo } from '@lite-ide/protocol'
+import { buildCommitMessagePrompt, stripCodeFence } from './commit-message'
 import {
   hasStagedChanges,
   hasUnstagedChanges,
@@ -38,6 +41,7 @@ import {
   isUntrackedEntry,
   statusLetter,
   unstagePathsForEntry,
+  GitBackendKey,
   GitStoreKey,
 } from './git-store'
 import { buildGitTree, type GitTreeDirNode } from './git-tree'
@@ -658,6 +662,54 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     }
   }
 
+  const ai = props.scope.tryGet(AiModelKey)
+  const gitBackend = props.scope.get(GitBackendKey)
+  const [aiGenerating, setAiGenerating] = createSignal(false)
+
+  /**
+   * Generates a commit message from the staged changes (unstaged as
+   * fallback). Key code files carry their full diff into the prompt; the
+   * rest are listed by path only. Failures surface in the store error banner.
+   */
+  async function generateCommitMessage() {
+    if (!ai || aiGenerating()) return
+    if (!ai.isConfigured()) {
+      store.setError(i18n.t('git.ai.notConfigured'))
+      return
+    }
+    const staged = stagedEntries()
+    const useStaged = staged.length > 0
+    const entries = useStaged ? staged : stageableEntries()
+    if (entries.length === 0) {
+      store.setError(i18n.t('git.ai.noChanges'))
+      return
+    }
+    store.setError(null)
+    setAiGenerating(true)
+    try {
+      const diffs = await gitBackend.diff(props.scope.id, {
+        staged: useStaged,
+        relPaths: entries.map((entry) => entry.relPath),
+      })
+      const prompt = buildCommitMessagePrompt(
+        { entries, diffs },
+        { customPrompt: ai.commitPrompt() },
+      )
+      const content = await ai.chat(prompt)
+      const message = stripCodeFence(content)
+      if (!message.trim()) {
+        store.setError(i18n.t('git.ai.emptyResponse'))
+        return
+      }
+      store.setCommitMessage(message)
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      store.setError(`${i18n.t('git.ai.failed')}${detail}`)
+    } finally {
+      setAiGenerating(false)
+    }
+  }
+
   return (
     <div class="flex-1 min-h-0 flex flex-col select-none">
       {/* Branch header */}
@@ -927,26 +979,47 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             rows={2}
             class="w-full resize-none rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] focus:shadow-[0_0_0_2px_var(--accent-soft)] outline-none px-2.5 py-1.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal transition-all"
           />
-          <button
-            type="button"
-            data-testid="git-commit-button"
-            class="mt-1.5 w-full h-[28px] rounded-lg flex items-center justify-center gap-1.5 text-[11.5px] font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:hover:bg-[var(--accent)]"
-            disabled={
-              stagedEntries().length === 0 ||
-              store.commitMessage().trim().length === 0 ||
-              store.committing() ||
-              store.mutating()
-            }
-            onClick={() => void commitFromBox()}
-          >
-            <Show
-              when={!store.committing()}
-              fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
-            >
-              <Check class="w-3.5 h-3.5" />
+          <div class="mt-1.5 flex items-center gap-1.5">
+            <Show when={ai}>
+              <button
+                type="button"
+                data-testid="git-ai-generate"
+                aria-label={i18n.t('git.ai.generateTitle')}
+                title={i18n.t('git.ai.generateTitle')}
+                disabled={aiGenerating() || store.committing() || store.mutating()}
+                class="shrink-0 h-[28px] px-2.5 rounded-lg border border-[var(--border-panel)] bg-[var(--bg-subtle)] flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                onClick={() => void generateCommitMessage()}
+              >
+                <Show
+                  when={!aiGenerating()}
+                  fallback={<Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
+                >
+                  <Sparkles class="w-3.5 h-3.5 text-[var(--accent)]" />
+                </Show>
+                <span>{i18n.t('git.ai.generate')}</span>
+              </button>
             </Show>
-            <span>{i18n.t('git.commit.button', { count: stagedEntries().length })}</span>
-          </button>
+            <button
+              type="button"
+              data-testid="git-commit-button"
+              class="flex-1 h-[28px] rounded-lg flex items-center justify-center gap-1.5 text-[11.5px] font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:hover:bg-[var(--accent)]"
+              disabled={
+                stagedEntries().length === 0 ||
+                store.commitMessage().trim().length === 0 ||
+                store.committing() ||
+                store.mutating()
+              }
+              onClick={() => void commitFromBox()}
+            >
+              <Show
+                when={!store.committing()}
+                fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
+              >
+                <Check class="w-3.5 h-3.5" />
+              </Show>
+              <span>{i18n.t('git.commit.button', { count: stagedEntries().length })}</span>
+            </button>
+          </div>
         </div>
 
         {/* Change sections */}

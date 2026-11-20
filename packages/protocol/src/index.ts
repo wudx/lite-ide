@@ -6,6 +6,7 @@ import { createMockBackend, MOCK_DEMO_PATHS } from './mock-backend'
 import { createTauriBackend } from './tauri-backend'
 import type { GitBackend, WorkspaceBackend } from './types'
 
+export * from './ai'
 export * from './types'
 export * from './url'
 export { createMockGitBackend, createTauriGitBackend } from './git-backend'

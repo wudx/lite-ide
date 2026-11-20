@@ -47,6 +47,12 @@ export const GIT_ZH_CN: Record<string, string> = {
   'git.error.emptyBranch': '分支名称不能为空。',
   'git.error.emptyCommit': '提交信息不能为空。',
   'git.error.noStaged': '没有已暂存的更改可供提交。',
+  'git.ai.generate': 'AI 生成',
+  'git.ai.generateTitle': '用 AI 根据变更生成提交信息',
+  'git.ai.notConfigured': '未配置模型 API Key，请在「设置 → 模型」中填写。',
+  'git.ai.noChanges': '没有可用于生成提交信息的变更。',
+  'git.ai.emptyResponse': 'AI 未返回有效的提交信息。',
+  'git.ai.failed': 'AI 生成失败：',
 }
 
 export const GIT_EN_US: Record<string, string> = {
@@ -98,4 +104,10 @@ export const GIT_EN_US: Record<string, string> = {
   'git.error.emptyBranch': 'Branch name is empty.',
   'git.error.emptyCommit': 'Commit message is empty.',
   'git.error.noStaged': 'No staged changes to commit.',
+  'git.ai.generate': 'AI Generate',
+  'git.ai.generateTitle': 'Generate a commit message from the changes with AI',
+  'git.ai.notConfigured': 'Model API key is not configured. Fill it in under Settings → Models.',
+  'git.ai.noChanges': 'No changes available to generate a commit message from.',
+  'git.ai.emptyResponse': 'AI returned an empty commit message.',
+  'git.ai.failed': 'AI generation failed: ',
 }

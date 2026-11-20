@@ -9,6 +9,7 @@ import {
 } from '@lite-ide/kernel'
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
 import { createEffect, createMemo, createRoot, createSignal, type Accessor } from 'solid-js'
+import { AiModelKey, createAiModelService } from './ai-model'
 import { ConfirmDialogKey, createConfirmDialogService, SettingsDialogKey, createSettingsDialogService } from './dialogs'
 import {
   createEditorBufferService,
@@ -566,5 +567,6 @@ export function createWorkbenchKernel(
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   kernel.provide(QuickOpenKey, createQuickOpenService())
+  kernel.provide(AiModelKey, createAiModelService())
   return kernel
 }

@@ -61,6 +61,14 @@ pub struct GitCommitResult {
     pub sha: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffFile {
+    pub rel_path: String,
+    /// Unified patch for this file (`diff --git ...` block, no color codes).
+    pub patch: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranchInfo {
@@ -271,6 +279,84 @@ pub async fn commit(canonical_root: &Path, message: &str) -> Result<GitCommitRes
     Ok(GitCommitResult { sha })
 }
 
+/// Unified per-file patches for the project root. `staged` selects
+/// `git diff --staged` (index vs HEAD) over the worktree `git diff`;
+/// pathspecs narrow the result and are batched to stay below the Windows
+/// command-line length limit. On an unborn branch (no HEAD yet) the staged
+/// diff has nothing to compare against and resolves to an empty result.
+pub async fn diff(
+    canonical_root: &Path,
+    staged: bool,
+    paths: &[String],
+) -> Result<Vec<GitDiffFile>, AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Ok(Vec::new());
+    }
+    validate_pathspecs(paths)?;
+
+    // `git diff --staged` fatals without HEAD; mirror `unstage`'s probe and
+    // report "no diffs" so AI generation still works from the file list alone.
+    if staged {
+        let has_head = run_git(canonical_root, &["rev-parse", "-q", "--verify", "HEAD"])
+            .await
+            .is_ok();
+        if !has_head {
+            return Ok(Vec::new());
+        }
+    }
+
+    let mut base_args: Vec<&str> = vec![
+        "-c",
+        "core.quotepath=false",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+    ];
+    if staged {
+        base_args.push("--staged");
+    }
+
+    const MAX_BATCH_BYTES: usize = 16 * 1024;
+    let mut outputs: Vec<String> = Vec::new();
+    let mut idx = 0usize;
+    loop {
+        let start = idx;
+        let mut batch_bytes = 0usize;
+        while idx < paths.len() {
+            let next_len = paths[idx].len() + 3;
+            if idx > start && batch_bytes + next_len > MAX_BATCH_BYTES {
+                break;
+            }
+            batch_bytes += next_len;
+            idx += 1;
+        }
+        let mut args = base_args.clone();
+        args.push("--");
+        args.extend(paths[start..idx].iter().map(String::as_str));
+        outputs.push(run_git(canonical_root, &args).await?);
+        if idx >= paths.len() {
+            break;
+        }
+    }
+    let joined = outputs.join("\n");
+    // Hard cap before parsing: giant generated-file diffs must not blow up
+    // memory (the TS prompt builder applies its own finer-grained budgets).
+    const MAX_DIFF_OUTPUT_CHARS: usize = 1024 * 1024;
+    let raw = truncate_at_char_boundary(&joined, MAX_DIFF_OUTPUT_CHARS);
+    Ok(parse_diff_files(raw))
+}
+
+fn truncate_at_char_boundary(s: &str, max_chars: usize) -> &str {
+    if s.len() <= max_chars {
+        return s;
+    }
+    let mut end = max_chars;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 pub async fn push(canonical_root: &Path) -> Result<(), AppError> {
     if !is_repo_root(canonical_root).await? {
         return Err(AppError::Git("not a git repository".into()));
@@ -416,6 +502,79 @@ pub fn parse_branches(raw: &str) -> Vec<GitBranchInfo> {
             .then_with(|| a.name.cmp(&b.name))
     });
     items
+}
+
+/// Parses raw `git diff` output into per-file patch blocks.
+///
+/// Each block starts at a `diff --git` line; the project-relative path prefers
+/// the `+++ b/<path>` header and falls back to the `b/` side of the
+/// `diff --git` line (covers deleted files whose `+++` is `/dev/null` and
+/// rename-only entries without any `---`/`+++` headers). Content outside any
+/// `diff --git` block is ignored.
+pub fn parse_diff_files(raw: &str) -> Vec<GitDiffFile> {
+    /// Extracts the new path from `diff --git a/<old> b/<new>` (quoted or not).
+    fn fallback_rel_path(diff_line: &str) -> Option<String> {
+        let rest = diff_line.strip_prefix("diff --git ")?;
+        if let Some(quoted) = rest.strip_prefix('"') {
+            // Form: "a/<old>" "b/<new>" — locate the boundary between quotes.
+            let end = quoted.find("\" \"")?;
+            let new_part = quoted
+                .get(end + 3..)?
+                .strip_prefix('"')?
+                .strip_suffix('"')?;
+            return new_part.strip_prefix("b/").map(str::to_string);
+        }
+        // Unquoted paths may contain spaces; split at the last ` b/` boundary.
+        let idx = rest.rfind(" b/")?;
+        Some(rest[idx + 3..].to_string())
+    }
+
+    /// `+++ b/<path>` header path; None for `/dev/null` (deleted files).
+    fn header_rel_path(line: &str) -> Option<String> {
+        let rest = line.strip_prefix("+++ ")?;
+        if rest == "/dev/null" {
+            return None;
+        }
+        let unquoted = rest
+            .strip_prefix('"')
+            .and_then(|q| q.strip_suffix('"'))
+            .unwrap_or(rest);
+        unquoted.strip_prefix("b/").map(str::to_string)
+    }
+
+    let mut files: Vec<GitDiffFile> = Vec::new();
+    // (fallback path from `diff --git`, patch lines so far)
+    let mut current: Option<(String, Vec<&str>)> = None;
+    for line in raw.lines() {
+        if line.starts_with("diff --git ") {
+            if let Some((rel_path, lines)) = current.take() {
+                if !rel_path.is_empty() && !lines.is_empty() {
+                    files.push(GitDiffFile {
+                        rel_path,
+                        patch: lines.join("\n"),
+                    });
+                }
+            }
+            let fallback = fallback_rel_path(line).unwrap_or_default();
+            current = Some((fallback, vec![line]));
+            continue;
+        }
+        if let Some((rel_path, lines)) = current.as_mut() {
+            if let Some(header_path) = header_rel_path(line) {
+                *rel_path = header_path;
+            }
+            lines.push(line);
+        }
+    }
+    if let Some((rel_path, lines)) = current.take() {
+        if !rel_path.is_empty() && !lines.is_empty() {
+            files.push(GitDiffFile {
+                rel_path,
+                patch: lines.join("\n"),
+            });
+        }
+    }
+    files
 }
 
 /// Parses `git status --porcelain=v1 -z -b` output.
@@ -588,6 +747,82 @@ mod tests {
     }
 
     #[test]
+    fn parses_diff_blocks_into_per_file_patches() {
+        let raw = concat!(
+            "diff --git a/src/a.ts b/src/a.ts\n",
+            "index 1111111..2222222 100644\n",
+            "--- a/src/a.ts\n",
+            "+++ b/src/a.ts\n",
+            "@@ -1,1 +1,1 @@\n",
+            "-old\n",
+            "+new\n",
+            "diff --git a/src/b.py b/src/b.py\n",
+            "index 3333333..4444444 100644\n",
+            "--- a/src/b.py\n",
+            "+++ b/src/b.py\n",
+            "@@ -1,1 +1,2 @@\n",
+            "-keep\n",
+            "+added one\n",
+            "+added two\n",
+        );
+        let files = parse_diff_files(raw);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].rel_path, "src/a.ts");
+        assert!(files[0].patch.starts_with("diff --git a/src/a.ts b/src/a.ts\n"));
+        assert!(files[0].patch.ends_with("-old\n+new"));
+        assert_eq!(files[1].rel_path, "src/b.py");
+        assert!(files[1].patch.contains("+added two"));
+    }
+
+    #[test]
+    fn parses_diff_new_deleted_and_rename_entries() {
+        let raw = concat!(
+            "diff --git a/new.txt b/new.txt\n",
+            "new file mode 100644\n",
+            "--- /dev/null\n",
+            "+++ b/new.txt\n",
+            "@@ -0,0 +1 @@\n",
+            "+hello\n",
+            "diff --git a/gone.txt b/gone.txt\n",
+            "deleted file mode 100644\n",
+            "--- a/gone.txt\n",
+            "+++ /dev/null\n",
+            "@@ -1 +0,0 @@\n",
+            "-bye\n",
+            "diff --git a/before.txt b/after.txt\n",
+            "similarity index 100%\n",
+            "rename from before.txt\n",
+            "rename to after.txt\n",
+        );
+        let files = parse_diff_files(raw);
+        let paths: Vec<&str> = files.iter().map(|f| f.rel_path.as_str()).collect();
+        assert_eq!(paths, ["new.txt", "gone.txt", "after.txt"]);
+        // Deleted file falls back to the `diff --git` b-side for its path.
+        assert!(files[1].patch.contains("+++ /dev/null"));
+        // Rename-only entries carry headers but no hunks.
+        assert!(files[2].patch.contains("rename to after.txt"));
+    }
+
+    #[test]
+    fn parses_diff_quoted_paths_and_ignores_leading_noise() {
+        let raw = concat!(
+            "warning: some git notice\n",
+            "diff --git \"a/\\346\\226\\207 file.txt\" \"b/\\346\\226\\207 file.txt\"\n",
+            "index 1111111..2222222 100644\n",
+            "--- \"a/\\346\\226\\207 file.txt\"\n",
+            "+++ \"b/\\346\\226\\207 file.txt\"\n",
+            "@@ -1 +1 @@\n",
+            "-x\n",
+            "+y\n",
+        );
+        let files = parse_diff_files(raw);
+        assert_eq!(files.len(), 1);
+        // Quote-escaped header (core.quotepath=true) keeps the quoted spelling;
+        // the runtime command disables quotepath so this is a lossless fallback.
+        assert_eq!(files[0].rel_path, "\\346\\226\\207 file.txt");
+    }
+
+    #[test]
     fn rejects_empty_and_root_pathspecs() {
         assert!(validate_pathspecs(&["".into()]).is_err());
         assert!(validate_pathspecs(&["/".into()]).is_err());
@@ -651,8 +886,11 @@ mod repo_tests {
         git_ok(&root, &["init", "-q"]).await;
         std::fs::write(root.join("a.txt"), "hello").unwrap();
 
+        // Staged diff has no HEAD to compare against: empty result, no error.
         git_ok(&root, &["add", "--", "a.txt"]).await;
         assert_eq!(status_letters(&root).await, vec![('A', ' ', "a.txt".into())]);
+        assert!(diff(&root, true, &[]).await.unwrap().is_empty());
+        assert!(diff(&root, false, &[]).await.unwrap().is_empty());
 
         unstage(&root, &["a.txt".to_string()]).await.unwrap();
         assert_eq!(status_letters(&root).await, vec![('?', '?', "a.txt".into())]);
@@ -768,6 +1006,48 @@ mod repo_tests {
     }
 
     #[tokio::test]
+    async fn diffs_staged_and_worktree_changes_with_path_filter() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        std::fs::write(root.join("b.txt"), "keep\n").unwrap();
+        git_ok(&root, &["add", "--", "a.txt", "b.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        // Clean tree: no diffs on either side.
+        assert!(diff(&root, true, &[]).await.unwrap().is_empty());
+        assert!(diff(&root, false, &[]).await.unwrap().is_empty());
+
+        // Stage a.txt's edit, leave b.txt edited in the worktree only.
+        std::fs::write(root.join("a.txt"), "one two\n").unwrap();
+        std::fs::write(root.join("b.txt"), "keep\nchanged\n").unwrap();
+        stage(&root, &["a.txt".into()]).await.unwrap();
+
+        let staged = diff(&root, true, &[]).await.unwrap();
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].rel_path, "a.txt");
+        assert!(staged[0].patch.contains("+one two"));
+
+        let worktree = diff(&root, false, &[]).await.unwrap();
+        let paths: Vec<&str> = worktree.iter().map(|f| f.rel_path.as_str()).collect();
+        assert_eq!(paths, ["b.txt"]);
+        assert!(worktree[0].patch.contains("+changed"));
+
+        // Path filter narrows the result; unknown path yields nothing.
+        let filtered = diff(&root, true, &["a.txt".into()]).await.unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].rel_path, "a.txt");
+        assert!(diff(&root, true, &["missing.txt".into()])
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(diff(&root, true, &["".into()]).await.is_err());
+    }
+
+    #[tokio::test]
     async fn lists_switches_and_creates_branches_in_real_repo() {
         let dir = tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
@@ -825,6 +1105,8 @@ mod repo_tests {
 
         let st = status(&root).await.unwrap();
         assert!(!st.repo);
+        assert!(diff(&root, true, &[]).await.unwrap().is_empty());
+        assert!(diff(&root, false, &[]).await.unwrap().is_empty());
         assert_eq!(st.branch, None);
         assert!(st.entries.is_empty());
         assert!(push(&root).await.is_err());

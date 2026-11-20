@@ -35,6 +35,9 @@ pub enum AppError {
 
     #[error("git error: {0}")]
     Git(String),
+
+    #[error("ai error: {0}")]
+    Ai(String),
 }
 
 #[derive(Serialize)]
@@ -59,6 +62,7 @@ impl AppError {
             Self::Io(_) => "IO_ERROR",
             Self::Watch(_) => "WATCH_ERROR",
             Self::Git(_) => "GIT_ERROR",
+            Self::Ai(_) => "AI_ERROR",
         }
     }
 }

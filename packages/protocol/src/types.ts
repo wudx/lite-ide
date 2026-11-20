@@ -83,6 +83,19 @@ export interface GitCommitResult {
   sha: string
 }
 
+/** Per-file patch text from `git diff` (unified format, no color codes). */
+export interface GitDiffFile {
+  relPath: string
+  patch: string
+}
+
+export interface GitDiffOptions {
+  /** True for staged changes (`git diff --staged`), false for worktree changes. */
+  staged: boolean
+  /** Optional path filter; omit for every changed file. */
+  relPaths?: string[]
+}
+
 export interface GitBranchInfo {
   name: string
   /** True for the currently checked-out branch. */
@@ -112,6 +125,8 @@ export interface GitBackend {
   ): Promise<void>
   commit(projectId: string, message: string): Promise<GitCommitResult>
   push(projectId: string): Promise<void>
+  /** Unified per-file patches for staged or worktree changes (empty when clean). */
+  diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>
   branches(projectId: string): Promise<GitBranchInfo[]>
   checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
 }
