@@ -32,6 +32,9 @@ pub enum AppError {
 
     #[error("watch error: {0}")]
     Watch(String),
+
+    #[error("git error: {0}")]
+    Git(String),
 }
 
 #[derive(Serialize)]
@@ -55,6 +58,7 @@ impl AppError {
             Self::InvalidName(_) => "INVALID_NAME",
             Self::Io(_) => "IO_ERROR",
             Self::Watch(_) => "WATCH_ERROR",
+            Self::Git(_) => "GIT_ERROR",
         }
     }
 }

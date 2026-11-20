@@ -1,9 +1,14 @@
+import {
+  createMockGitBackend,
+  createTauriGitBackend,
+} from './git-backend'
 import { createMockBackend, MOCK_DEMO_PATHS } from './mock-backend'
 import { createTauriBackend } from './tauri-backend'
-import type { WorkspaceBackend } from './types'
+import type { GitBackend, WorkspaceBackend } from './types'
 
 export * from './types'
 export * from './url'
+export { createMockGitBackend, createTauriGitBackend } from './git-backend'
 export { createMockBackend, MOCK_DEMO_PATHS } from './mock-backend'
 export { createTauriBackend } from './tauri-backend'
 
@@ -13,4 +18,8 @@ export function isTauriEnvironment(): boolean {
 
 export function createDefaultBackend(): WorkspaceBackend {
   return isTauriEnvironment() ? createTauriBackend() : createMockBackend()
+}
+
+export function createDefaultGitBackend(): GitBackend {
+  return isTauriEnvironment() ? createTauriGitBackend() : createMockGitBackend()
 }

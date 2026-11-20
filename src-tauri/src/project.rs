@@ -207,7 +207,10 @@ fn is_windows_drive_prefix(path: &str) -> bool {
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
-fn validate_rel_segments(rel_path: &str) -> Result<Vec<String>, AppError> {
+/// Validates project-relative path segments (rejects traversal, absolute
+/// prefixes and characters invalid in workspace entry names). Shared by the
+/// filesystem commands and the git pathspec validation.
+pub fn validate_rel_segments(rel_path: &str) -> Result<Vec<String>, AppError> {
     if rel_path.contains('\0') {
         return Err(AppError::InvalidPath("null byte in path".into()));
     }

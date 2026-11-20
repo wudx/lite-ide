@@ -57,6 +57,64 @@ export interface PickSavePathOptions {
   outsideProjectMessage?: string
 }
 
+/** One changed path from `git status --porcelain`. Letters follow git's XY alphabet. */
+export interface GitFileStatus {
+  /** Index (staged) status letter: ' ', 'M', 'A', 'D', 'R', 'C', 'U' or '?'. */
+  x: string
+  /** Worktree (unstaged) status letter, same alphabet as `x`. */
+  y: string
+  relPath: string
+  /** Original path for renames/copies. */
+  origPath?: string | null
+}
+
+export interface GitStatus {
+  /** False when the project folder is not inside a git work tree. */
+  repo: boolean
+  /** Current branch name; null on a detached HEAD. */
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  entries: GitFileStatus[]
+}
+
+export interface GitCommitResult {
+  sha: string
+}
+
+export interface GitBranchInfo {
+  name: string
+  /** True for the currently checked-out branch. */
+  current: boolean
+  /** True for remote tracking branches (e.g. `origin/main`). */
+  remote: boolean
+  /** Configured upstream tracking branch for local branches, if any. */
+  upstream?: string | null
+}
+
+/**
+ * Version-control operations for one opened project. Implementations must
+ * scope every call to the project and only accept project-relative paths.
+ */
+export interface GitBackend {
+  status(projectId: string): Promise<GitStatus>
+  stage(projectId: string, relPaths: string[]): Promise<void>
+  unstage(projectId: string, relPaths: string[]): Promise<void>
+  /**
+   * Reverts worktree changes: untracked paths are deleted, tracked paths are
+   * restored from the index. Staged-only changes are not touched.
+   */
+  discard(
+    projectId: string,
+    untrackedPaths: string[],
+    trackedPaths: string[],
+  ): Promise<void>
+  commit(projectId: string, message: string): Promise<GitCommitResult>
+  branches(projectId: string): Promise<GitBranchInfo[]>
+  checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
+}
+
 export interface WorkspaceBackend {
   readonly kind: 'tauri' | 'mock'
   openProject(path: string, onFsEvent: (delta: FsDelta) => void): Promise<ProjectInfo>

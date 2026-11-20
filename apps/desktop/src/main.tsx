@@ -2,6 +2,7 @@ import './styles/app.css'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { explorerPlugin } from '@lite-ide/plugin-explorer'
+import { gitPlugin } from '@lite-ide/plugin-git'
 import { previewAudioPlugin } from '@lite-ide/plugin-preview-audio'
 import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { previewFallbackPlugin } from '@lite-ide/plugin-preview-fallback'
@@ -20,6 +21,7 @@ const kernel = createWorkbenchKernel(backend, 5)
 
 // Register all first-party built-in plugins through the micro-kernel API.
 kernel.registerPlugin(explorerPlugin)
+kernel.registerPlugin(gitPlugin)
 kernel.registerPlugin(previewCodePlugin)
 kernel.registerPlugin(previewMarkdownPlugin)
 kernel.registerPlugin(previewImagePlugin)

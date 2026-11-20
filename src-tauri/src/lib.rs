@@ -1,5 +1,6 @@
 mod error;
 mod fs;
+mod git;
 mod jumplist;
 mod project;
 mod protocol;
@@ -11,6 +12,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::error::AppError;
 use crate::fs::{DirEntry, FileMeta, TextPayload, WriteTextResult};
+use crate::git::{GitBranchInfo, GitCommitResult, GitStatus};
 use crate::project::{FsDelta, ProjectInfo, ProjectManager};
 
 #[tauri::command]
@@ -129,6 +131,76 @@ fn folder_from_args(argv: &[String]) -> Option<String> {
     jumplist::parse_folder_arg(argv)
 }
 
+#[tauri::command]
+async fn git_status(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+) -> Result<GitStatus, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::status(&root).await
+}
+
+#[tauri::command]
+async fn git_stage(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::stage(&root, &paths).await
+}
+
+#[tauri::command]
+async fn git_unstage(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::unstage(&root, &paths).await
+}
+
+#[tauri::command]
+async fn git_discard(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    untracked_paths: Vec<String>,
+    tracked_paths: Vec<String>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::discard(&root, &untracked_paths, &tracked_paths).await
+}
+
+#[tauri::command]
+async fn git_commit(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    message: String,
+) -> Result<GitCommitResult, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::commit(&root, &message).await
+}
+
+#[tauri::command]
+async fn git_branches(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+) -> Result<Vec<GitBranchInfo>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::branches(&root).await
+}
+
+#[tauri::command]
+async fn git_checkout_branch(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    name: String,
+    create: Option<bool>,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::checkout_branch(&root, &name, create.unwrap_or(false)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 任务栏跳转列表依赖 AUMID 在首个窗口创建前声明，必须最先执行。
@@ -193,7 +265,14 @@ pub fn run() {
             fs_create_file,
             fs_create_dir,
             fs_rename_path,
-            fs_delete_path
+            fs_delete_path,
+            git_status,
+            git_stage,
+            git_unstage,
+            git_discard,
+            git_commit,
+            git_branches,
+            git_checkout_branch
         ])
         .run(tauri::generate_context!())
         .expect("error while running LiteIDE");

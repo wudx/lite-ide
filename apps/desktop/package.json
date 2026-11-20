@@ -11,6 +11,7 @@
   "dependencies": {
     "@lite-ide/kernel": "workspace:*",
     "@lite-ide/plugin-explorer": "workspace:*",
+    "@lite-ide/plugin-git": "workspace:*",
     "@lite-ide/plugin-preview-audio": "workspace:*",
     "@lite-ide/plugin-preview-code": "workspace:*",
     "@lite-ide/plugin-preview-fallback": "workspace:*",

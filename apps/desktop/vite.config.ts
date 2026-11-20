@@ -39,6 +39,7 @@ export default defineConfig({
       '@lite-ide/protocol',
       '@lite-ide/workbench',
       '@lite-ide/plugin-explorer',
+      '@lite-ide/plugin-git',
       '@lite-ide/plugin-preview-code',
       '@lite-ide/plugin-preview-markdown',
       '@lite-ide/plugin-preview-image',

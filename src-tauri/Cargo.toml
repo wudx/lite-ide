@@ -16,7 +16,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
-tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "process", "rt-multi-thread", "sync", "time"] }
 dashmap = "6"
 ignore = "0.4"
 notify = "8"
