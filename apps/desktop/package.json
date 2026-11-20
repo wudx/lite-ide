@@ -15,6 +15,7 @@
     "@lite-ide/plugin-preview-fallback": "workspace:*",
     "@lite-ide/plugin-preview-image": "workspace:*",
     "@lite-ide/plugin-preview-markdown": "workspace:*",
+    "@lite-ide/plugin-theme-nord": "workspace:*",
     "@lite-ide/protocol": "workspace:*",
     "@lite-ide/workbench": "workspace:*",
     "@tailwindcss/vite": "^4.3.5",

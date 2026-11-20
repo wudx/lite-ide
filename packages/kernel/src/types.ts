@@ -49,6 +49,14 @@ export interface ContributionMap {
     order: number
     component: Component<{ kernel: AppKernel }>
   }
+  theme: {
+    id: string
+    label: string
+    /** 明暗基调：驱动根元素 dark/light class 与代码编辑器配色回退 */
+    appearance: 'dark' | 'light'
+    /** 激活时以行内样式注入根元素的 CSS 自定义属性（覆盖 app.css 的 :root 默认值） */
+    variables?: Record<string, string>
+  }
 }
 
 export type ContributionPoint = keyof ContributionMap

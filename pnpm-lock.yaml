@@ -56,6 +56,9 @@ importers:
       '@lite-ide/plugin-preview-markdown':
         specifier: workspace:*
         version: link:../../plugins/preview-markdown
+      '@lite-ide/plugin-theme-nord':
+        specifier: workspace:*
+        version: link:../../plugins/theme-nord
       '@lite-ide/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -244,6 +247,12 @@ importers:
       '@types/markdown-it':
         specifier: ^14.2.0
         version: 14.2.0
+
+  plugins/theme-nord:
+    dependencies:
+      '@lite-ide/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
 
 packages:
 

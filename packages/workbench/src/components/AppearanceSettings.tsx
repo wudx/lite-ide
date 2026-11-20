@@ -1,25 +1,47 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import Check from 'lucide-solid/icons/check'
 import { For, Show } from 'solid-js'
-import { THEME_DEFINITIONS, ThemeStateKey, type ThemeMode } from '../services'
+import { ThemeStateKey, THEME_DEFINITIONS, type ThemeDefinition } from '../services'
 
 export interface AppearanceSettingsProps {
   kernel: AppKernel
 }
 
+interface ThemeSwatch {
+  app: string
+  editor: string
+  accent: string
+  text: string
+}
+
 /**
- * Miniature palette preview per theme. Mirrors the headline values in
- * apps/desktop/src/styles/app.css (kept small and static on purpose — the
- * actual rendering always comes from the CSS variables).
+ * Miniature palette preview for the built-in themes. Mirrors the headline
+ * values in apps/desktop/src/styles/app.css (kept small and static on
+ * purpose — the actual rendering always comes from the CSS variables).
+ * Plugin themes derive their swatch from the contributed variables instead.
  */
-const THEME_SWATCHES: Record<ThemeMode, { app: string; editor: string; accent: string; text: string }> = {
+const THEME_SWATCHES: Record<string, ThemeSwatch> = {
   dark: { app: '#12141a', editor: '#16181f', accent: '#7aa2ff', text: '#eceef2' },
   light: { app: '#eaedf2', editor: '#ffffff', accent: '#3b6ff6', text: '#181c25' },
   'solarized-light': { app: '#ede7d6', editor: '#fdf6e3', accent: '#268bd2', text: '#073642' },
 }
 
+function swatchOf(theme: ThemeDefinition): ThemeSwatch {
+  const builtin = THEME_SWATCHES[theme.id]
+  if (builtin) return builtin
+  const vars = theme.variables
+  return {
+    app: vars?.['--bg-app'] ?? '#808080',
+    editor: vars?.['--bg-editor'] ?? '#909090',
+    accent: vars?.['--accent'] ?? '#4a90d9',
+    text: vars?.['--text-primary'] ?? '#f0f0f0',
+  }
+}
+
 export function AppearanceSettings(props: AppearanceSettingsProps) {
   const themeState = props.kernel.tryGet(ThemeStateKey)
+  // 主题列表是响应式的：内核 theme 贡献点（内置 + 插件）变化时同步刷新。
+  const themes = (): readonly ThemeDefinition[] => themeState?.themes() ?? THEME_DEFINITIONS
 
   return (
     <div class="space-y-4">
@@ -29,9 +51,9 @@ export function AppearanceSettings(props: AppearanceSettingsProps) {
           选择工作台的配色方案，更改立即生效并自动保存。
         </p>
         <div class="grid grid-cols-3 gap-2.5">
-          <For each={THEME_DEFINITIONS}>
+          <For each={themes()}>
             {(theme) => {
-              const swatch = THEME_SWATCHES[theme.id]
+              const swatch = swatchOf(theme)
               const isActive = () => themeState?.theme() === theme.id
               return (
                 <button

@@ -17,11 +17,12 @@ LiteIDE 是基于 **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4** 的轻量跨�
 | `plugins/preview-markdown/` | `@lite-ide/plugin-preview-markdown` | Markdown 预览插件：`previewer.provider`（优先级 `50`），`markdown-it` + `DOMPurify`，重写相对图片与站内文件链接 |
 | `plugins/preview-image/` | `@lite-ide/plugin-preview-image` | 图片/SVG 预览插件：`previewer.provider`（优先级 `60`），棋盘格背景、缩放与拖拽 |
 | `plugins/preview-fallback/` | `@lite-ide/plugin-preview-fallback` | 兜底元信息卡片：`previewer.provider`（优先级 `0`），展示二进制或任意文件元数据 |
+| `plugins/theme-nord/` | `@lite-ide/plugin-theme-nord` | Nord 深色主题插件：贡献 `theme`（`variables` 以行内样式覆盖 `:root` 默认值），演示主题插件化机制 |
 | `src-tauri/` | `lite-ide` | Rust 后端：`project.rs`（`DashMap` 会话 + `notify` 250ms 防抖监听）、`fs.rs`（遵循 `.gitignore` 的列目录/探查/读取 + 路径穿越防护）、`protocol.rs`（异步 `workspace` 自定义协议 + HTTP `Range`）、`lib.rs`（IPC 命令与窗口初始化） |
 
 ## 核心架构与扩展约定
 
-- **插件扩展机制**：新功能实现为独立插件，在 `apps/desktop/src/main.tsx` 通过 `kernel.registerPlugin(...)` 注册。内核提供 4 个贡献点：`sidebar.view`、`previewer.provider`（需用动态 `load: () => import(...)` 实现按需分包）、`command`、`statusbar.item`，以及项目生命周期钩子 `ctx.onProjectOpen(scope => ...)`。
+- **插件扩展机制**：新功能实现为独立插件，在 `apps/desktop/src/main.tsx` 通过 `kernel.registerPlugin(...)` 注册。内核提供 6 个贡献点：`sidebar.view`、`previewer.provider`（需用动态 `load: () => import(...)` 实现按需分包）、`command`、`statusbar.item`、`settings.section`、`theme`，以及项目生命周期钩子 `ctx.onProjectOpen(scope => ...)`。`theme` 贡献点供插件注册自定义配色主题（`{ id, label, appearance, variables }`），`ThemeStateKey` 服务响应式聚合内置与插件主题并负责行内变量注入/清除；新增主题插件后在设置对话框"外观"区自动出现。
 - **多项目隔离与生命周期**：顶部 1 个 Tab 对应 1 个 `ProjectScope`（内含独立 SolidJS `createRoot`）。`openProject` 必须先执行 `setupScope` 和全部 `onProjectOpen` 钩子，再在 `batch(...)` 中更新 `projects` / `warmProjectIds` / `activeProjectId`，保证组件同步挂载时所有项目级服务已就绪；非活跃的热项目（默认 LRU 上限 5 个）以 `display: none` 保活 DOM 与滚动状态。
 - **双运行模式（Tauri + Mock）**：`createDefaultBackend()` 检测 `window.__TAURI_INTERNALS__`，桌面端走 Tauri IPC，纯浏览器（`pnpm dev`）自动降级为 `createMockBackend()` 并预载两个示例项目（`lite-ide-demo`、`rust-core-sample`）。改动 UI 或插件时保持两种模式均可用。
 - **Rust 安全与错误边界**：所有文件读写与自定义协议请求均须通过 `resolve_safe_path` 校验路径位于项目 `canonical_root` 之内；错误统一走 `AppError` 序列化为 `{ code, message }`。

@@ -3,11 +3,12 @@ import {
   createServiceKey,
   EventBus,
   type AppKernel,
+  type ContributionMap,
   type KernelProjectHost,
   type ProjectScope,
 } from '@lite-ide/kernel'
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
-import { createSignal, type Accessor } from 'solid-js'
+import { createEffect, createMemo, createRoot, createSignal, type Accessor } from 'solid-js'
 import { ConfirmDialogKey, createConfirmDialogService, SettingsDialogKey, createSettingsDialogService } from './dialogs'
 import {
   createEditorBufferService,
@@ -59,24 +60,38 @@ export interface LayoutStateService {
   setSidebarWidth(width: number): void
 }
 
-export type ThemeMode = 'dark' | 'light' | 'solarized-light'
+/** 主题 id：内置主题 + 插件注册主题的开放集合。 */
+export type ThemeMode = string
+
+export type ThemeAppearance = 'dark' | 'light'
 
 export interface ThemeDefinition {
   id: ThemeMode
   label: string
+  /** 明暗基调：驱动根元素 dark/light class 与代码编辑器配色回退 */
+  appearance: ThemeAppearance
+  /** 激活时以行内样式注入根元素的 CSS 自定义属性；内置主题样式由 app.css 提供故为空 */
+  variables?: Record<string, string>
 }
 
-/** Single source of truth for available themes: UI listing + storage whitelist + toggle cycling. */
+/** 内置主题：样式由 app.css 的 [data-theme] 选择器提供（index.html FOUC 脚本维护同名白名单）。 */
 export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
-  { id: 'dark', label: '深色' },
-  { id: 'light', label: '浅色' },
-  { id: 'solarized-light', label: 'Solarized Light' },
+  { id: 'dark', label: '深色', appearance: 'dark' },
+  { id: 'light', label: '浅色', appearance: 'light' },
+  { id: 'solarized-light', label: 'Solarized Light', appearance: 'light' },
 ]
 
-const THEME_MODE_IDS = new Set<string>(THEME_DEFINITIONS.map((t) => t.id))
+const DEFAULT_THEME_ID: ThemeMode = 'dark'
+
+/** 内核 theme 贡献点形态（见 ContributionMap['theme']）。 */
+export type ThemeContribution = ContributionMap['theme']
 
 export interface ThemeStateService {
+  /** 全部可用主题（内置 + 插件贡献），随内核贡献点响应式更新 */
+  readonly themes: Accessor<readonly ThemeDefinition[]>
   readonly theme: Accessor<ThemeMode>
+  /** 当前主题明暗基调；未知主题按 dark 处理 */
+  readonly appearance: Accessor<ThemeAppearance>
   setTheme(mode: ThemeMode): void
   toggleTheme(): void
 }
@@ -397,32 +412,56 @@ export function createLayoutState(): LayoutStateService {
 
 export const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
 
-function readStoredTheme(): ThemeMode {
-  if (typeof localStorage === 'undefined') return 'dark'
+const THEME_ID_PATTERN = /^[\w-]+$/
+
+function readStoredThemeId(): ThemeMode {
+  if (typeof localStorage === 'undefined') return DEFAULT_THEME_ID
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY)
-    return stored && THEME_MODE_IDS.has(stored) ? (stored as ThemeMode) : 'dark'
+    // 插件主题 id 允许通过：启动时注册表可能尚未就绪，由下方 effect 在
+    // 插件注册完成后校正；index.html 的 FOUC 脚本按内置白名单兜底首帧。
+    return stored && THEME_ID_PATTERN.test(stored) ? stored : DEFAULT_THEME_ID
   } catch {
-    return 'dark'
+    return DEFAULT_THEME_ID
   }
 }
 
-function applyThemeToDom(mode: ThemeMode) {
+/** 曾注入根元素行内样式的变量名全集，切主题时整体清除。只增不减：
+ *  多 ThemeState 实例（测试 / HMR 重建内核）共享模块状态时也不会漏清彼此的变量。 */
+const injectedVariableNames = new Set<string>()
+
+function applyThemeToDom(definition: ThemeDefinition) {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  root.dataset.theme = mode
-  root.classList.toggle('dark', mode === 'dark')
-  root.classList.toggle('light', mode !== 'dark')
+  root.dataset.theme = definition.id
+  root.classList.toggle('dark', definition.appearance === 'dark')
+  root.classList.toggle('light', definition.appearance !== 'dark')
+  for (const name of injectedVariableNames) root.style.removeProperty(name)
+  injectedVariableNames.clear()
+  if (definition.variables) {
+    for (const [name, value] of Object.entries(definition.variables)) {
+      root.style.setProperty(name, value)
+      injectedVariableNames.add(name)
+    }
+  }
 }
 
-export function createThemeState(): ThemeStateService {
-  const initial = readStoredTheme()
-  applyThemeToDom(initial)
-  const [theme, setThemeSignal] = createSignal<ThemeMode>(initial)
+export function createThemeState(kernel?: Pick<AppKernel, 'contributions'>): ThemeStateService {
+  // 内置主题在前，插件贡献主题按注册顺序追加；贡献点变化时响应式重算。
+  // 贡献项与 ThemeDefinition 结构一致，直接透传以免 <For> 按引用重挂载格子。
+  const registry = createMemo<readonly ThemeDefinition[]>(() => [
+    ...THEME_DEFINITIONS,
+    ...(kernel?.contributions('theme')() ?? []),
+  ])
+  const [theme, setThemeSignal] = createSignal<ThemeMode>(readStoredThemeId())
+  const activeDefinition = createMemo(() => registry().find((t) => t.id === theme()))
 
   function setTheme(mode: ThemeMode) {
     setThemeSignal(mode)
-    applyThemeToDom(mode)
+    const definition = registry().find((t) => t.id === mode)
+    // 手动 apply 与下方 effect 的 apply 刻意冗余：保证无 effect 冲刷的环境
+    // （如单元测试的同步断言）下 DOM 即时生效；effect 重跑一遍幂等。
+    if (definition) applyThemeToDom(definition)
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem(THEME_STORAGE_KEY, mode)
@@ -432,14 +471,27 @@ export function createThemeState(): ThemeStateService {
     }
   }
 
+  // Solid 1.9 在 batch 外同步冲刷 effect，插件又于 main.tsx 内同步注册，
+  // 因此首帧前注册表即完整。effect 持续跟随注册表：未知 id（存储的插件
+  // 主题未注册 / 已卸载 / 存储损坏）只把 DOM 兜底为内置 dark，theme()
+  // 保留原 id 且不落盘——插件随后注册（含动态 import 迟到加载）时该主题
+  // 会被自动应用。
+  createRoot(() => {
+    createEffect(() => {
+      applyThemeToDom(activeDefinition() ?? THEME_DEFINITIONS[0])
+    })
+  })
+
   return {
+    themes: registry,
     theme,
+    appearance: createMemo<ThemeAppearance>(() => activeDefinition()?.appearance ?? 'dark'),
     setTheme,
     toggleTheme() {
-      const idx = THEME_DEFINITIONS.findIndex((t) => t.id === theme())
-      // THEME_DEFINITIONS is non-empty, so modular advance always lands on a theme.
-      const next = THEME_DEFINITIONS[(idx + 1) % THEME_DEFINITIONS.length]
-      setTheme(next.id)
+      const defs = registry()
+      const idx = defs.findIndex((t) => t.id === theme())
+      // idx === -1 (未知主题) 时前进到 0，即内置 dark，随后正常循环。
+      setTheme(defs[(idx + 1) % defs.length].id)
     },
   }
 }
@@ -500,7 +552,8 @@ export function createWorkbenchKernel(
   })
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
-  kernel.provide(ThemeStateKey, createThemeState())
+  // 传入 kernel：ThemeState 需要响应式读取 theme 贡献点（插件注册的主题）。
+  kernel.provide(ThemeStateKey, createThemeState(kernel))
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   return kernel

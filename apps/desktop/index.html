@@ -8,6 +8,9 @@
     <script>
       ;(function () {
         // Keep in sync with THEME_DEFINITIONS in packages/workbench/src/services.ts.
+        // Plugin-contributed theme ids are unknown at this stage: they boot as
+        // dark and get their inline variables once ThemeState applies the
+        // registered theme after plugin registration.
         var modes = ['dark', 'light', 'solarized-light']
         try {
           var t = localStorage.getItem('lite-ide.theme.v1')

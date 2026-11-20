@@ -36,7 +36,7 @@ import {
   ProjectSelectionKey,
   ThemeStateKey,
   type DocumentBuffer,
-  type ThemeMode,
+  type ThemeAppearance,
 } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Lock from 'lucide-solid/icons/lock'
@@ -327,25 +327,28 @@ const ideSolarizedTheme = EditorView.theme(
   { dark: false },
 )
 
-function getEditorThemeExtension(mode: ThemeMode): Extension {
-  const themeByMode: Record<ThemeMode, Extension> = {
-    dark: [
-      syntaxHighlighting(ideDarkHighlightStyle),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      ideDarkTheme,
-    ],
-    light: [
-      syntaxHighlighting(ideLightHighlightStyle),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      ideLightTheme,
-    ],
-    'solarized-light': [
+function getEditorThemeExtension(themeId: string, appearance: ThemeAppearance): Extension {
+  // Solarized 拥有专属 CodeMirror 配色；其余浅色主题（含插件贡献主题）
+  // 共享标准浅色配色，深色主题同理。
+  if (themeId === 'solarized-light') {
+    return [
       syntaxHighlighting(ideSolarizedHighlightStyle),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       ideSolarizedTheme,
-    ],
+    ]
   }
-  return themeByMode[mode]
+  if (appearance === 'light') {
+    return [
+      syntaxHighlighting(ideLightHighlightStyle),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      ideLightTheme,
+    ]
+  }
+  return [
+    syntaxHighlighting(ideDarkHighlightStyle),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    ideDarkTheme,
+  ]
 }
 
 function computeCursorPosition(state: EditorState): { line: number; column: number } {
@@ -360,7 +363,8 @@ function computeCursorPosition(state: EditorState): { line: number; column: numb
 function buildEditorExtensions(
   readOnly: boolean,
   listenerExt: Extension,
-  themeMode: ThemeMode,
+  themeId: string,
+  appearance: ThemeAppearance,
 ): Extension[] {
   return [
     lineNumbers(),
@@ -372,7 +376,7 @@ function buildEditorExtensions(
     drawSelection(),
     indentOnInput(),
     bracketMatching(),
-    themeCompartment.of(getEditorThemeExtension(themeMode)),
+    themeCompartment.of(getEditorThemeExtension(themeId, appearance)),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([indentWithTab, ...searchKeymap, ...historyKeymap, ...defaultKeymap, ...foldKeymap]),
@@ -400,7 +404,8 @@ export default function CodePreview(props: PreviewProps) {
 
   const activeBuffer = createMemo(() => buffers.getBuffer(props.file.relPath))
   const activeDiskRevision = createMemo(() => activeBuffer()?.diskRevision ?? -1)
-  const currentTheme = (): ThemeMode => themeState?.theme() ?? 'dark'
+  const currentTheme = (): string => themeState?.theme() ?? 'dark'
+  const currentAppearance = (): ThemeAppearance => themeState?.appearance() ?? 'dark'
 
   let containerEl: HTMLDivElement | undefined
   let view: EditorView | undefined
@@ -498,6 +503,7 @@ export default function CodePreview(props: PreviewProps) {
       cached!.diskRevision === buf.diskRevision &&
       cached!.state.doc.toString() === buf.content
     const mode = untrack(currentTheme)
+    const appearance = untrack(currentAppearance)
 
     mountedRelPath = buf.relPath
     mountedDiskRevision = buf.diskRevision
@@ -514,7 +520,7 @@ export default function CodePreview(props: PreviewProps) {
               EditorView.editable.of(!buf.readOnly),
             ]),
             listenerCompartment.reconfigure(listenerExt),
-            themeCompartment.reconfigure(getEditorThemeExtension(mode)),
+            themeCompartment.reconfigure(getEditorThemeExtension(mode, appearance)),
           ],
         })
         const targetScrollTop = cached.scrollTop
@@ -528,7 +534,7 @@ export default function CodePreview(props: PreviewProps) {
       } else {
         const nextState = EditorState.create({
           doc: buf.content,
-          extensions: buildEditorExtensions(buf.readOnly, listenerExt, mode),
+          extensions: buildEditorExtensions(buf.readOnly, listenerExt, mode, appearance),
         })
         view.setState(nextState)
         applyLanguageSupport(buf.relPath, fileName, fileExt)
@@ -546,7 +552,12 @@ export default function CodePreview(props: PreviewProps) {
       parent: containerEl,
       state: EditorState.create({
         doc: '',
-        extensions: buildEditorExtensions(true, [], untrack(currentTheme)),
+        extensions: buildEditorExtensions(
+          true,
+          [],
+          untrack(currentTheme),
+          untrack(currentAppearance),
+        ),
       }),
     })
   })
@@ -562,11 +573,12 @@ export default function CodePreview(props: PreviewProps) {
   // Keep CodeMirror theme & highlight palette synced with workbench theme.
   createEffect(() => {
     const mode = currentTheme()
+    const appearance = currentAppearance()
     if (!view) return
     isApplyingExternal = true
     try {
       view.dispatch({
-        effects: themeCompartment.reconfigure(getEditorThemeExtension(mode)),
+        effects: themeCompartment.reconfigure(getEditorThemeExtension(mode, appearance)),
       })
     } finally {
       isApplyingExternal = false

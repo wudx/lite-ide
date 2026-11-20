@@ -4,6 +4,7 @@ import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { previewFallbackPlugin } from '@lite-ide/plugin-preview-fallback'
 import { previewImagePlugin } from '@lite-ide/plugin-preview-image'
 import { previewMarkdownPlugin } from '@lite-ide/plugin-preview-markdown'
+import { themeNordPlugin } from '@lite-ide/plugin-theme-nord'
 import { createDefaultBackend, MOCK_DEMO_PATHS } from '@lite-ide/protocol'
 import { createWorkbenchKernel, WorkbenchShell } from '@lite-ide/workbench'
 import { render } from 'solid-js/web'
@@ -20,6 +21,7 @@ kernel.registerPlugin(previewCodePlugin)
 kernel.registerPlugin(previewMarkdownPlugin)
 kernel.registerPlugin(previewImagePlugin)
 kernel.registerPlugin(previewFallbackPlugin)
+kernel.registerPlugin(themeNordPlugin)
 
 let restoringSession = true
 

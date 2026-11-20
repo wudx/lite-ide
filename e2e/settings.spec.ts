@@ -51,7 +51,7 @@ test('gear button and Ctrl+, open the settings dialog; Escape, ✕ and backdrop 
   expect(consoleErrors).toEqual([])
 })
 
-test('appearance section switches all three themes and persists across reload', async ({
+test('appearance section switches the three built-in themes and persists across reload', async ({
   page,
 }, testInfo) => {
   const consoleErrors = trackConsoleErrors(page)
@@ -84,6 +84,71 @@ test('appearance section switches all three themes and persists across reload', 
   await page.reload()
   await expect(page.getByRole('tree')).toBeVisible()
   expect(await themeState(page)).toEqual({ theme: 'solarized-light', dark: false, light: true })
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('plugin-contributed Nord theme appears in settings, applies inline variables and persists', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  await page.keyboard.press('Control+,')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+
+  // The theme-nord plugin contributes a 4th entry to the appearance grid.
+  const nordButton = dialog.getByRole('button', { name: 'Nord 深色' })
+  await expect(nordButton).toBeVisible()
+  await nordButton.click()
+
+  // Selecting it flips data-theme + dark class and injects the contributed
+  // variables as inline styles overriding app.css :root defaults.
+  const nordState = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    dark: document.documentElement.classList.contains('dark'),
+    light: document.documentElement.classList.contains('light'),
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+    accent: document.documentElement.style.getPropertyValue('--accent'),
+  }))
+  expect(nordState).toEqual({
+    theme: 'nord-dark',
+    dark: true,
+    light: false,
+    appBg: '#2e3440',
+    accent: '#88c0d0',
+  })
+  expect(
+    await page.evaluate((k) => localStorage.getItem(k), THEME_STORAGE_KEY),
+  ).toBe('nord-dark')
+  await page.screenshot({ path: testInfo.outputPath('theme-nord-dark.png'), animations: 'disabled' })
+
+  // The FOUC whitelist only knows built-ins, so after reload the kernel must
+  // re-apply the stored plugin theme once the theme-nord plugin registers.
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  const restored = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    dark: document.documentElement.classList.contains('dark'),
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+  }))
+  expect(restored.theme).toBe('nord-dark')
+  expect(restored.dark).toBe(true)
+  expect(restored.appBg).toBe('#2e3440')
+
+  // Switching back to a built-in clears the injected inline variables.
+  await page.keyboard.press('Control+,')
+  // exact: true — '深色' would otherwise substring-match 'Nord 深色' as well.
+  await dialog.getByRole('button', { name: '深色', exact: true }).click()
+  const cleared = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+  }))
+  expect(cleared.theme).toBe('dark')
+  expect(cleared.appBg).toBe('')
 
   expect(consoleErrors).toEqual([])
 })
