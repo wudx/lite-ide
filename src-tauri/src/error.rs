@@ -18,6 +18,15 @@ pub enum AppError {
     #[error("not a file: {0}")]
     NotFile(String),
 
+    #[error("path already exists: {0}")]
+    AlreadyExists(String),
+
+    #[error("unsupported text encoding for writing: {0}")]
+    UnsupportedEncoding(String),
+
+    #[error("invalid file or folder name: {0}")]
+    InvalidName(String),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -41,6 +50,9 @@ impl AppError {
             Self::PathTraversal(_) => "PATH_TRAVERSAL",
             Self::NotDirectory(_) => "NOT_DIRECTORY",
             Self::NotFile(_) => "NOT_FILE",
+            Self::AlreadyExists(_) => "ALREADY_EXISTS",
+            Self::UnsupportedEncoding(_) => "UNSUPPORTED_ENCODING",
+            Self::InvalidName(_) => "INVALID_NAME",
             Self::Io(_) => "IO_ERROR",
             Self::Watch(_) => "WATCH_ERROR",
         }

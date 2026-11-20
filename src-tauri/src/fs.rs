@@ -10,7 +10,9 @@ use serde::Serialize;
 use tokio::io::AsyncReadExt;
 
 use crate::error::AppError;
-use crate::project::{normalize_rel_path, resolve_safe_path};
+use crate::project::{
+    normalize_rel_path, resolve_safe_existing_entry, resolve_safe_new_path, resolve_safe_path,
+};
 
 pub const DEFAULT_MAX_TEXT_BYTES: usize = 2 * 1024 * 1024;
 pub const HARD_MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
@@ -51,6 +53,14 @@ pub struct TextPayload {
     pub truncated: bool,
     pub line_count: usize,
     pub encoding: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteTextResult {
+    pub meta: FileMeta,
+    pub line_count: usize,
+    pub written_bytes: usize,
 }
 
 pub fn list_dir(canonical_root: &Path, rel_path: &str) -> Result<Vec<DirEntry>, AppError> {
@@ -214,6 +224,195 @@ pub async fn read_text(
         line_count,
         encoding,
     })
+}
+
+pub async fn write_text(
+    project_id: &str,
+    canonical_root: &Path,
+    rel_path: &str,
+    content: &str,
+    encoding: Option<&str>,
+) -> Result<WriteTextResult, AppError> {
+    let target = resolve_safe_path(canonical_root, rel_path)?;
+    if !target.is_file() {
+        return Err(AppError::NotFile(rel_path.to_string()));
+    }
+
+    let target_encoding = match encoding {
+        Some(enc) if !enc.trim().is_empty() => enc.trim().to_string(),
+        _ => sniff_file(&target)?.1,
+    };
+
+    let bytes = encode_text_buffer(content, &target_encoding)?;
+    let written_bytes = bytes.len();
+    tokio::fs::write(&target, &bytes).await?;
+
+    let line_count = if content.is_empty() {
+        0
+    } else {
+        content.split('\n').count()
+    };
+    let meta = stat_preview(project_id, canonical_root, rel_path)?;
+
+    Ok(WriteTextResult {
+        meta,
+        line_count,
+        written_bytes,
+    })
+}
+
+pub fn create_file(
+    project_id: &str,
+    canonical_root: &Path,
+    rel_path: &str,
+) -> Result<FileMeta, AppError> {
+    let target = resolve_safe_new_path(canonical_root, rel_path)?;
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+    {
+        Ok(_) => stat_preview(project_id, canonical_root, rel_path),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(AppError::AlreadyExists(rel_path.to_string()))
+        }
+        Err(err) => Err(AppError::Io(err)),
+    }
+}
+
+pub fn create_dir(canonical_root: &Path, rel_path: &str) -> Result<DirEntry, AppError> {
+    let target = resolve_safe_new_path(canonical_root, rel_path)?;
+    if std::fs::symlink_metadata(&target).is_ok() {
+        return Err(AppError::AlreadyExists(rel_path.to_string()));
+    }
+    match std::fs::create_dir(&target) {
+        Ok(()) => build_dir_entry(canonical_root, &target),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(AppError::AlreadyExists(rel_path.to_string()))
+        }
+        Err(err) => Err(AppError::Io(err)),
+    }
+}
+
+pub fn rename_path(
+    canonical_root: &Path,
+    old_rel_path: &str,
+    new_rel_path: &str,
+) -> Result<DirEntry, AppError> {
+    let src = resolve_safe_existing_entry(canonical_root, old_rel_path)?;
+    let dst = resolve_safe_new_path(canonical_root, new_rel_path)?;
+
+    if src == dst {
+        return build_dir_entry(canonical_root, &dst);
+    }
+
+    let is_case_only_rename = src.parent() == dst.parent()
+        && match (
+            src.file_name().and_then(|s| s.to_str()),
+            dst.file_name().and_then(|s| s.to_str()),
+        ) {
+            (Some(a), Some(b)) => a != b && a.to_lowercase() == b.to_lowercase(),
+            _ => false,
+        };
+
+    if std::fs::symlink_metadata(&dst).is_ok() && !is_case_only_rename {
+        return Err(AppError::AlreadyExists(new_rel_path.to_string()));
+    }
+
+    std::fs::rename(&src, &dst)?;
+    build_dir_entry(canonical_root, &dst)
+}
+
+pub fn delete_path(canonical_root: &Path, rel_path: &str) -> Result<(), AppError> {
+    let target = resolve_safe_existing_entry(canonical_root, rel_path)?;
+    let meta = std::fs::symlink_metadata(&target)?;
+
+    if meta.file_type().is_symlink() {
+        if let Err(err) = std::fs::remove_file(&target) {
+            if target.is_dir() {
+                std::fs::remove_dir(&target)?;
+            } else {
+                return Err(AppError::Io(err));
+            }
+        }
+        return Ok(());
+    }
+
+    if meta.is_dir() {
+        std::fs::remove_dir_all(&target)?;
+    } else {
+        std::fs::remove_file(&target)?;
+    }
+
+    Ok(())
+}
+
+fn build_dir_entry(canonical_root: &Path, path: &Path) -> Result<DirEntry, AppError> {
+    let link_meta = std::fs::symlink_metadata(path)?;
+    let is_dir = if link_meta.file_type().is_symlink() {
+        path.is_dir()
+    } else {
+        link_meta.is_dir()
+    };
+    let meta = std::fs::metadata(path).unwrap_or(link_meta);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let size = if is_dir { 0 } else { meta.len() };
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let rel_path = path
+        .strip_prefix(canonical_root)
+        .map(normalize_rel_path)
+        .unwrap_or_else(|_| name.clone());
+    let parent_dir = path.parent().unwrap_or(canonical_root);
+    let gitignores = build_gitignore_chain(canonical_root, parent_dir);
+    let hidden = name.starts_with('.');
+    let ignored = name == ".git" || is_ignored_by_chain(&gitignores, path, is_dir);
+
+    Ok(DirEntry {
+        name,
+        rel_path,
+        is_dir,
+        size,
+        modified_ms,
+        ignored,
+        hidden,
+    })
+}
+
+fn encode_text_buffer(content: &str, encoding: &str) -> Result<Vec<u8>, AppError> {
+    match encoding.to_ascii_lowercase().as_str() {
+        "" | "utf-8" => Ok(content.as_bytes().to_vec()),
+        "utf-8-bom" => {
+            let mut bytes = Vec::with_capacity(3 + content.len());
+            bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+            bytes.extend_from_slice(content.as_bytes());
+            Ok(bytes)
+        }
+        "utf-16le" => {
+            let mut bytes = Vec::with_capacity(2 + content.len() * 2);
+            bytes.extend_from_slice(&[0xFF, 0xFE]);
+            for unit in content.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            Ok(bytes)
+        }
+        "utf-16be" => {
+            let mut bytes = Vec::with_capacity(2 + content.len() * 2);
+            bytes.extend_from_slice(&[0xFE, 0xFF]);
+            for unit in content.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_be_bytes());
+            }
+            Ok(bytes)
+        }
+        other => Err(AppError::UnsupportedEncoding(other.to_string())),
+    }
 }
 
 pub fn detect_mime(path: &Path) -> String {
@@ -541,5 +740,68 @@ mod tests {
         assert_eq!(payload.total_bytes, 9);
         assert_eq!(payload.loaded_bytes, 3);
         assert_eq!(payload.content, "一");
+    }
+
+    #[tokio::test]
+    async fn write_text_roundtrips_supported_encodings_and_rejects_utf32() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+
+        for enc in ["utf-8", "utf-8-bom", "utf-16le", "utf-16be"] {
+            let name = format!("{enc}.txt");
+            create_file("p1", &root, &name).unwrap();
+            let text = "hello\n世界";
+            let res = write_text("p1", &root, &name, text, Some(enc)).await.unwrap();
+            assert_eq!(res.line_count, 2);
+            assert_eq!(res.meta.encoding, enc);
+
+            let read_back = read_text(&root, &name, None).await.unwrap();
+            assert_eq!(read_back.content, text);
+            assert_eq!(read_back.encoding, enc);
+        }
+
+        create_file("p1", &root, "bad.txt").unwrap();
+        let err = write_text("p1", &root, "bad.txt", "abc", Some("utf-32"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::UnsupportedEncoding(_)));
+    }
+
+    #[test]
+    fn create_rename_and_delete_entries_enforce_conflicts_and_boundaries() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+
+        let created_dir = create_dir(&root, "src").unwrap();
+        assert!(created_dir.is_dir);
+        assert!(matches!(create_dir(&root, "src"), Err(AppError::AlreadyExists(_))));
+
+        let created_file = create_file("p1", &root, "src/app.ts").unwrap();
+        assert_eq!(created_file.rel_path, "src/app.ts");
+        assert!(matches!(
+            create_file("p1", &root, "src/app.ts"),
+            Err(AppError::AlreadyExists(_))
+        ));
+
+        let renamed_file = rename_path(&root, "src/app.ts", "src/App.ts").unwrap();
+        assert_eq!(renamed_file.rel_path, "src/App.ts");
+
+        create_file("p1", &root, "src/other.ts").unwrap();
+        assert!(matches!(
+            rename_path(&root, "src/App.ts", "src/other.ts"),
+            Err(AppError::AlreadyExists(_))
+        ));
+
+        let renamed_dir = rename_path(&root, "src", "packages").unwrap();
+        assert!(renamed_dir.is_dir);
+        assert!(root.join("packages/other.ts").is_file());
+
+        delete_path(&root, "packages/other.ts").unwrap();
+        assert!(!root.join("packages/other.ts").exists());
+
+        delete_path(&root, "packages").unwrap();
+        assert!(!root.join("packages").exists());
+
+        assert!(matches!(delete_path(&root, ""), Err(AppError::InvalidPath(_))));
     }
 }

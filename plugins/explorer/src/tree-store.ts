@@ -8,7 +8,12 @@ export interface FlatTreeNode {
   expanded: boolean
   loading: boolean
   parentPath: string
+  creatingKind?: 'file' | 'dir'
 }
+
+export type PendingTreeAction =
+  | { kind: 'create-file' | 'create-dir'; parentDir: string }
+  | { kind: 'rename'; relPath: string; isDir: boolean; originalName: string }
 
 export interface FileTreeStore {
   readonly visibleNodes: Accessor<FlatTreeNode[]>
@@ -18,6 +23,8 @@ export interface FileTreeStore {
   readonly scrollOffset: Accessor<number>
   readonly rootLoading: Accessor<boolean>
   readonly error: Accessor<string | null>
+  readonly pendingAction: Accessor<PendingTreeAction | null>
+  readonly actionError: Accessor<string | null>
   setShowIgnored(show: boolean): void
   toggleShowIgnored(): void
   setFilterQuery(query: string): void
@@ -31,9 +38,60 @@ export interface FileTreeStore {
   refreshDir(relPath: string): Promise<void>
   refreshAllExpanded(): Promise<void>
   handleFsDelta(delta: FsDelta): Promise<void>
+  startCreate(kind: 'file' | 'dir', parentDir: string): Promise<void>
+  startRename(relPath: string, isDir: boolean, originalName: string): void
+  cancelAction(): void
+  commitCreate(rawName: string): Promise<{ relPath: string; isDir: boolean } | null>
+  commitRename(
+    rawName: string,
+  ): Promise<{ oldRelPath: string; newRelPath: string; isDir: boolean } | null>
+  deleteEntry(relPath: string, isDir: boolean): Promise<boolean>
 }
 
 export const FileTreeStoreKey = createServiceKey<FileTreeStore>('plugin.explorer.fileTreeStore')
+
+export const CREATING_PLACEHOLDER_PATH = '__lite_ide_creating__'
+
+export function parentDirOf(relPath: string): string {
+  const normalized = relPath.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? '' : normalized.slice(0, idx)
+}
+
+export function validateEntryName(rawName: string): string | null {
+  const name = rawName.trim()
+  if (!name) {
+    return 'Name cannot be empty.'
+  }
+  if (name === '.' || name === '..') {
+    return 'Name cannot be "." or "..".'
+  }
+  if (name.includes('/') || name.includes('\\')) {
+    return 'Path separators ("/" or "\\") are not allowed.'
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[<>:"|?*\x00-\x1f]/.test(name)) {
+    return 'Contains invalid characters: < > : " | ? *'
+  }
+  return null
+}
+
+function remapPath(target: string, oldRelPath: string, newRelPath: string, isDir: boolean): string | null {
+  if (target === oldRelPath) return newRelPath
+  if (isDir) {
+    const prefix = `${oldRelPath}/`
+    if (target.startsWith(prefix)) {
+      return `${newRelPath}/${target.slice(prefix.length)}`
+    }
+  }
+  return null
+}
+
+function matchesPath(target: string, relPath: string, isDir: boolean): boolean {
+  if (target === relPath) return true
+  if (isDir && target.startsWith(`${relPath}/`)) return true
+  return false
+}
 
 export function createFileTreeStore(
   projectId: string,
@@ -48,6 +106,8 @@ export function createFileTreeStore(
   const [scrollOffset, setScrollOffset] = createSignal(0)
   const [rootLoading, setRootLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
+  const [pendingAction, setPendingAction] = createSignal<PendingTreeAction | null>(null)
+  const [actionError, setActionError] = createSignal<string | null>(null)
 
   let rootInitPromise: Promise<void> | null = null
   const dirLoadSeq = new Map<string, number>()
@@ -99,6 +159,7 @@ export function createFileTreeStore(
     const loading = loadingSet()
     const includeIgnored = showIgnored()
     const query = filterQuery().trim().toLowerCase()
+    const pending = pendingAction()
 
     const result: FlatTreeNode[] = []
 
@@ -115,13 +176,44 @@ export function createFileTreeStore(
     }
 
     const walk = (dirPath: string, depth: number) => {
+      if (
+        pending &&
+        (pending.kind === 'create-file' || pending.kind === 'create-dir') &&
+        pending.parentDir === dirPath
+      ) {
+        const isDir = pending.kind === 'create-dir'
+        result.push({
+          entry: {
+            name: '',
+            relPath: CREATING_PLACEHOLDER_PATH,
+            isDir,
+            size: 0,
+            modifiedMs: 0,
+            ignored: false,
+            hidden: false,
+          },
+          depth,
+          expanded: false,
+          loading: false,
+          parentPath: dirPath,
+          creatingKind: isDir ? 'dir' : 'file',
+        })
+      }
+
       const entries = map.get(dirPath)
       if (!entries) return
 
       for (const entry of entries) {
         if (!includeIgnored && entry.ignored) continue
 
-        if (query) {
+        const hasCreatingChild =
+          pending &&
+          (pending.kind === 'create-file' || pending.kind === 'create-dir') &&
+          entry.isDir &&
+          (pending.parentDir === entry.relPath ||
+            pending.parentDir.startsWith(`${entry.relPath}/`))
+
+        if (query && !hasCreatingChild) {
           const selfMatch = entry.name.toLowerCase().includes(query)
           const childMatch = entry.isDir && hasMatchingLoadedDescendant(entry.relPath)
           if (!selfMatch && !childMatch) continue
@@ -154,6 +246,8 @@ export function createFileTreeStore(
     scrollOffset,
     rootLoading,
     error,
+    pendingAction,
+    actionError,
     setShowIgnored,
     toggleShowIgnored() {
       setShowIgnored((v) => !v)
@@ -173,6 +267,10 @@ export function createFileTreeStore(
     },
 
     async expandDir(relPath: string) {
+      if (relPath === '') {
+        await this.ensureRootLoaded()
+        return
+      }
       setExpandedSet((prev) => {
         if (prev.has(relPath)) return prev
         const next = new Set(prev)
@@ -234,6 +332,190 @@ export function createFileTreeStore(
 
       if (targets.size === 0) return
       await Promise.all([...targets].map((dir) => loadDir(dir)))
+    },
+
+    async startCreate(kind: 'file' | 'dir', parentDir: string) {
+      setActionError(null)
+      if (parentDir !== '') {
+        const parts = parentDir.split('/').filter(Boolean)
+        let cursor = ''
+        for (const seg of parts) {
+          cursor = cursor ? `${cursor}/${seg}` : seg
+          await this.expandDir(cursor)
+        }
+      } else {
+        await this.ensureRootLoaded()
+      }
+      setPendingAction({
+        kind: kind === 'file' ? 'create-file' : 'create-dir',
+        parentDir,
+      })
+    },
+
+    startRename(relPath: string, isDir: boolean, originalName: string) {
+      setActionError(null)
+      setFocusedPath(relPath)
+      setPendingAction({
+        kind: 'rename',
+        relPath,
+        isDir,
+        originalName,
+      })
+    },
+
+    cancelAction() {
+      setPendingAction(null)
+      setActionError(null)
+    },
+
+    async commitCreate(rawName: string) {
+      const pending = pendingAction()
+      if (!pending || (pending.kind !== 'create-file' && pending.kind !== 'create-dir')) {
+        return null
+      }
+
+      const name = rawName.trim()
+      const validationError = validateEntryName(name)
+      if (validationError) {
+        setActionError(validationError)
+        return null
+      }
+
+      const targetRel = pending.parentDir ? `${pending.parentDir}/${name}` : name
+      const isDir = pending.kind === 'create-dir'
+
+      try {
+        if (isDir) {
+          await backend.createDir(projectId, targetRel)
+        } else {
+          await backend.createFile(projectId, targetRel)
+        }
+        setPendingAction(null)
+        setActionError(null)
+        await loadDir(pending.parentDir)
+        setFocusedPath(targetRel)
+        return { relPath: targetRel, isDir }
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : String(err))
+        return null
+      }
+    },
+
+    async commitRename(rawName: string) {
+      const pending = pendingAction()
+      if (!pending || pending.kind !== 'rename') {
+        return null
+      }
+
+      const name = rawName.trim()
+      const validationError = validateEntryName(name)
+      if (validationError) {
+        setActionError(validationError)
+        return null
+      }
+
+      if (name === pending.originalName) {
+        setPendingAction(null)
+        setActionError(null)
+        return null
+      }
+
+      const parent = parentDirOf(pending.relPath)
+      const newRel = parent ? `${parent}/${name}` : name
+
+      try {
+        await backend.renamePath(projectId, pending.relPath, newRel)
+        setPendingAction(null)
+        setActionError(null)
+
+        if (pending.isDir) {
+          setExpandedSet((prev) => {
+            const next = new Set<string>()
+            for (const dir of prev) {
+              const mapped = remapPath(dir, pending.relPath, newRel, true)
+              next.add(mapped ?? dir)
+            }
+            return next
+          })
+
+          setChildrenMap((prev) => {
+            const next = new Map<string, DirEntry[]>()
+            for (const [dirKey, entries] of prev) {
+              const mappedKey = remapPath(dirKey, pending.relPath, newRel, true) ?? dirKey
+              const updatedEntries = entries.map((entry) => {
+                const mappedEntryPath = remapPath(
+                  entry.relPath,
+                  pending.relPath,
+                  newRel,
+                  true,
+                )
+                return mappedEntryPath ? { ...entry, relPath: mappedEntryPath } : entry
+              })
+              next.set(mappedKey, updatedEntries)
+            }
+            return next
+          })
+        }
+
+        await loadDir(parent)
+
+        const focused = focusedPath()
+        if (focused) {
+          const mappedFocus = remapPath(focused, pending.relPath, newRel, pending.isDir)
+          if (mappedFocus) {
+            setFocusedPath(mappedFocus)
+          }
+        }
+
+        return {
+          oldRelPath: pending.relPath,
+          newRelPath: newRel,
+          isDir: pending.isDir,
+        }
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : String(err))
+        return null
+      }
+    },
+
+    async deleteEntry(relPath: string, isDir: boolean) {
+      setError(null)
+      try {
+        await backend.deletePath(projectId, relPath)
+
+        if (isDir) {
+          setExpandedSet((prev) => {
+            const next = new Set<string>()
+            for (const dir of prev) {
+              if (!matchesPath(dir, relPath, true)) {
+                next.add(dir)
+              }
+            }
+            return next
+          })
+
+          setChildrenMap((prev) => {
+            const next = new Map<string, DirEntry[]>()
+            for (const [dirKey, entries] of prev) {
+              if (!matchesPath(dirKey, relPath, true)) {
+                next.set(dirKey, entries)
+              }
+            }
+            return next
+          })
+        }
+
+        const focused = focusedPath()
+        if (focused && matchesPath(focused, relPath, isDir)) {
+          setFocusedPath(null)
+        }
+
+        await loadDir(parentDirOf(relPath))
+        return true
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+        return false
+      }
     },
   }
 }

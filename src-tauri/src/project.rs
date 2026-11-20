@@ -207,6 +207,75 @@ fn is_windows_drive_prefix(path: &str) -> bool {
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+fn validate_rel_segments(rel_path: &str) -> Result<Vec<String>, AppError> {
+    if rel_path.contains('\0') {
+        return Err(AppError::InvalidPath("null byte in path".into()));
+    }
+
+    let normalized = rel_path.replace('\\', "/");
+    if normalized.starts_with('/') || is_windows_drive_prefix(normalized.trim_matches('/')) {
+        return Err(AppError::PathTraversal(rel_path.to_string()));
+    }
+
+    let trimmed = normalized.trim_matches('/');
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut segments = Vec::new();
+    for segment in trimmed.split('/') {
+        if segment.is_empty() || segment == "." || segment == ".." {
+            return Err(AppError::PathTraversal(rel_path.to_string()));
+        }
+        if Path::new(segment)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+        {
+            return Err(AppError::PathTraversal(rel_path.to_string()));
+        }
+        if segment.chars().any(|c| {
+            c.is_ascii_control() || matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*')
+        }) {
+            return Err(AppError::InvalidName(segment.to_string()));
+        }
+        segments.push(segment.to_string());
+    }
+
+    Ok(segments)
+}
+
+/// Validates and resolves a target path for creating or moving an entry within `canonical_root`.
+pub fn resolve_safe_new_path(canonical_root: &Path, rel_path: &str) -> Result<PathBuf, AppError> {
+    let segments = validate_rel_segments(rel_path)?;
+    if segments.is_empty() {
+        return Err(AppError::InvalidPath("target path cannot be empty".into()));
+    }
+
+    let (file_name, parent_segments) = segments
+        .split_last()
+        .ok_or_else(|| AppError::InvalidPath("target path cannot be empty".into()))?;
+    let parent_rel = parent_segments.join("/");
+    let canonical_parent = resolve_safe_path(canonical_root, &parent_rel)?;
+    if !canonical_parent.is_dir() {
+        return Err(AppError::NotDirectory(parent_rel));
+    }
+
+    Ok(canonical_parent.join(file_name))
+}
+
+/// Validates and resolves an existing workspace entry without following a terminal symlink outside root.
+pub fn resolve_safe_existing_entry(canonical_root: &Path, rel_path: &str) -> Result<PathBuf, AppError> {
+    let target = resolve_safe_new_path(canonical_root, rel_path)?;
+    let meta = std::fs::symlink_metadata(&target)?;
+    if !meta.file_type().is_symlink() {
+        let canonical_target = std::fs::canonicalize(&target)?;
+        if !canonical_target.starts_with(canonical_root) {
+            return Err(AppError::PathTraversal(rel_path.to_string()));
+        }
+    }
+    Ok(target)
+}
+
 fn start_watcher(
     project_id: String,
     canonical_root: PathBuf,
@@ -352,5 +421,33 @@ mod tests {
             strip_verbatim_prefix(Path::new("/home/dev/repo")),
             "/home/dev/repo"
         );
+    }
+
+    #[test]
+    fn resolves_safe_new_path_and_rejects_invalid_targets() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir(root.join("src")).unwrap();
+
+        assert_eq!(
+            resolve_safe_new_path(&root, "src/new_file.ts").unwrap(),
+            root.join("src").join("new_file.ts")
+        );
+        assert!(matches!(
+            resolve_safe_new_path(&root, ""),
+            Err(AppError::InvalidPath(_))
+        ));
+        assert!(matches!(
+            resolve_safe_new_path(&root, "../escape.txt"),
+            Err(AppError::PathTraversal(_))
+        ));
+        assert!(matches!(
+            resolve_safe_new_path(&root, "src/bad:name.ts"),
+            Err(AppError::InvalidName(_))
+        ));
+        assert!(matches!(
+            resolve_safe_new_path(&root, "missing/file.ts"),
+            Err(AppError::Io(_))
+        ));
     }
 }

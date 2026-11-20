@@ -1,11 +1,27 @@
-import type { DirEntry, FileMeta, FsDelta, ProjectInfo, TextPayload, WorkspaceBackend } from './types'
+import type {
+  DirEntry,
+  FileMeta,
+  FsDelta,
+  ProjectInfo,
+  TextPayload,
+  WorkspaceBackend,
+  WriteTextResult,
+} from './types'
 
 interface MockFile {
   content: string
+  modifiedMs: number
   isBinary?: boolean
   mime?: string
   ignored?: boolean
   dataUrl?: string
+}
+
+interface MockRepoTemplate {
+  id: string
+  name: string
+  rootPath: string
+  files: Record<string, Omit<MockFile, 'modifiedMs'>>
 }
 
 interface MockRepo {
@@ -13,7 +29,11 @@ interface MockRepo {
   name: string
   rootPath: string
   files: Record<string, MockFile>
+  dirs: Set<string>
 }
+
+const BASE_TIMESTAMP = 1700000000000
+const SUPPORTED_ENCODINGS = new Set(['', 'utf-8', 'utf-8-bom', 'utf-16le', 'utf-16be'])
 
 const DEMO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220">
   <defs>
@@ -37,7 +57,7 @@ const DEMO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="22
   <text x="148" y="150" fill="#94a3b8" font-family="monospace" font-size="12">Scope / Service / Slot</text>
 </svg>`
 
-const MOCK_REPOS: MockRepo[] = [
+const MOCK_REPO_TEMPLATES: MockRepoTemplate[] = [
   {
     id: 'mock-lite-ide',
     name: 'lite-ide-demo',
@@ -164,35 +184,234 @@ Switch between top project tabs to verify **instant 0ms switching** and preserve
   },
 ]
 
-export const MOCK_DEMO_PATHS = MOCK_REPOS.map((r) => r.rootPath)
+export const MOCK_DEMO_PATHS = MOCK_REPO_TEMPLATES.map((r) => r.rootPath)
+
+function cloneRepoFromTemplate(tpl: MockRepoTemplate): MockRepo {
+  const files: Record<string, MockFile> = {}
+  const dirs = new Set<string>()
+  let offset = 1
+
+  for (const [relPath, file] of Object.entries(tpl.files)) {
+    files[relPath] = {
+      ...file,
+      modifiedMs: BASE_TIMESTAMP + offset++,
+    }
+    const parts = relPath.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      dirs.add(parts.slice(0, i).join('/'))
+    }
+  }
+
+  return {
+    id: tpl.id,
+    name: tpl.name,
+    rootPath: tpl.rootPath,
+    files,
+    dirs,
+  }
+}
+
+function nextTimestamp(prev = 0): number {
+  return Math.max(Date.now(), prev + 1)
+}
+
+function parentDirOf(relPath: string): string {
+  const idx = relPath.lastIndexOf('/')
+  return idx === -1 ? '' : relPath.slice(0, idx)
+}
+
+function baseNameOf(relPath: string): string {
+  const idx = relPath.lastIndexOf('/')
+  return idx === -1 ? relPath : relPath.slice(idx + 1)
+}
+
+function normalizeRelPath(raw: string, allowEmpty = false): string {
+  if (raw.includes('\0')) {
+    throw new Error(`Invalid path: ${raw}`)
+  }
+  const normalized = raw.replace(/\\/g, '/')
+  if (normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized.replace(/^\/+/, ''))) {
+    throw new Error(`Path traversal rejected: ${raw}`)
+  }
+  const trimmed = normalized.replace(/^\/+|\/+$/g, '')
+  if (!trimmed) {
+    if (allowEmpty) return ''
+    throw new Error('Target path cannot be empty')
+  }
+  const parts = trimmed.split('/')
+  for (const seg of parts) {
+    if (!seg || seg === '.' || seg === '..') {
+      throw new Error(`Path traversal rejected: ${raw}`)
+    }
+    // eslint-disable-next-line no-control-regex
+    if (/[<>:"|?*\x00-\x1f]/.test(seg)) {
+      throw new Error(`Invalid file or folder name: ${seg}`)
+    }
+  }
+  return parts.join('/')
+}
+
+function inferMime(relPath: string): string {
+  const name = baseNameOf(relPath)
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+  switch (ext) {
+    case 'ts':
+    case 'tsx':
+    case 'mts':
+    case 'cts':
+      return 'text/typescript'
+    case 'js':
+    case 'jsx':
+    case 'mjs':
+    case 'cjs':
+      return 'text/javascript'
+    case 'rs':
+      return 'text/x-rust'
+    case 'go':
+      return 'text/x-go'
+    case 'py':
+    case 'pyw':
+    case 'pyi':
+      return 'text/x-python'
+    case 'toml':
+      return 'application/toml'
+    case 'yaml':
+    case 'yml':
+      return 'text/yaml'
+    case 'json':
+    case 'jsonc':
+    case 'json5':
+      return 'application/json'
+    case 'md':
+    case 'markdown':
+    case 'mdx':
+      return 'text/markdown'
+    case 'svg':
+      return 'image/svg+xml'
+    case 'html':
+    case 'htm':
+      return 'text/html'
+    case 'css':
+    case 'scss':
+      return 'text/css'
+    default:
+      return 'text/plain'
+  }
+}
 
 export function createMockBackend(): WorkspaceBackend {
+  const repoPool = new Map<string, MockRepo>()
   const openSessions = new Map<string, MockRepo>()
+  const fsListeners = new Map<string, (delta: FsDelta) => void>()
   let pickCursor = 0
 
+  for (const tpl of MOCK_REPO_TEMPLATES) {
+    repoPool.set(tpl.rootPath, cloneRepoFromTemplate(tpl))
+  }
+
   function findRepoByPath(path: string): MockRepo {
-    const found = MOCK_REPOS.find((r) => r.rootPath === path)
-    if (found) return found
+    const existing = repoPool.get(path)
+    if (existing) return existing
     const name = path.split(/[/\\]/).filter(Boolean).pop() || 'project'
-    return {
+    const created: MockRepo = {
       id: `mock-${name}`,
       name,
       rootPath: path,
       files: {
         'README.md': {
           mime: 'text/markdown',
+          modifiedMs: nextTimestamp(),
           content: `# ${name}\n\nOpened in browser preview mode.\n`,
         },
       },
+      dirs: new Set<string>(),
     }
+    repoPool.set(path, created)
+    return created
+  }
+
+  function getRepo(projectId: string): MockRepo {
+    const repo = openSessions.get(projectId)
+    if (!repo) throw new Error(`Project not found: ${projectId}`)
+    return repo
+  }
+
+  function dirExists(repo: MockRepo, dirPath: string): boolean {
+    if (dirPath === '') return true
+    if (repo.dirs.has(dirPath)) return true
+    const prefix = `${dirPath}/`
+    return Object.keys(repo.files).some((filePath) => filePath.startsWith(prefix))
+  }
+
+  function entryExists(repo: MockRepo, relPath: string): boolean {
+    return relPath in repo.files || dirExists(repo, relPath)
+  }
+
+  function buildFileMeta(projectId: string, relPath: string, file: MockFile): FileMeta {
+    const name = baseNameOf(relPath)
+    const dot = name.lastIndexOf('.')
+    const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+
+    return {
+      projectId,
+      relPath,
+      name,
+      ext,
+      size: new TextEncoder().encode(file.content).length,
+      modifiedMs: file.modifiedMs,
+      mime: file.mime || inferMime(relPath),
+      isBinary: Boolean(file.isBinary),
+      encoding: file.isBinary ? 'binary' : 'utf-8',
+    }
+  }
+
+  function buildDirEntry(repo: MockRepo, relPath: string, isDir: boolean): DirEntry {
+    const name = baseNameOf(relPath)
+    if (isDir) {
+      return {
+        name,
+        relPath,
+        isDir: true,
+        size: 0,
+        modifiedMs: BASE_TIMESTAMP,
+        ignored: name === 'dist' || name === 'node_modules' || name === '.git',
+        hidden: name.startsWith('.'),
+      }
+    }
+    const file = repo.files[relPath]
+    return {
+      name,
+      relPath,
+      isDir: false,
+      size: new TextEncoder().encode(file?.content ?? '').length,
+      modifiedMs: file?.modifiedMs ?? BASE_TIMESTAMP,
+      ignored: Boolean(file?.ignored),
+      hidden: name.startsWith('.'),
+    }
+  }
+
+  function emitDelta(projectId: string, affectedDirs: string[], affectedPaths: string[]) {
+    const listener = fsListeners.get(projectId)
+    if (!listener) return
+    const delta: FsDelta = {
+      projectId,
+      affectedDirs: [...new Set(affectedDirs)],
+      affectedPaths: [...new Set(affectedPaths)],
+      overflow: false,
+    }
+    queueMicrotask(() => {
+      fsListeners.get(projectId)?.(delta)
+    })
   }
 
   return {
     kind: 'mock',
 
-    async openProject(path: string, _onFsEvent: (delta: FsDelta) => void): Promise<ProjectInfo> {
+    async openProject(path: string, onFsEvent: (delta: FsDelta) => void): Promise<ProjectInfo> {
       const repo = findRepoByPath(path)
       openSessions.set(repo.id, repo)
+      fsListeners.set(repo.id, onFsEvent)
       return {
         id: repo.id,
         name: repo.name,
@@ -202,18 +421,33 @@ export function createMockBackend(): WorkspaceBackend {
 
     async closeProject(projectId: string): Promise<void> {
       openSessions.delete(projectId)
+      fsListeners.delete(projectId)
     },
 
     async listDir(projectId: string, relPath: string): Promise<DirEntry[]> {
-      const repo = openSessions.get(projectId)
-      if (!repo) throw new Error(`Project not found: ${projectId}`)
+      const repo = getRepo(projectId)
+      const prefix = normalizeRelPath(relPath, true)
+      if (prefix && !dirExists(repo, prefix)) {
+        throw new Error(`Not a directory: ${relPath}`)
+      }
 
-      const prefix = relPath.replace(/^\/+|\/+$/g, '')
       const seenDirs = new Set<string>()
       const dirs: DirEntry[] = []
       const files: DirEntry[] = []
 
-      for (const [filePath, meta] of Object.entries(repo.files)) {
+      for (const dir of repo.dirs) {
+        if (prefix && !dir.startsWith(`${prefix}/`)) continue
+        const remainder = prefix ? dir.slice(prefix.length + 1) : dir
+        if (!remainder) continue
+        const firstSeg = remainder.split('/')[0]
+        const dirRel = prefix ? `${prefix}/${firstSeg}` : firstSeg
+        if (!seenDirs.has(dirRel)) {
+          seenDirs.add(dirRel)
+          dirs.push(buildDirEntry(repo, dirRel, true))
+        }
+      }
+
+      for (const [filePath] of Object.entries(repo.files)) {
         if (prefix && !filePath.startsWith(`${prefix}/`)) continue
         const remainder = prefix ? filePath.slice(prefix.length + 1) : filePath
         const parts = remainder.split('/')
@@ -223,60 +457,38 @@ export function createMockBackend(): WorkspaceBackend {
           const dirRel = prefix ? `${prefix}/${dirName}` : dirName
           if (!seenDirs.has(dirRel)) {
             seenDirs.add(dirRel)
-            dirs.push({
-              name: dirName,
-              relPath: dirRel,
-              isDir: true,
-              size: 0,
-              modifiedMs: Date.now(),
-              ignored: dirName === 'dist' || dirName === 'node_modules',
-              hidden: dirName.startsWith('.'),
-            })
+            dirs.push(buildDirEntry(repo, dirRel, true))
           }
         } else if (parts[0]) {
-          files.push({
-            name: parts[0],
-            relPath: filePath,
-            isDir: false,
-            size: new TextEncoder().encode(meta.content).length,
-            modifiedMs: Date.now(),
-            ignored: Boolean(meta.ignored),
-            hidden: parts[0].startsWith('.'),
-          })
+          files.push(buildDirEntry(repo, filePath, false))
         }
       }
 
-      dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-      files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+      dirs.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+      )
+      files.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+      )
       return [...dirs, ...files]
     },
 
     async statPreview(projectId: string, relPath: string): Promise<FileMeta> {
-      const repo = openSessions.get(projectId)
-      if (!repo) throw new Error(`Project not found: ${projectId}`)
-      const file = repo.files[relPath]
+      const repo = getRepo(projectId)
+      const normalized = normalizeRelPath(relPath)
+      const file = repo.files[normalized]
       if (!file) throw new Error(`File not found: ${relPath}`)
-      const name = relPath.split('/').pop() || relPath
-      const dot = name.lastIndexOf('.')
-      const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
-
-      return {
-        projectId,
-        relPath,
-        name,
-        ext,
-        size: new TextEncoder().encode(file.content).length,
-        modifiedMs: Date.now(),
-        mime: file.mime || 'text/plain',
-        isBinary: Boolean(file.isBinary),
-        encoding: file.isBinary ? 'binary' : 'utf-8',
-      }
+      return buildFileMeta(projectId, normalized, file)
     },
 
-    async readText(projectId: string, relPath: string, maxBytes = 2 * 1024 * 1024): Promise<TextPayload> {
-      const repo = openSessions.get(projectId)
-      if (!repo) throw new Error(`Project not found: ${projectId}`)
-      const file = repo.files[relPath]
+    async readText(
+      projectId: string,
+      relPath: string,
+      maxBytes = 2 * 1024 * 1024,
+    ): Promise<TextPayload> {
+      const repo = getRepo(projectId)
+      const normalized = normalizeRelPath(relPath)
+      const file = repo.files[normalized]
       if (!file) throw new Error(`File not found: ${relPath}`)
 
       const fullBytes = new TextEncoder().encode(file.content)
@@ -295,8 +507,178 @@ export function createMockBackend(): WorkspaceBackend {
       }
     },
 
+    async writeText(
+      projectId: string,
+      relPath: string,
+      content: string,
+      encoding = 'utf-8',
+    ): Promise<WriteTextResult> {
+      const repo = getRepo(projectId)
+      const normalized = normalizeRelPath(relPath)
+      const file = repo.files[normalized]
+      if (!file) throw new Error(`File not found: ${relPath}`)
+      if (file.isBinary) throw new Error(`Cannot write binary file: ${relPath}`)
+
+      const enc = encoding.trim().toLowerCase()
+      if (!SUPPORTED_ENCODINGS.has(enc)) {
+        throw new Error(`Unsupported text encoding for writing: ${encoding}`)
+      }
+
+      file.content = content
+      file.modifiedMs = nextTimestamp(file.modifiedMs)
+      if ((file.mime || inferMime(normalized)) === 'image/svg+xml') {
+        file.dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(content)}`
+      }
+
+      const writtenBytes = new TextEncoder().encode(content).length
+      const lineCount = content ? content.split('\n').length : 0
+      emitDelta(projectId, [parentDirOf(normalized)], [normalized])
+
+      return {
+        meta: buildFileMeta(projectId, normalized, file),
+        lineCount,
+        writtenBytes,
+      }
+    },
+
+    async createFile(projectId: string, relPath: string): Promise<FileMeta> {
+      const repo = getRepo(projectId)
+      const normalized = normalizeRelPath(relPath)
+      const parent = parentDirOf(normalized)
+      if (!dirExists(repo, parent)) {
+        throw new Error(`Parent directory does not exist: ${parent}`)
+      }
+      if (entryExists(repo, normalized)) {
+        throw new Error(`Path already exists: ${normalized}`)
+      }
+
+      const file: MockFile = {
+        content: '',
+        modifiedMs: nextTimestamp(),
+        mime: inferMime(normalized),
+      }
+      repo.files[normalized] = file
+      emitDelta(projectId, [parent], [normalized])
+      return buildFileMeta(projectId, normalized, file)
+    },
+
+    async createDir(projectId: string, relPath: string): Promise<DirEntry> {
+      const repo = getRepo(projectId)
+      const normalized = normalizeRelPath(relPath)
+      const parent = parentDirOf(normalized)
+      if (!dirExists(repo, parent)) {
+        throw new Error(`Parent directory does not exist: ${parent}`)
+      }
+      if (entryExists(repo, normalized)) {
+        throw new Error(`Path already exists: ${normalized}`)
+      }
+
+      repo.dirs.add(normalized)
+      emitDelta(projectId, [parent], [normalized])
+      return buildDirEntry(repo, normalized, true)
+    },
+
+    async renamePath(
+      projectId: string,
+      oldRelPath: string,
+      newRelPath: string,
+    ): Promise<DirEntry> {
+      const repo = getRepo(projectId)
+      const src = normalizeRelPath(oldRelPath)
+      const dst = normalizeRelPath(newRelPath)
+
+      const srcIsFile = src in repo.files
+      const srcIsDir = !srcIsFile && dirExists(repo, src)
+      if (!srcIsFile && !srcIsDir) {
+        throw new Error(`Path not found: ${src}`)
+      }
+
+      const dstParent = parentDirOf(dst)
+      if (!dirExists(repo, dstParent)) {
+        throw new Error(`Parent directory does not exist: ${dstParent}`)
+      }
+
+      if (src === dst) {
+        return buildDirEntry(repo, dst, srcIsDir)
+      }
+
+      const isCaseOnlyRename =
+        parentDirOf(src) === dstParent &&
+        baseNameOf(src).toLowerCase() === baseNameOf(dst).toLowerCase()
+
+      if (entryExists(repo, dst) && !isCaseOnlyRename) {
+        throw new Error(`Path already exists: ${dst}`)
+      }
+
+      const affectedPaths = [src, dst]
+      if (srcIsFile) {
+        const file = repo.files[src]
+        delete repo.files[src]
+        file.mime = inferMime(dst)
+        file.modifiedMs = nextTimestamp(file.modifiedMs)
+        repo.files[dst] = file
+      } else {
+        const prefix = `${src}/`
+        const updatedDirs = new Set<string>()
+        for (const dir of repo.dirs) {
+          if (dir === src) {
+            updatedDirs.add(dst)
+          } else if (dir.startsWith(prefix)) {
+            updatedDirs.add(`${dst}/${dir.slice(prefix.length)}`)
+          } else {
+            updatedDirs.add(dir)
+          }
+        }
+        updatedDirs.add(dst)
+        repo.dirs = updatedDirs
+
+        for (const [filePath, file] of Object.entries(repo.files)) {
+          if (filePath.startsWith(prefix)) {
+            const nextFilePath = `${dst}/${filePath.slice(prefix.length)}`
+            delete repo.files[filePath]
+            repo.files[nextFilePath] = file
+            affectedPaths.push(filePath, nextFilePath)
+          }
+        }
+      }
+
+      emitDelta(projectId, [parentDirOf(src), dstParent], affectedPaths)
+      return buildDirEntry(repo, dst, srcIsDir)
+    },
+
+    async deletePath(projectId: string, relPath: string): Promise<void> {
+      const repo = getRepo(projectId)
+      const target = normalizeRelPath(relPath)
+
+      const isFile = target in repo.files
+      const isDir = !isFile && dirExists(repo, target)
+      if (!isFile && !isDir) {
+        throw new Error(`Path not found: ${target}`)
+      }
+
+      const affectedPaths = [target]
+      if (isFile) {
+        delete repo.files[target]
+      } else {
+        const prefix = `${target}/`
+        for (const dir of [...repo.dirs]) {
+          if (dir === target || dir.startsWith(prefix)) {
+            repo.dirs.delete(dir)
+          }
+        }
+        for (const filePath of Object.keys(repo.files)) {
+          if (filePath.startsWith(prefix)) {
+            delete repo.files[filePath]
+            affectedPaths.push(filePath)
+          }
+        }
+      }
+
+      emitDelta(projectId, [parentDirOf(target)], affectedPaths)
+    },
+
     async pickFolder(): Promise<string | null> {
-      const candidate = MOCK_REPOS[pickCursor % MOCK_REPOS.length]
+      const candidate = MOCK_REPO_TEMPLATES[pickCursor % MOCK_REPO_TEMPLATES.length]
       pickCursor++
       return candidate.rootPath
     },

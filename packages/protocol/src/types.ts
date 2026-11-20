@@ -35,6 +35,12 @@ export interface TextPayload {
   encoding: string
 }
 
+export interface WriteTextResult {
+  meta: FileMeta
+  lineCount: number
+  writtenBytes: number
+}
+
 export interface FsDelta {
   projectId: string
   affectedDirs: string[]
@@ -49,6 +55,16 @@ export interface WorkspaceBackend {
   listDir(projectId: string, relPath: string): Promise<DirEntry[]>
   statPreview(projectId: string, relPath: string): Promise<FileMeta>
   readText(projectId: string, relPath: string, maxBytes?: number): Promise<TextPayload>
+  writeText(
+    projectId: string,
+    relPath: string,
+    content: string,
+    encoding?: string,
+  ): Promise<WriteTextResult>
+  createFile(projectId: string, relPath: string): Promise<FileMeta>
+  createDir(projectId: string, relPath: string): Promise<DirEntry>
+  renamePath(projectId: string, oldRelPath: string, newRelPath: string): Promise<DirEntry>
+  deletePath(projectId: string, relPath: string): Promise<void>
   pickFolder(): Promise<string | null>
   resolveFileUrl?(projectId: string, relPath: string): string
 }

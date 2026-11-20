@@ -4,6 +4,10 @@ import { createSignal, type Accessor, type Setter } from 'solid-js'
 export interface CodePreviewStats {
   language: string
   lineCount: number
+  line: number
+  column: number
+  dirty: boolean
+  readOnly: boolean
   encoding: string
   size: number
 }

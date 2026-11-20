@@ -182,3 +182,64 @@ body,
   border: 1px solid var(--border-subtle);
   margin: 0.75rem 0;
 }
+
+/* CodeMirror search & replace panel dark polish */
+.cm-panel.cm-search {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-panel.cm-search input.cm-textfield {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  outline: none;
+}
+
+.cm-panel.cm-search input.cm-textfield:focus {
+  border-color: var(--accent);
+}
+
+.cm-panel.cm-search button.cm-button {
+  background-image: none;
+  background-color: var(--bg-app);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cm-panel.cm-search button.cm-button:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cm-panel.cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.cm-panel.cm-search button[name="close"] {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.cm-panel.cm-search button[name="close"]:hover {
+  color: var(--text-primary);
+}

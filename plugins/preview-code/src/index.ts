@@ -1,13 +1,45 @@
-import type { Plugin } from '@lite-ide/kernel'
+import { DisposableStore, type Plugin } from '@lite-ide/kernel'
+import { EditorBufferKey } from '@lite-ide/workbench'
 import { CodeStatusBarItem } from './CodeStatusBarItem'
+import { CodeEditorCacheKey, createCodeEditorCacheService } from './editor-cache'
 import { CodeStatsKey, createCodeStatsService } from './stats'
 
 export const previewCodePlugin: Plugin = {
   id: 'builtin.preview-code',
-  name: 'Code & Text Previewer',
+  name: 'Code & Text Editor',
   activate(ctx) {
     ctx.onProjectOpen((scope) => {
+      const store = new DisposableStore()
+      const editorCache = createCodeEditorCacheService()
       scope.provide(CodeStatsKey, createCodeStatsService())
+      scope.provide(CodeEditorCacheKey, editorCache)
+
+      const buffers = scope.tryGet(EditorBufferKey)
+      if (buffers) {
+        store.add(
+          buffers.events.on('discarded', ({ relPath }) => {
+            editorCache.delete(relPath)
+          }),
+        )
+        store.add(
+          buffers.events.on('renamed', ({ oldRelPath, newRelPath, isDir }) => {
+            editorCache.renamePaths(oldRelPath, newRelPath, isDir)
+          }),
+        )
+        store.add(
+          buffers.events.on('removed', ({ relPath, isDir }) => {
+            editorCache.removePaths(relPath, isDir)
+          }),
+        )
+      }
+
+      store.add({
+        dispose() {
+          editorCache.clear()
+        },
+      })
+
+      return store
     })
 
     ctx.contribute('previewer.provider', {

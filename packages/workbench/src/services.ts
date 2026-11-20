@@ -8,16 +8,35 @@ import {
 } from '@lite-ide/kernel'
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
 import { createSignal, type Accessor } from 'solid-js'
+import { ConfirmDialogKey, createConfirmDialogService } from './dialogs'
+import { createEditorBufferService, EditorBufferKey } from './editor-buffers'
+
+export interface EditorTab {
+  relPath: string
+  name: string
+  preferredPreviewerId: string | null
+}
 
 export interface ProjectSelectionService {
   readonly selectedPath: Accessor<string | null>
+  readonly openTabs: Accessor<readonly EditorTab[]>
   readonly fileMeta: Accessor<FileMeta | null>
   readonly loading: Accessor<boolean>
   readonly error: Accessor<string | null>
   readonly preferredPreviewerId: Accessor<string | null>
   setPreferredPreviewerId(id: string | null): void
-  selectFile(relPath: string): Promise<void>
+  selectFile(
+    relPath: string,
+    options?: { preferredPreviewerId?: string | null },
+  ): Promise<void>
+  syncFileMeta(meta: FileMeta): void
   refreshCurrentFile(): Promise<void>
+  closeTab(relPath: string): Promise<void>
+  closeOtherTabs(relPath: string): Promise<void>
+  closeAllTabs(): void
+  activateAdjacentTab(delta: 1 | -1): Promise<void>
+  renamePaths(oldRelPath: string, newRelPath: string, isDir: boolean): Promise<void>
+  removePaths(relPath: string, isDir: boolean): Promise<void>
   clearSelection(): void
 }
 
@@ -37,24 +56,55 @@ export const ProjectFsEventsKey = createServiceKey<EventBus<{ delta: FsDelta }>>
 )
 export const LayoutStateKey = createServiceKey<LayoutStateService>('workbench.layoutState')
 
-function createProjectSelection(
+function baseNameOf(relPath: string): string {
+  const normalized = relPath.replace(/\\/g, '/')
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? normalized : normalized.slice(idx + 1)
+}
+
+function remapPath(target: string, oldRelPath: string, newRelPath: string, isDir: boolean): string | null {
+  if (target === oldRelPath) return newRelPath
+  if (isDir) {
+    const prefix = `${oldRelPath}/`
+    if (target.startsWith(prefix)) {
+      return `${newRelPath}/${target.slice(prefix.length)}`
+    }
+  }
+  return null
+}
+
+function matchesPath(target: string, relPath: string, isDir: boolean): boolean {
+  if (target === relPath) return true
+  if (isDir && target.startsWith(`${relPath}/`)) return true
+  return false
+}
+
+export function createProjectSelection(
   projectId: string,
   backend: WorkspaceBackend,
 ): ProjectSelectionService {
   const [selectedPath, setSelectedPath] = createSignal<string | null>(null)
+  const [openTabs, setOpenTabs] = createSignal<EditorTab[]>([])
   const [fileMeta, setFileMeta] = createSignal<FileMeta | null>(null)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
-  const [preferredPreviewerId, setPreferredPreviewerId] = createSignal<string | null>(null)
+  const [preferredPreviewerId, setPreferredPreviewerIdState] = createSignal<string | null>(null)
 
   let requestSeq = 0
 
-  async function loadMeta(relPath: string, resetPreferred: boolean) {
+  function clearSelectionState() {
+    requestSeq += 1
+    setSelectedPath(null)
+    setFileMeta(null)
+    setError(null)
+    setLoading(false)
+    setPreferredPreviewerIdState(null)
+  }
+
+  async function loadMeta(relPath: string, nextPreferred: string | null) {
     const seq = ++requestSeq
     setSelectedPath(relPath)
-    if (resetPreferred) {
-      setPreferredPreviewerId(null)
-    }
+    setPreferredPreviewerIdState(nextPreferred)
     setLoading(true)
     setError(null)
 
@@ -75,25 +125,173 @@ function createProjectSelection(
 
   return {
     selectedPath,
+    openTabs,
     fileMeta,
     loading,
     error,
     preferredPreviewerId,
-    setPreferredPreviewerId,
-    async selectFile(relPath: string) {
-      await loadMeta(relPath, true)
+
+    setPreferredPreviewerId(id: string | null) {
+      setPreferredPreviewerIdState(id)
+      const current = selectedPath()
+      if (!current) return
+      setOpenTabs((prev) =>
+        prev.map((tab) =>
+          tab.relPath === current ? { ...tab, preferredPreviewerId: id } : tab,
+        ),
+      )
     },
+
+    async selectFile(relPath: string, options?: { preferredPreviewerId?: string | null }) {
+      const tabs = openTabs()
+      const existing = tabs.find((t) => t.relPath === relPath)
+      const explicitPref = options?.preferredPreviewerId
+      const targetPreferred =
+        explicitPref !== undefined ? explicitPref : (existing?.preferredPreviewerId ?? null)
+
+      if (!existing) {
+        setOpenTabs((prev) => [
+          ...prev,
+          {
+            relPath,
+            name: baseNameOf(relPath),
+            preferredPreviewerId: targetPreferred,
+          },
+        ])
+      } else if (explicitPref !== undefined && existing.preferredPreviewerId !== explicitPref) {
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.relPath === relPath ? { ...tab, preferredPreviewerId: explicitPref } : tab,
+          ),
+        )
+      }
+
+      if (
+        selectedPath() === relPath &&
+        fileMeta()?.relPath === relPath &&
+        !error()
+      ) {
+        setPreferredPreviewerIdState(targetPreferred)
+        return
+      }
+
+      await loadMeta(relPath, targetPreferred)
+    },
+
+    syncFileMeta(meta: FileMeta) {
+      if (selectedPath() === meta.relPath) {
+        setFileMeta(meta)
+      }
+    },
+
     async refreshCurrentFile() {
       const current = selectedPath()
       if (!current) return
-      await loadMeta(current, false)
+      await loadMeta(current, preferredPreviewerId())
     },
+
+    async closeTab(relPath: string) {
+      const currentTabs = openTabs()
+      const idx = currentTabs.findIndex((t) => t.relPath === relPath)
+      if (idx === -1) return
+
+      const nextTabs = currentTabs.filter((t) => t.relPath !== relPath)
+      setOpenTabs(nextTabs)
+
+      if (selectedPath() !== relPath) return
+
+      const fallback = nextTabs[idx] ?? nextTabs[idx - 1]
+      if (fallback) {
+        await loadMeta(fallback.relPath, fallback.preferredPreviewerId)
+      } else {
+        clearSelectionState()
+      }
+    },
+
+    async closeOtherTabs(relPath: string) {
+      const target = openTabs().find((t) => t.relPath === relPath)
+      if (!target) return
+      setOpenTabs([target])
+      if (selectedPath() !== target.relPath) {
+        await loadMeta(target.relPath, target.preferredPreviewerId)
+      }
+    },
+
+    closeAllTabs() {
+      setOpenTabs([])
+      clearSelectionState()
+    },
+
+    async activateAdjacentTab(delta: 1 | -1) {
+      const tabs = openTabs()
+      if (tabs.length <= 1) return
+      const current = selectedPath()
+      const idx = tabs.findIndex((t) => t.relPath === current)
+      const baseIdx = idx === -1 ? 0 : idx
+      const nextIdx = (baseIdx + delta + tabs.length) % tabs.length
+      const target = tabs[nextIdx]
+      if (target) {
+        await loadMeta(target.relPath, target.preferredPreviewerId)
+      }
+    },
+
+    async renamePaths(oldRelPath: string, newRelPath: string, isDir: boolean) {
+      let tabsChanged = false
+      setOpenTabs((prev) => {
+        const next = prev.map((tab) => {
+          const mapped = remapPath(tab.relPath, oldRelPath, newRelPath, isDir)
+          if (mapped && mapped !== tab.relPath) {
+            tabsChanged = true
+            return {
+              ...tab,
+              relPath: mapped,
+              name: baseNameOf(mapped),
+            }
+          }
+          return tab
+        })
+        return tabsChanged ? next : prev
+      })
+
+      const current = selectedPath()
+      if (!current) return
+      const mappedSelected = remapPath(current, oldRelPath, newRelPath, isDir)
+      if (mappedSelected && mappedSelected !== current) {
+        const existingMeta = fileMeta()
+        if (existingMeta && existingMeta.relPath === current) {
+          setFileMeta({
+            ...existingMeta,
+            relPath: mappedSelected,
+            name: baseNameOf(mappedSelected),
+          })
+        }
+        await loadMeta(mappedSelected, preferredPreviewerId())
+      }
+    },
+
+    async removePaths(relPath: string, isDir: boolean) {
+      const currentTabs = openTabs()
+      const activePath = selectedPath()
+      const activeIdx = activePath ? currentTabs.findIndex((t) => t.relPath === activePath) : -1
+      const nextTabs = currentTabs.filter((t) => !matchesPath(t.relPath, relPath, isDir))
+      if (nextTabs.length !== currentTabs.length) {
+        setOpenTabs(nextTabs)
+      }
+
+      if (!activePath || !matchesPath(activePath, relPath, isDir)) {
+        return
+      }
+
+      const fallback = nextTabs[Math.min(Math.max(activeIdx, 0), nextTabs.length - 1)]
+      if (fallback) {
+        await loadMeta(fallback.relPath, fallback.preferredPreviewerId)
+      } else {
+        clearSelectionState()
+      }
+    },
+
     clearSelection() {
-      requestSeq += 1
-      setSelectedPath(null)
-      setFileMeta(null)
-      setError(null)
-      setLoading(false)
+      clearSelectionState()
     },
   }
 }
@@ -125,19 +323,29 @@ export function createKernelHostFromBackend(backend: WorkspaceBackend): KernelPr
       return {
         info,
         setupScope(scope: ProjectScope) {
-          const selection = createProjectSelection(scope.id, backend)
-          scope.provide(ProjectFsEventsKey, fsEvents)
-          scope.provide(ProjectSelectionKey, selection)
+          scope.runInScope(() => {
+            const selection = createProjectSelection(scope.id, backend)
+            const buffers = createEditorBufferService(scope.id, backend, {
+              onMetaUpdated: (meta) => selection.syncFileMeta(meta),
+            })
+            scope.provide(ProjectFsEventsKey, fsEvents)
+            scope.provide(ProjectSelectionKey, selection)
+            scope.provide(EditorBufferKey, buffers)
 
-          const unsub = fsEvents.on('delta', (delta) => {
-            const current = selection.selectedPath()
-            if (!current) return
-            if (delta.overflow || delta.affectedPaths.includes(current)) {
-              void selection.refreshCurrentFile()
-            }
+            const unsub = fsEvents.on('delta', (delta) => {
+              void buffers.handleFsDelta(delta)
+              const current = selection.selectedPath()
+              if (
+                current &&
+                !buffers.hasBuffer(current) &&
+                (delta.overflow || delta.affectedPaths.includes(current))
+              ) {
+                void selection.refreshCurrentFile()
+              }
+            })
+            scope.onDispose(unsub)
+            scope.onDispose(() => fsEvents.clear())
           })
-          scope.onDispose(unsub)
-          scope.onDispose(() => fsEvents.clear())
         },
         async close() {
           await backend.closeProject(info.id)
@@ -160,5 +368,6 @@ export function createWorkbenchKernel(
   })
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
+  kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   return kernel
 }

@@ -1,6 +1,6 @@
 import type { PreviewProps } from '@lite-ide/kernel'
 import { getWorkspaceFileUrl } from '@lite-ide/protocol'
-import { ProjectSelectionKey, WorkspaceBackendKey } from '@lite-ide/workbench'
+import { EditorBufferKey, ProjectSelectionKey, WorkspaceBackendKey } from '@lite-ide/workbench'
 import DOMPurify from 'dompurify'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import MarkdownIt from 'markdown-it'
@@ -34,23 +34,34 @@ function resolveRelativePath(currentFileRel: string, targetHref: string): string
 export default function MarkdownPreview(props: PreviewProps) {
   const backend = props.scope.get(WorkspaceBackendKey)
   const selection = props.scope.get(ProjectSelectionKey)
+  const buffers = props.scope.tryGet(EditorBufferKey)
 
-  const [markdownText, setMarkdownText] = createSignal('')
+  const [diskText, setDiskText] = createSignal('')
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   let readSeq = 0
 
+  const activeBuffer = createMemo(() => buffers?.getBuffer(props.file.relPath))
+
   createEffect(() => {
-    const file = props.file
+    const buf = activeBuffer()
+    if (buf) {
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    const relPath = props.file.relPath
+    const _modifiedMs = props.file.modifiedMs
     const seq = ++readSeq
     setLoading(true)
     setError(null)
 
     void backend
-      .readText(props.scope.id, file.relPath)
+      .readText(props.scope.id, relPath)
       .then((res) => {
         if (seq !== readSeq) return
-        setMarkdownText(res.content)
+        setDiskText(res.content)
         setLoading(false)
       })
       .catch((err) => {
@@ -59,6 +70,8 @@ export default function MarkdownPreview(props: PreviewProps) {
         setError(err instanceof Error ? err.message : String(err))
       })
   })
+
+  const markdownText = createMemo(() => activeBuffer()?.content ?? diskText())
 
   const renderedHtml = createMemo(() => {
     const raw = markdownText()

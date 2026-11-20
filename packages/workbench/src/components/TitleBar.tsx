@@ -9,6 +9,8 @@ import Plus from 'lucide-solid/icons/plus'
 import Square from 'lucide-solid/icons/square'
 import X from 'lucide-solid/icons/x'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
+import { requestCloseProject } from '../close-guards'
+import { EditorBufferKey } from '../editor-buffers'
 import { LayoutStateKey } from '../services'
 
 export interface TitleBarProps {
@@ -104,6 +106,7 @@ export function TitleBar(props: TitleBarProps) {
         <For each={props.kernel.projects()}>
           {(scope) => {
             const isActive = () => props.kernel.activeProjectId() === scope.id
+            const hasDirty = () => scope.tryGet(EditorBufferKey)?.hasDirtyFiles() ?? false
             return (
               <div
                 role="tab"
@@ -118,7 +121,7 @@ export function TitleBar(props: TitleBarProps) {
                 onMouseDown={(e) => {
                   if (e.button === 1) {
                     e.preventDefault()
-                    void props.kernel.closeProject(scope.id)
+                    void requestCloseProject(props.kernel, scope)
                   }
                 }}
               >
@@ -131,20 +134,32 @@ export function TitleBar(props: TitleBarProps) {
                     isActive() ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
                   }`}
                 />
-                <span class="truncate flex-1 font-medium">{scope.name}</span>
-                <button
-                  type="button"
-                  title="Close Project (Ctrl+W)"
-                  class={`p-0.5 rounded hover:bg-[var(--bg-active)] transition-opacity ${
-                    isActive() ? 'opacity-75 hover:opacity-100' : 'opacity-0 group-hover:opacity-80'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void props.kernel.closeProject(scope.id)
-                  }}
-                >
-                  <X class="w-3 h-3" />
-                </button>
+                <span class="truncate flex-1 font-medium leading-normal">{scope.name}</span>
+                <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                  <Show when={hasDirty()}>
+                    <span
+                      title="Unsaved files in project"
+                      class="w-2 h-2 rounded-full bg-[var(--accent)] group-hover:hidden"
+                    />
+                  </Show>
+                  <button
+                    type="button"
+                    title="Close Project (Ctrl+Shift+W)"
+                    class={`p-0.5 rounded hover:bg-[var(--bg-active)] transition-opacity ${
+                      hasDirty()
+                        ? 'hidden group-hover:flex items-center justify-center'
+                        : isActive()
+                          ? 'opacity-75 hover:opacity-100'
+                          : 'opacity-0 group-hover:opacity-80'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void requestCloseProject(props.kernel, scope)
+                    }}
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             )
           }}

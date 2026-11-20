@@ -1,26 +1,146 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import { ProjectSelectionKey } from '@lite-ide/workbench'
+import type { DirEntry } from '@lite-ide/protocol'
+import {
+  ConfirmDialogKey,
+  EditorBufferKey,
+  FileIcon,
+  ProjectSelectionKey,
+} from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
 import ChevronsDownUp from 'lucide-solid/icons/chevrons-down-up'
 import Eye from 'lucide-solid/icons/eye'
 import EyeOff from 'lucide-solid/icons/eye-off'
+import FilePlus from 'lucide-solid/icons/file-plus'
+import FolderPlus from 'lucide-solid/icons/folder-plus'
 import Loader2 from 'lucide-solid/icons/loader-circle'
+import Pencil from 'lucide-solid/icons/pencil'
 import RefreshCw from 'lucide-solid/icons/refresh-cw'
 import Search from 'lucide-solid/icons/search'
+import Trash from 'lucide-solid/icons/trash'
 import X from 'lucide-solid/icons/x'
-import { For, onMount, Show } from 'solid-js'
-import { FileIcon } from './file-icons'
-import { FileTreeStoreKey, type FlatTreeNode } from './tree-store'
+import { batch, createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
+import {
+  FileTreeStoreKey,
+  parentDirOf,
+  type FlatTreeNode,
+} from './tree-store'
 
 export interface ExplorerViewProps {
   scope: ProjectScope
 }
 
+interface InlineNameInputProps {
+  initialValue: string
+  placeholder: string
+  selectBaseName: boolean
+  error: string | null
+  onSubmit: (value: string) => Promise<boolean>
+  onCancel: () => void
+}
+
+function InlineNameInput(props: InlineNameInputProps) {
+  const [value, setValue] = createSignal(props.initialValue)
+  let inputEl: HTMLInputElement | undefined
+  let settled = false
+  let submitting = false
+
+  onMount(() => {
+    requestAnimationFrame(() => {
+      if (!inputEl) return
+      inputEl.focus()
+      if (props.selectBaseName) {
+        const dotIdx = props.initialValue.lastIndexOf('.')
+        if (dotIdx > 0) {
+          inputEl.setSelectionRange(0, dotIdx)
+        } else {
+          inputEl.select()
+        }
+      } else {
+        inputEl.select()
+      }
+    })
+  })
+
+  async function trySubmit(fromBlur: boolean) {
+    if (settled || submitting) return
+    const trimmed = value().trim()
+    if (!trimmed) {
+      settled = true
+      props.onCancel()
+      return
+    }
+    if (fromBlur && props.initialValue && trimmed === props.initialValue) {
+      settled = true
+      props.onCancel()
+      return
+    }
+    submitting = true
+    const ok = await props.onSubmit(trimmed)
+    submitting = false
+    if (ok) {
+      settled = true
+    } else if (!fromBlur) {
+      requestAnimationFrame(() => inputEl?.focus())
+    } else {
+      settled = true
+      props.onCancel()
+    }
+  }
+
+  return (
+    <div
+      class="relative flex-1 min-w-0"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={inputEl}
+        type="text"
+        value={value()}
+        placeholder={props.placeholder}
+        onInput={(e) => setValue(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            void trySubmit(false)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            settled = true
+            props.onCancel()
+          }
+        }}
+        onBlur={() => void trySubmit(true)}
+        class={`w-full h-[20px] px-1.5 rounded bg-[var(--bg-app)] border outline-none text-xs text-[var(--text-primary)] leading-normal ${
+          props.error
+            ? 'border-red-500/80'
+            : 'border-[var(--accent)]'
+        }`}
+      />
+      <Show when={props.error}>
+        {(errMsg) => (
+          <div class="absolute left-0 top-[22px] z-30 max-w-[260px] px-2 py-1 rounded bg-red-950/95 border border-red-500/50 text-[10px] text-red-200 shadow-lg whitespace-normal break-words">
+            {errMsg()}
+          </div>
+        )}
+      </Show>
+    </div>
+  )
+}
+
 export function ExplorerView(props: ExplorerViewProps) {
   const store = props.scope.get(FileTreeStoreKey)
   const selection = props.scope.get(ProjectSelectionKey)
+  const buffers = props.scope.tryGet(EditorBufferKey)
+  const dialogs = props.scope.tryGet(ConfirmDialogKey)
+
+  const [contextMenu, setContextMenu] = createSignal<{
+    x: number
+    y: number
+    entry: DirEntry | null
+  } | null>(null)
 
   let scrollEl: HTMLDivElement | undefined
 
@@ -43,7 +163,34 @@ export function ExplorerView(props: ExplorerViewProps) {
     }
   })
 
+  createEffect(() => {
+    const menu = contextMenu()
+    if (!menu) return
+
+    const close = () => setContextMenu(null)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null)
+    }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', onKeyDown)
+    onCleanup(() => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', onKeyDown)
+    })
+  })
+
+  function resolveTargetParentDir(): string {
+    const candidate = store.focusedPath() ?? selection.selectedPath()
+    if (!candidate) return ''
+    const node = store.visibleNodes().find((n) => n.entry.relPath === candidate)
+    if (node) {
+      return node.entry.isDir ? node.entry.relPath : parentDirOf(node.entry.relPath)
+    }
+    return parentDirOf(candidate)
+  }
+
   async function activateNode(node: FlatTreeNode) {
+    if (node.creatingKind) return
     store.setFocusedPath(node.entry.relPath)
     if (node.entry.isDir) {
       await store.toggleDir(node.entry.relPath)
@@ -52,8 +199,98 @@ export function ExplorerView(props: ExplorerViewProps) {
     }
   }
 
+  async function handleCommitCreate(rawName: string): Promise<boolean> {
+    const created = await store.commitCreate(rawName)
+    if (!created) return false
+    if (!created.isDir) {
+      await selection.selectFile(created.relPath)
+    }
+    return true
+  }
+
+  async function handleCommitRename(rawName: string): Promise<boolean> {
+    const pending = store.pendingAction()
+    if (pending?.kind === 'rename' && rawName.trim() === pending.originalName) {
+      store.cancelAction()
+      return true
+    }
+    const release =
+      pending?.kind === 'rename'
+        ? buffers?.suppressPath(pending.relPath, pending.isDir)
+        : undefined
+    try {
+      const renamed = await store.commitRename(rawName)
+      if (!renamed) return false
+      let renamePromise: Promise<void> | undefined
+      batch(() => {
+        buffers?.renamePaths(renamed.oldRelPath, renamed.newRelPath, renamed.isDir)
+        renamePromise = selection.renamePaths(
+          renamed.oldRelPath,
+          renamed.newRelPath,
+          renamed.isDir,
+        )
+      })
+      await renamePromise
+      return true
+    } finally {
+      release?.()
+    }
+  }
+
+  async function confirmAndDelete(entry: DirEntry) {
+    const affectedDirty = buffers
+      ? [...buffers.dirtyPaths()].filter(
+          (p) => p === entry.relPath || (entry.isDir && p.startsWith(`${entry.relPath}/`)),
+        )
+      : []
+
+    if (dialogs) {
+      const dirtyNote =
+        affectedDirty.length > 0
+          ? ` (${affectedDirty.length} unsaved file${affectedDirty.length > 1 ? 's' : ''} inside will also be discarded)`
+          : ''
+      const choice = await dialogs.confirm({
+        title: entry.isDir ? 'Delete Folder' : 'Delete File',
+        message: entry.isDir
+          ? `Permanently delete folder "${entry.name}" and all of its contents?${dirtyNote}`
+          : `Permanently delete "${entry.name}"?${dirtyNote}`,
+        details: [entry.relPath],
+        actions: [
+          { id: 'delete', label: 'Delete', variant: 'danger' },
+          { id: 'cancel', label: 'Cancel', variant: 'secondary' },
+        ],
+        cancelId: 'cancel',
+      })
+      if (choice !== 'delete') return
+    }
+
+    const release = buffers?.suppressPath(entry.relPath, entry.isDir)
+    try {
+      const ok = await store.deleteEntry(entry.relPath, entry.isDir)
+      if (!ok) return
+
+      await selection.removePaths(entry.relPath, entry.isDir)
+      buffers?.removePaths(entry.relPath, entry.isDir)
+    } finally {
+      release?.()
+    }
+  }
+
+  function openMenuAt(x: number, y: number, entry: DirEntry | null) {
+    const maxX = typeof window !== 'undefined' ? window.innerWidth - 180 : x
+    const maxY = typeof window !== 'undefined' ? window.innerHeight - 160 : y
+    setContextMenu({
+      x: Math.max(8, Math.min(x, maxX)),
+      y: Math.max(8, Math.min(y, maxY)),
+      entry,
+    })
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
-    const nodes = store.visibleNodes()
+    const targetTag = (e.target as HTMLElement | null)?.tagName
+    if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return
+
+    const nodes = store.visibleNodes().filter((n) => !n.creatingKind)
     if (nodes.length === 0) return
 
     const currentPath = store.focusedPath() ?? selection.selectedPath()
@@ -84,6 +321,22 @@ export function ExplorerView(props: ExplorerViewProps) {
     const currentNode = currentIdx >= 0 ? nodes[currentIdx] : undefined
     if (!currentNode) return
 
+    if (e.key === 'F2') {
+      e.preventDefault()
+      store.startRename(
+        currentNode.entry.relPath,
+        currentNode.entry.isDir,
+        currentNode.entry.name,
+      )
+      return
+    }
+
+    if (e.key === 'Delete') {
+      e.preventDefault()
+      void confirmAndDelete(currentNode.entry)
+      return
+    }
+
     if (e.key === 'ArrowRight') {
       e.preventDefault()
       if (currentNode.entry.isDir && !currentNode.expanded) {
@@ -111,7 +364,7 @@ export function ExplorerView(props: ExplorerViewProps) {
   }
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col select-none">
+    <div class="flex-1 min-h-0 flex flex-col select-none relative">
       {/* Filter & toolbar */}
       <div class="px-2 py-1.5 border-b border-[var(--border-subtle)] flex items-center gap-1">
         <div class="relative flex-1 min-w-0">
@@ -134,6 +387,24 @@ export function ExplorerView(props: ExplorerViewProps) {
             </button>
           </Show>
         </div>
+
+        <button
+          type="button"
+          title="New File"
+          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          onClick={() => void store.startCreate('file', resolveTargetParentDir())}
+        >
+          <FilePlus class="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          title="New Folder"
+          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          onClick={() => void store.startCreate('dir', resolveTargetParentDir())}
+        >
+          <FolderPlus class="w-3.5 h-3.5" />
+        </button>
 
         <button
           type="button"
@@ -182,8 +453,15 @@ export function ExplorerView(props: ExplorerViewProps) {
         tabIndex={0}
         role="tree"
         class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden outline-none py-1"
-        onScroll={(e) => store.setScrollOffset(e.currentTarget.scrollTop)}
+        onScroll={(e) => {
+          store.setScrollOffset(e.currentTarget.scrollTop)
+          if (contextMenu()) setContextMenu(null)
+        }}
         onKeyDown={handleKeyDown}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          openMenuAt(e.clientX, e.clientY, null)
+        }}
       >
         <Show
           when={!store.rootLoading() || store.visibleNodes().length > 0}
@@ -212,32 +490,60 @@ export function ExplorerView(props: ExplorerViewProps) {
                   return (
                     <Show when={node()}>
                       {(item) => {
+                        const isCreating = () => Boolean(item().creatingKind)
+                        const isRenaming = () => {
+                          const pending = store.pendingAction()
+                          return (
+                            pending?.kind === 'rename' &&
+                            pending.relPath === item().entry.relPath
+                          )
+                        }
                         const isSelected = () =>
+                          !isCreating() &&
                           selection.selectedPath() === item().entry.relPath
                         const isFocused = () =>
+                          !isCreating() &&
                           store.focusedPath() === item().entry.relPath
+                        const isDirty = () =>
+                          !isCreating() &&
+                          !item().entry.isDir &&
+                          (buffers?.isDirty(item().entry.relPath) ?? false)
+
                         return (
                           <div
                             role="treeitem"
                             aria-expanded={item().entry.isDir ? item().expanded : undefined}
                             aria-selected={isSelected()}
-                            title={item().entry.relPath}
+                            title={
+                              isCreating()
+                                ? 'Enter name'
+                                : item().entry.relPath
+                            }
                             class={`absolute top-0 left-0 right-0 flex items-center gap-1 pr-2 cursor-pointer text-xs transition-colors ${
                               isSelected()
                                 ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
                                 : isFocused()
                                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-                            } ${item().entry.ignored ? 'opacity-50' : ''}`}
+                            } ${item().entry.ignored ? 'opacity-50' : ''} ${
+                              isCreating() || isRenaming() ? 'z-20' : ''
+                            }`}
                             style={{
                               height: `${virtualItem.size}px`,
                               transform: `translateY(${virtualItem.start}px)`,
                               'padding-left': `${8 + item().depth * 14}px`,
                             }}
                             onClick={() => void activateNode(item())}
+                            onContextMenu={(e) => {
+                              if (isCreating()) return
+                              e.preventDefault()
+                              e.stopPropagation()
+                              store.setFocusedPath(item().entry.relPath)
+                              openMenuAt(e.clientX, e.clientY, item().entry)
+                            }}
                           >
                             <span class="w-4 h-4 flex items-center justify-center shrink-0 text-[var(--text-muted)]">
-                              <Show when={item().entry.isDir}>
+                              <Show when={item().entry.isDir && !isCreating()}>
                                 <Show
                                   when={!item().loading}
                                   fallback={<Loader2 class="w-3 h-3 animate-spin" />}
@@ -253,15 +559,49 @@ export function ExplorerView(props: ExplorerViewProps) {
                             </span>
 
                             <FileIcon
-                              name={item().entry.name}
+                              name={item().entry.name || (item().creatingKind === 'dir' ? 'folder' : 'file.txt')}
                               isDir={item().entry.isDir}
                               expanded={item().expanded}
                               ignored={item().entry.ignored}
                             />
 
-                            <span class="truncate flex-1 leading-normal">
-                              {item().entry.name}
-                            </span>
+                            <Show
+                              when={isCreating() || isRenaming()}
+                              fallback={
+                                <>
+                                  <span
+                                    class={`truncate flex-1 leading-normal ${
+                                      isDirty() ? 'text-[var(--text-primary)] font-medium' : ''
+                                    }`}
+                                  >
+                                    {item().entry.name}
+                                  </span>
+                                  <Show when={isDirty()}>
+                                    <span
+                                      title="Unsaved changes"
+                                      class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0"
+                                    />
+                                  </Show>
+                                </>
+                              }
+                            >
+                              <InlineNameInput
+                                initialValue={isRenaming() ? item().entry.name : ''}
+                                placeholder={
+                                  item().creatingKind === 'dir'
+                                    ? 'New folder name...'
+                                    : 'New file name...'
+                                }
+                                selectBaseName={isRenaming() && !item().entry.isDir}
+                                error={store.actionError()}
+                                onSubmit={(val) =>
+                                  isCreating()
+                                    ? handleCommitCreate(val)
+                                    : handleCommitRename(val)
+                                }
+                                onCancel={() => store.cancelAction()}
+                              />
+                            </Show>
                           </div>
                         )
                       }}
@@ -273,6 +613,123 @@ export function ExplorerView(props: ExplorerViewProps) {
           </Show>
         </Show>
       </div>
+
+      {/* Explorer Context Menu */}
+      <Show when={contextMenu()}>
+        {(menu) => {
+          const entry = () => menu().entry
+          const targetParent = () => {
+            const target = entry()
+            if (!target) return ''
+            return target.isDir ? target.relPath : parentDirOf(target.relPath)
+          }
+          return (
+            <div
+              role="menu"
+              class="fixed z-40 min-w-[168px] py-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-xl text-xs text-[var(--text-primary)]"
+              style={{
+                left: `${menu().x}px`,
+                top: `${menu().y}px`,
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <Show when={entry() && !entry()!.isDir}>
+                <button
+                  type="button"
+                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    const target = entry()!
+                    setContextMenu(null)
+                    void selection.selectFile(target.relPath)
+                  }}
+                >
+                  <span>Open</span>
+                </button>
+              </Show>
+
+              <Show when={!entry() || entry()!.isDir}>
+                <button
+                  type="button"
+                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    const parent = targetParent()
+                    setContextMenu(null)
+                    void store.startCreate('file', parent)
+                  }}
+                >
+                  <FilePlus class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <span>New File</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    const parent = targetParent()
+                    setContextMenu(null)
+                    void store.startCreate('dir', parent)
+                  }}
+                >
+                  <FolderPlus class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <span>New Folder</span>
+                </button>
+              </Show>
+
+              <Show when={!entry()}>
+                <div class="my-1 border-t border-[var(--border-subtle)]" />
+                <button
+                  type="button"
+                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    setContextMenu(null)
+                    void store.refreshAllExpanded()
+                  }}
+                >
+                  <RefreshCw class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <span>Refresh</span>
+                </button>
+              </Show>
+
+              <Show when={entry()}>
+                {(target) => (
+                  <>
+                    <div class="my-1 border-t border-[var(--border-subtle)]" />
+                    <button
+                      type="button"
+                      class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center justify-between gap-2"
+                      onClick={() => {
+                        const item = target()
+                        setContextMenu(null)
+                        store.startRename(item.relPath, item.isDir, item.name)
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Pencil class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                        <span>Rename</span>
+                      </span>
+                      <span class="text-[10px] text-[var(--text-muted)]">F2</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="w-full px-3 py-1.5 text-left hover:bg-red-500/15 text-red-300 transition-colors flex items-center justify-between gap-2"
+                      onClick={() => {
+                        const item = target()
+                        setContextMenu(null)
+                        void confirmAndDelete(item)
+                      }}
+                    >
+                      <span class="flex items-center gap-2">
+                        <Trash class="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </span>
+                      <span class="text-[10px] text-red-300/60">Del</span>
+                    </button>
+                  </>
+                )}
+              </Show>
+            </div>
+          )
+        }}
+      </Show>
     </div>
   )
 }

@@ -14,13 +14,24 @@ export function CodeStatusBarItem(props: { scope?: ProjectScope }) {
           <Show when={stats()}>
             {(s) => (
               <>
-                <span>{s().language}</span>
+                <Show when={s().dirty}>
+                  <span class="text-[var(--accent)] font-medium">Modified</span>
+                </Show>
+                <Show when={s().readOnly}>
+                  <span class="text-amber-300 font-medium" title="Read-Only">
+                    RO
+                  </span>
+                </Show>
+                <span>
+                  Ln {s().line}, Col {s().column}
+                </span>
                 <span>{s().lineCount} lines</span>
+                <span>{s().language}</span>
               </>
             )}
           </Show>
-          <span class="uppercase">{file().encoding}</span>
-          <span>{formatBytes(file().size)}</span>
+          <span class="uppercase">{stats()?.encoding ?? file().encoding}</span>
+          <span>{formatBytes(stats()?.size ?? file().size)}</span>
         </div>
       )}
     </Show>

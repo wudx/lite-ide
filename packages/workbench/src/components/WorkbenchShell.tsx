@@ -1,6 +1,16 @@
-import { DisposableStore, type AppKernel } from '@lite-ide/kernel'
+import { DisposableStore, toDisposable, type AppKernel } from '@lite-ide/kernel'
+import { isTauriEnvironment } from '@lite-ide/protocol'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { For, onCleanup, onMount, Show } from 'solid-js'
-import { LayoutStateKey } from '../services'
+import {
+  requestCloseProject,
+  requestCloseTab,
+  requestCloseWindow,
+  requestSaveFile,
+} from '../close-guards'
+import { EditorBufferKey } from '../editor-buffers'
+import { LayoutStateKey, ProjectSelectionKey } from '../services'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { StatusBar } from './StatusBar'
 import { TitleBar } from './TitleBar'
@@ -29,12 +39,58 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
     disposables.add(
       props.kernel.contribute('command', {
-        id: 'workbench.closeProject',
-        title: 'Close Active Project',
+        id: 'workbench.saveFile',
+        title: 'Save Active File',
+        shortcut: 'Mod+S',
+        run: async ({ kernel, activeProject }) => {
+          if (!activeProject) return
+          const selection = activeProject.tryGet(ProjectSelectionKey)
+          const path = selection?.selectedPath()
+          if (!path) return
+          await requestSaveFile(kernel, activeProject, path)
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.saveAllFiles',
+        title: 'Save All Dirty Files',
+        shortcut: 'Mod+Shift+S',
+        run: async ({ activeProject }) => {
+          if (!activeProject) return
+          const buffers = activeProject.tryGet(EditorBufferKey)
+          await buffers?.saveAllDirty()
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.closeTab',
+        title: 'Close Active Editor Tab',
         shortcut: 'Mod+W',
         run: async ({ kernel, activeProject }) => {
+          if (!activeProject) return
+          const selection = activeProject.tryGet(ProjectSelectionKey)
+          const targetTab = selection?.selectedPath() ?? selection?.openTabs()[0]?.relPath
+          if (targetTab) {
+            await requestCloseTab(kernel, activeProject, targetTab)
+            return
+          }
+          await requestCloseProject(kernel, activeProject)
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.closeProject',
+        title: 'Close Active Project',
+        shortcut: 'Mod+Shift+W',
+        run: async ({ kernel, activeProject }) => {
           if (activeProject) {
-            await kernel.closeProject(activeProject.id)
+            await requestCloseProject(kernel, activeProject)
           }
         },
       }),
@@ -78,37 +134,114 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }),
     )
 
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.nextTab',
+        title: 'Next File Tab',
+        shortcut: 'Ctrl+PageDown',
+        run: async ({ activeProject }) => {
+          const selection = activeProject?.tryGet(ProjectSelectionKey)
+          await selection?.activateAdjacentTab(1)
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.prevTab',
+        title: 'Previous File Tab',
+        shortcut: 'Ctrl+PageUp',
+        run: async ({ activeProject }) => {
+          const selection = activeProject?.tryGet(ProjectSelectionKey)
+          await selection?.activateAdjacentTab(-1)
+        },
+      }),
+    )
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
       if (mod && !e.altKey) {
         const key = e.key.toLowerCase()
-        if (key === 'o') {
+        if (key === 's') {
+          e.preventDefault()
+          void props.kernel.executeCommand(
+            e.shiftKey ? 'workbench.saveAllFiles' : 'workbench.saveFile',
+          )
+          return
+        }
+        if (key === 'o' && !e.shiftKey) {
           e.preventDefault()
           void props.kernel.executeCommand('workbench.openProject')
           return
         }
         if (key === 'w') {
           e.preventDefault()
-          void props.kernel.executeCommand('workbench.closeProject')
+          void props.kernel.executeCommand(
+            e.shiftKey ? 'workbench.closeProject' : 'workbench.closeTab',
+          )
           return
         }
-        if (key === 'b') {
+        if (key === 'b' && !e.shiftKey) {
           e.preventDefault()
           void props.kernel.executeCommand('workbench.toggleSidebar')
           return
         }
       }
-      if (e.ctrlKey && e.key === 'Tab') {
+      if (e.ctrlKey && !e.altKey && e.key === 'Tab') {
         e.preventDefault()
         void props.kernel.executeCommand(
           e.shiftKey ? 'workbench.prevProject' : 'workbench.nextProject',
         )
+        return
+      }
+      if (e.ctrlKey && !e.altKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
+        e.preventDefault()
+        void props.kernel.executeCommand(
+          e.key === 'PageDown' ? 'workbench.nextTab' : 'workbench.prevTab',
+        )
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasDirty = props.kernel
+        .projects()
+        .some((scope) => scope.tryGet(EditorBufferKey)?.hasDirtyFiles())
+      if (hasDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+
+    let allowWindowClose = false
+    if (isTauriEnvironment()) {
+      const win = getCurrentWindow()
+      void win
+        .onCloseRequested((event) => {
+          if (allowWindowClose) return
+          const hasDirty = props.kernel
+            .projects()
+            .some((scope) => scope.tryGet(EditorBufferKey)?.hasDirtyFiles())
+          if (!hasDirty) return
+
+          event.preventDefault()
+          void requestCloseWindow(props.kernel).then((canClose) => {
+            if (canClose) {
+              allowWindowClose = true
+              void win.close()
+            }
+          })
+        })
+        .then((unlisten) => {
+          disposables.add(toDisposable(unlisten))
+        })
+        .catch(() => {})
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('beforeunload', handleBeforeUnload)
     onCleanup(() => {
-      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
       disposables.dispose()
     })
   })
@@ -137,6 +270,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       </main>
 
       <StatusBar kernel={props.kernel} />
+      <ConfirmDialog kernel={props.kernel} />
     </div>
   )
 }
