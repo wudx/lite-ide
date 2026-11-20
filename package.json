@@ -8,11 +8,13 @@
     "build": "pnpm --filter @lite-ide/desktop build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tauri-apps/cli": "^2.12.6",
     "@types/node": "^22.15.0",
     "jsdom": "^26.1.0",

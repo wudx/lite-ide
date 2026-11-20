@@ -26,8 +26,10 @@ import {
   requestRevertFile,
   requestSaveFile,
 } from '../close-guards'
+import { copyTextToClipboard } from '../clipboard'
 import { EditorBufferKey } from '../editor-buffers'
 import { formatBytes } from '../format'
+import { joinNativePath } from '../paths'
 import { ProjectSelectionKey } from '../services'
 import { FileIcon } from './FileIcon'
 
@@ -201,6 +203,11 @@ export function PreviewHost(props: PreviewHostProps) {
     await requestRevertFile(props.kernel, props.scope, path)
   }
 
+  async function copyTabPath(relPath: string, relative: boolean) {
+    const text = relative ? relPath : joinNativePath(props.scope.rootPath, relPath)
+    await copyTextToClipboard(text)
+  }
+
   return (
     <div class="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col rounded-xl bg-[var(--bg-editor)] panel-card relative">
       {/* Multi-file Editor Tab Bar (integrated document tabs) */}
@@ -235,7 +242,7 @@ export function PreviewHost(props: PreviewHostProps) {
                   onContextMenu={(e) => {
                     e.preventDefault()
                     const maxX = typeof window !== 'undefined' ? window.innerWidth - 170 : e.clientX
-                    const maxY = typeof window !== 'undefined' ? window.innerHeight - 120 : e.clientY
+                    const maxY = typeof window !== 'undefined' ? window.innerHeight - 250 : e.clientY
                     setTabMenu({
                       relPath: tab.relPath,
                       x: Math.max(8, Math.min(e.clientX, maxX)),
@@ -587,6 +594,29 @@ export function PreviewHost(props: PreviewHostProps) {
               }}
             >
               Close All
+            </button>
+            <div class="my-1 border-t border-[var(--border-subtle)]" />
+            <button
+              type="button"
+              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors"
+              onClick={() => {
+                const target = menu().relPath
+                setTabMenu(null)
+                void copyTabPath(target, false)
+              }}
+            >
+              Copy Path
+            </button>
+            <button
+              type="button"
+              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors"
+              onClick={() => {
+                const target = menu().relPath
+                setTabMenu(null)
+                void copyTabPath(target, true)
+              }}
+            >
+              Copy Relative Path
             </button>
           </div>
         )}

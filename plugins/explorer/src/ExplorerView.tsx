@@ -2,16 +2,20 @@ import type { ProjectScope } from '@lite-ide/kernel'
 import type { DirEntry } from '@lite-ide/protocol'
 import {
   ConfirmDialogKey,
+  copyTextToClipboard,
   EditorBufferKey,
   FileIcon,
+  joinNativePath,
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
 import ChevronsDownUp from 'lucide-solid/icons/chevrons-down-up'
+import Copy from 'lucide-solid/icons/copy'
 import Eye from 'lucide-solid/icons/eye'
 import EyeOff from 'lucide-solid/icons/eye-off'
 import FilePlus from 'lucide-solid/icons/file-plus'
+import FileStack from 'lucide-solid/icons/file-stack'
 import FolderPlus from 'lucide-solid/icons/folder-plus'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Pencil from 'lucide-solid/icons/pencil'
@@ -275,9 +279,14 @@ export function ExplorerView(props: ExplorerViewProps) {
     }
   }
 
+  async function copyEntryPath(entry: DirEntry, relative: boolean) {
+    const text = relative ? entry.relPath : joinNativePath(props.scope.rootPath, entry.relPath)
+    await copyTextToClipboard(text)
+  }
+
   function openMenuAt(x: number, y: number, entry: DirEntry | null) {
     const maxX = typeof window !== 'undefined' ? window.innerWidth - 180 : x
-    const maxY = typeof window !== 'undefined' ? window.innerHeight - 160 : y
+    const maxY = typeof window !== 'undefined' ? window.innerHeight - 240 : y
     setContextMenu({
       x: Math.max(8, Math.min(x, maxX)),
       y: Math.max(8, Math.min(y, maxY)),
@@ -739,6 +748,30 @@ export function ExplorerView(props: ExplorerViewProps) {
                         <span>Rename</span>
                       </span>
                       <span class="text-[10px] font-mono text-[var(--text-muted)]">F2</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                      onClick={() => {
+                        const item = target()
+                        setContextMenu(null)
+                        void copyEntryPath(item, false)
+                      }}
+                    >
+                      <Copy class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                      <span>Copy Path</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                      onClick={() => {
+                        const item = target()
+                        setContextMenu(null)
+                        void copyEntryPath(item, true)
+                      }}
+                    >
+                      <FileStack class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                      <span>Copy Relative Path</span>
                     </button>
                     <button
                       type="button"
