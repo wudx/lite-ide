@@ -12,6 +12,7 @@ import {
 import { WORKBENCH_EN_US, WORKBENCH_ZH_CN } from '../src/i18n-messages'
 import { createWorkbenchKernel } from '../src/services'
 import { explorerPlugin } from '../../../plugins/explorer/src/index'
+import { previewAudioPlugin } from '../../../plugins/preview-audio/src/index'
 import { previewCodePlugin } from '../../../plugins/preview-code/src/index'
 import { previewFallbackPlugin } from '../../../plugins/preview-fallback/src/index'
 import { previewImagePlugin } from '../../../plugins/preview-image/src/index'
@@ -176,6 +177,7 @@ describe('createI18nState', () => {
         previewCodePlugin,
         previewMarkdownPlugin,
         previewImagePlugin,
+        previewAudioPlugin,
         previewFallbackPlugin,
         themeNordPlugin,
       ]) {

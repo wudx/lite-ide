@@ -82,6 +82,7 @@
   --icon-json: #e9cb74;
   --icon-doc: #78d9a6;
   --icon-image: #c49bff;
+  --icon-audio: #f472b6;
   --icon-config: #8a93a6;
 
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -167,6 +168,7 @@
   --icon-json: #a16207;
   --icon-doc: #0f766e;
   --icon-image: #7c3aed;
+  --icon-audio: #db2777;
   --icon-config: #64748b;
 }
 
@@ -254,6 +256,7 @@
   --icon-json: #b58900;
   --icon-doc: #2aa198;
   --icon-image: #d33682;
+  --icon-audio: #6c71c4;
   --icon-config: #6c71c4;
 }
 

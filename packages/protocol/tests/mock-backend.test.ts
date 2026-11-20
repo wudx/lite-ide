@@ -55,4 +55,18 @@ describe('Mock WorkspaceBackend', () => {
     await Promise.resolve()
     expect(deltas.length).toBeGreaterThan(0)
   })
+
+  it('serves playable audio metadata and dataUrl for demo wav asset', async () => {
+    const backend = createMockBackend()
+    const info = await backend.openProject(MOCK_DEMO_PATHS[0], () => {})
+
+    const meta = await backend.statPreview(info.id, 'assets/chime.wav')
+    expect(meta.ext).toBe('wav')
+    expect(meta.mime).toBe('audio/wav')
+    expect(meta.isBinary).toBe(true)
+    expect(meta.size).toBeGreaterThan(44)
+
+    const url = backend.resolveFileUrl?.(info.id, 'assets/chime.wav')
+    expect(url).toMatch(/^data:audio\/wav;base64,/)
+  })
 })

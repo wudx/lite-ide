@@ -2,6 +2,7 @@ import './styles/app.css'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { explorerPlugin } from '@lite-ide/plugin-explorer'
+import { previewAudioPlugin } from '@lite-ide/plugin-preview-audio'
 import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { previewFallbackPlugin } from '@lite-ide/plugin-preview-fallback'
 import { previewImagePlugin } from '@lite-ide/plugin-preview-image'
@@ -22,6 +23,7 @@ kernel.registerPlugin(explorerPlugin)
 kernel.registerPlugin(previewCodePlugin)
 kernel.registerPlugin(previewMarkdownPlugin)
 kernel.registerPlugin(previewImagePlugin)
+kernel.registerPlugin(previewAudioPlugin)
 kernel.registerPlugin(previewFallbackPlugin)
 kernel.registerPlugin(themeNordPlugin)
 

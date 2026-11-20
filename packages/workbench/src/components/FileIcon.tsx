@@ -1,6 +1,7 @@
 import File from 'lucide-solid/icons/file'
 import FileJson from 'lucide-solid/icons/file-braces'
 import FileCode2 from 'lucide-solid/icons/file-code-corner'
+import FileMusic from 'lucide-solid/icons/file-music'
 import FileTerminal from 'lucide-solid/icons/file-terminal'
 import FileText from 'lucide-solid/icons/file-text'
 import Folder from 'lucide-solid/icons/folder'
@@ -10,6 +11,7 @@ import Image from 'lucide-solid/icons/image'
 import Palette from 'lucide-solid/icons/palette'
 import Settings from 'lucide-solid/icons/settings'
 import { createMemo, Match, Show, Switch } from 'solid-js'
+import { AUDIO_EXTS } from '../media'
 
 export interface FileIconProps {
   name: string
@@ -71,6 +73,9 @@ export function FileIcon(props: FileIconProps) {
           </Match>
           <Match when={IMAGE_EXTS.has(ext())}>
             <Image class="w-3.5 h-3.5 shrink-0 text-[var(--icon-image)]" />
+          </Match>
+          <Match when={AUDIO_EXTS.has(ext())}>
+            <FileMusic class="w-3.5 h-3.5 shrink-0 text-[var(--icon-audio)]" />
           </Match>
           <Match when={CONFIG_EXTS.has(ext()) || props.name.startsWith('.')}>
             <Settings class="w-3.5 h-3.5 shrink-0 text-[var(--icon-config)]" />

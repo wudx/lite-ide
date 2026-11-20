@@ -433,6 +433,15 @@ pub fn detect_mime(path: &Path) -> String {
         Some("json" | "jsonc" | "json5") => "application/json".into(),
         Some("md" | "markdown" | "mdx") => "text/markdown".into(),
         Some("svg") => "image/svg+xml".into(),
+        Some("mp3") => "audio/mpeg".into(),
+        Some("wav") => "audio/wav".into(),
+        Some("ogg" | "oga") => "audio/ogg".into(),
+        Some("opus") => "audio/opus".into(),
+        Some("flac") => "audio/flac".into(),
+        Some("aac") => "audio/aac".into(),
+        Some("m4a") => "audio/mp4".into(),
+        Some("weba") => "audio/webm".into(),
+        Some("aiff" | "aif") => "audio/aiff".into(),
         Some("vue" | "svelte" | "astro" | "zig" | "lua" | "nix" | "sql" | "sh" | "bash"
             | "zsh" | "ps1" | "bat" | "cmd" | "env" | "lock" | "ini" | "conf") => {
             "text/plain".into()
@@ -708,6 +717,17 @@ mod tests {
         assert_eq!(detect_mime(Path::new("lib.rs")), "text/x-rust");
         assert_eq!(detect_mime(Path::new("logo.svg")), "image/svg+xml");
         assert_eq!(detect_mime(Path::new("README.md")), "text/markdown");
+    }
+
+    #[test]
+    fn mime_detection_recognizes_audio_extensions() {
+        assert_eq!(detect_mime(Path::new("bgm.mp3")), "audio/mpeg");
+        assert_eq!(detect_mime(Path::new("sfx.WAV")), "audio/wav");
+        assert_eq!(detect_mime(Path::new("voice.ogg")), "audio/ogg");
+        assert_eq!(detect_mime(Path::new("track.opus")), "audio/opus");
+        assert_eq!(detect_mime(Path::new("lossless.flac")), "audio/flac");
+        assert_eq!(detect_mime(Path::new("clip.m4a")), "audio/mp4");
+        assert_eq!(detect_mime(Path::new("stream.weba")), "audio/webm");
     }
 
     #[test]

@@ -87,6 +87,7 @@ const NORD_VARIABLES: Record<string, string> = {
   '--icon-json': '#ebcb8b',
   '--icon-doc': '#a3be8c',
   '--icon-image': '#b48ead',
+  '--icon-audio': '#88c0d0',
   '--icon-config': '#8a94a8',
 }
 

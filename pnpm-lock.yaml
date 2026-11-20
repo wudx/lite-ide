@@ -44,6 +44,9 @@ importers:
       '@lite-ide/plugin-explorer':
         specifier: workspace:*
         version: link:../../plugins/explorer
+      '@lite-ide/plugin-preview-audio':
+        specifier: workspace:*
+        version: link:../../plugins/preview-audio
       '@lite-ide/plugin-preview-code':
         specifier: workspace:*
         version: link:../../plugins/preview-code
@@ -135,6 +138,24 @@ importers:
       '@tanstack/solid-virtual':
         specifier: ^3.13.53
         version: 3.13.53(solid-js@1.9.19)
+      lucide-solid:
+        specifier: ^1.76.0
+        version: 1.76.0(solid-js@1.9.19)
+      solid-js:
+        specifier: ^1.9.19
+        version: 1.9.19
+
+  plugins/preview-audio:
+    dependencies:
+      '@lite-ide/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@lite-ide/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@lite-ide/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
       lucide-solid:
         specifier: ^1.76.0
         version: 1.76.0(solid-js@1.9.19)

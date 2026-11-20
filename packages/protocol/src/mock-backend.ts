@@ -15,6 +15,7 @@ interface MockFile {
   mime?: string
   ignored?: boolean
   dataUrl?: string
+  byteLength?: number
 }
 
 interface MockRepoTemplate {
@@ -56,6 +57,62 @@ const DEMO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="22
   <text x="148" y="128" fill="#38bdf8" font-family="monospace" font-size="12">Tauri v2 + SolidJS</text>
   <text x="148" y="150" fill="#94a3b8" font-family="monospace" font-size="12">Scope / Service / Slot</text>
 </svg>`
+
+/**
+ * Generates a short 16-bit PCM mono WAV chime (C5-E5-G5 arpeggio) for browser mock audio preview.
+ */
+function createDemoWavBytes(): Uint8Array {
+  const sampleRate = 8000
+  const durationSec = 0.75
+  const numSamples = Math.floor(sampleRate * durationSec)
+  const dataSize = numSamples * 2
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+
+  const writeAscii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) {
+      view.setUint8(offset + i, text.charCodeAt(i))
+    }
+  }
+
+  writeAscii(0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeAscii(8, 'WAVE')
+  writeAscii(12, 'fmt ')
+  view.setUint32(16, 16, true) // PCM chunk size
+  view.setUint16(20, 1, true) // PCM format
+  view.setUint16(22, 1, true) // Mono
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 2, true) // Byte rate
+  view.setUint16(32, 2, true) // Block align
+  view.setUint16(34, 16, true) // Bits per sample
+  writeAscii(36, 'data')
+  view.setUint32(40, dataSize, true)
+
+  const notes = [523.25, 659.25, 783.99]
+  const noteSpan = durationSec / notes.length
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate
+    const noteIdx = Math.min(notes.length - 1, Math.floor(t / noteSpan))
+    const localT = t - noteIdx * noteSpan
+    const envelope = Math.min(1, localT * 45) * Math.exp(-localT * 6.5)
+    const sample = Math.sin(2 * Math.PI * notes[noteIdx] * t) * 0.45 * envelope
+    view.setInt16(44 + i * 2, Math.round(sample * 32767), true)
+  }
+
+  return new Uint8Array(buffer)
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+const DEMO_WAV_BYTES = createDemoWavBytes()
+const DEMO_WAV_DATA_URL = `data:audio/wav;base64,${bytesToBase64(DEMO_WAV_BYTES)}`
 
 const MOCK_REPO_TEMPLATES: MockRepoTemplate[] = [
   {
@@ -158,6 +215,13 @@ export function Counter() {
         mime: 'image/svg+xml',
         content: DEMO_SVG,
         dataUrl: `data:image/svg+xml;utf8,${encodeURIComponent(DEMO_SVG)}`,
+      },
+      'assets/chime.wav': {
+        mime: 'audio/wav',
+        isBinary: true,
+        content: '',
+        byteLength: DEMO_WAV_BYTES.byteLength,
+        dataUrl: DEMO_WAV_DATA_URL,
       },
       'assets/runtime.wasm': {
         mime: 'application/wasm',
@@ -314,6 +378,26 @@ function inferMime(relPath: string): string {
       return 'text/markdown'
     case 'svg':
       return 'image/svg+xml'
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    case 'ogg':
+    case 'oga':
+      return 'audio/ogg'
+    case 'opus':
+      return 'audio/opus'
+    case 'flac':
+      return 'audio/flac'
+    case 'aac':
+      return 'audio/aac'
+    case 'm4a':
+      return 'audio/mp4'
+    case 'weba':
+      return 'audio/webm'
+    case 'aiff':
+    case 'aif':
+      return 'audio/aiff'
     case 'html':
     case 'htm':
       return 'text/html'
@@ -383,7 +467,7 @@ export function createMockBackend(): WorkspaceBackend {
       relPath,
       name,
       ext,
-      size: new TextEncoder().encode(file.content).length,
+      size: file.byteLength ?? new TextEncoder().encode(file.content).length,
       modifiedMs: file.modifiedMs,
       mime: file.mime || inferMime(relPath),
       isBinary: Boolean(file.isBinary),
@@ -409,7 +493,7 @@ export function createMockBackend(): WorkspaceBackend {
       name,
       relPath,
       isDir: false,
-      size: new TextEncoder().encode(file?.content ?? '').length,
+      size: file?.byteLength ?? new TextEncoder().encode(file?.content ?? '').length,
       modifiedMs: file?.modifiedMs ?? BASE_TIMESTAMP,
       ignored: Boolean(file?.ignored),
       hidden: name.startsWith('.'),

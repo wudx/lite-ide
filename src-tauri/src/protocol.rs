@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{header, Method, Request, Response, StatusCode};
 use tauri::{Runtime, UriSchemeContext, UriSchemeResponder};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -15,6 +15,7 @@ pub fn handle_workspace_request<R: Runtime>(
     responder: UriSchemeResponder,
 ) {
     let uri_path = request.uri().path().to_string();
+    let is_head = *request.method() == Method::HEAD;
     let range_header = request
         .headers()
         .get(header::RANGE)
@@ -22,7 +23,8 @@ pub fn handle_workspace_request<R: Runtime>(
         .map(ToOwned::to_owned);
 
     tauri::async_runtime::spawn(async move {
-        let response = build_workspace_response(&manager, &uri_path, range_header.as_deref()).await;
+        let response =
+            build_workspace_response(&manager, &uri_path, range_header.as_deref(), is_head).await;
         responder.respond(response);
     });
 }
@@ -31,6 +33,7 @@ async fn build_workspace_response(
     manager: &ProjectManager,
     uri_path: &str,
     range_header: Option<&str>,
+    is_head: bool,
 ) -> Response<Vec<u8>> {
     let Some((project_id, rel_path)) = parse_workspace_uri_path(uri_path) else {
         return text_response(StatusCode::BAD_REQUEST, "Invalid workspace URI path");
@@ -71,14 +74,19 @@ async fn build_workspace_response(
         };
 
         let chunk_len = (end - start + 1) as usize;
-        if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
-            return text_response(StatusCode::INTERNAL_SERVER_ERROR, "Seek failed");
-        }
+        let buf = if is_head {
+            Vec::new()
+        } else {
+            if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+                return text_response(StatusCode::INTERNAL_SERVER_ERROR, "Seek failed");
+            }
 
-        let mut buf = Vec::with_capacity(chunk_len);
-        if file.take(chunk_len as u64).read_to_end(&mut buf).await.is_err() {
-            return text_response(StatusCode::INTERNAL_SERVER_ERROR, "Read failed");
-        }
+            let mut buf = Vec::with_capacity(chunk_len);
+            if file.take(chunk_len as u64).read_to_end(&mut buf).await.is_err() {
+                return text_response(StatusCode::INTERNAL_SERVER_ERROR, "Read failed");
+            }
+            buf
+        };
 
         return Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
@@ -88,10 +96,22 @@ async fn build_workspace_response(
                 header::CONTENT_RANGE,
                 format!("bytes {start}-{end}/{total_len}"),
             )
-            .header(header::CONTENT_LENGTH, buf.len().to_string())
+            .header(header::CONTENT_LENGTH, chunk_len.to_string())
             .header(header::CACHE_CONTROL, "no-cache")
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .body(buf)
+            .unwrap();
+    }
+
+    if is_head {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONTENT_LENGTH, total_len.to_string())
+            .header(header::CACHE_CONTROL, "no-cache")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(Vec::new())
             .unwrap();
     }
 
