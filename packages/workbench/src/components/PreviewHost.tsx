@@ -144,6 +144,7 @@ export function PreviewHost(props: PreviewHostProps) {
     return idx === -1 ? '' : cleaned.slice(0, idx)
   })
   let saveAsInput: HTMLInputElement | undefined
+  let tabStrip: HTMLDivElement | undefined
   let loadSeq = 0
 
   const matchedLoadedView = createMemo(() => {
@@ -227,6 +228,36 @@ export function PreviewHost(props: PreviewHostProps) {
       })
   })
 
+  // Reveal the active tab inside the scrollable tab strip. Newly opened tabs
+  // are appended past the visible width, so scroll them into view whenever
+  // the tab list or selection changes (open file, keyboard switch, close).
+  createEffect(() => {
+    selection.openTabs()
+    if (!selection.selectedPath()) return
+    const strip = tabStrip
+    if (!strip) return
+    const active = strip.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!active) return
+    const stripRect = strip.getBoundingClientRect()
+    const tabRect = active.getBoundingClientRect()
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth'
+    // When the active tab is the newest one at the strip's end, scroll fully
+    // to the end instead of an exact offset: the tab can still grow after
+    // this measurement (e.g. the unsaved-changes dot renders later), which
+    // would leave its edge clipped just past the visible area.
+    const activeIsLast = active === strip.lastElementChild
+    if (tabRect.left < stripRect.left) {
+      strip.scrollTo({ left: strip.scrollLeft + (tabRect.left - stripRect.left), behavior })
+    } else if (tabRect.right > stripRect.right) {
+      const left = activeIsLast
+        ? strip.scrollWidth
+        : strip.scrollLeft + (tabRect.right - stripRect.right)
+      strip.scrollTo({ left, behavior })
+    }
+  })
+
   async function handleSaveCurrent() {
     const path = selection.selectedPath()
     if (!path) return
@@ -271,7 +302,9 @@ export function PreviewHost(props: PreviewHostProps) {
       <Show when={selection.openTabs().length > 0}>
         <div class="h-[38px] shrink-0 flex items-end bg-[var(--bg-editor-chrome)] border-b border-[var(--border-subtle)] select-none">
           <div
+            ref={(el) => (tabStrip = el)}
             role="tablist"
+            aria-label="Editor tabs"
             class="flex-1 min-w-0 h-full px-2 pt-1.5 flex items-end gap-1 overflow-x-auto no-scrollbar"
           >
             <For each={selection.openTabs()}>
