@@ -26,7 +26,7 @@ export const AI_PROVIDER_PRESETS: readonly AiProviderPreset[] = [
     label: 'Z.ai (GLM)',
     defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
     defaultModel: 'glm-4.6',
-    models: ['glm-4.6', 'glm-4.5', 'glm-4.5-air', 'glm-4.5-flash'],
+    models: ['glm-5.3-flash', 'glm-5.3-flashx', 'glm-4.6', 'glm-4.5-air', 'glm-4.5-flash'],
   },
   {
     id: 'deepseek',
