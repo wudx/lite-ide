@@ -648,9 +648,9 @@ export function PreviewHost(props: PreviewHostProps) {
             <div
               role="button"
               tabIndex={0}
-              aria-label={i18n.t('preview.empty.clickNewFile')}
+              aria-label={i18n.t('preview.empty.dblClickNewFile')}
               class="group flex-1 flex flex-col items-center justify-center gap-4 text-[var(--text-muted)] select-none px-6 text-center animate-fade-up cursor-pointer"
-              onClick={() => handleNewUntitled()}
+              onDblClick={() => handleNewUntitled()}
               onKeyDown={(e) => {
                 if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
                   e.preventDefault()
@@ -680,7 +680,7 @@ export function PreviewHost(props: PreviewHostProps) {
               </div>
               <div class="flex items-center gap-1.5 pt-1 text-[11px] text-[var(--text-muted)] transition-colors duration-150 group-hover:text-[var(--text-secondary)]">
                 <Plus class="w-3 h-3" />
-                <span>{i18n.t('preview.empty.clickNewFile')}</span>
+                <span>{i18n.t('preview.empty.dblClickNewFile')}</span>
               </div>
             </div>
           }
