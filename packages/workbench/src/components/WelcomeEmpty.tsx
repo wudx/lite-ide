@@ -1,6 +1,5 @@
 import type { AppKernel } from '@lite-ide/kernel'
 import FolderOpen from 'lucide-solid/icons/folder-open'
-import Layers from 'lucide-solid/icons/layers'
 
 export interface WelcomeEmptyProps {
   kernel: AppKernel
@@ -19,11 +18,12 @@ export function WelcomeEmpty(props: WelcomeEmptyProps) {
       />
 
       <div class="relative max-w-md w-full flex flex-col items-center text-center gap-6 animate-fade-up">
-        <div class="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-panel)] flex items-center justify-center shadow-[var(--shadow-panel)]">
-          <div class="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center">
-            <Layers class="w-5 h-5 text-[var(--accent)]" />
-          </div>
-        </div>
+        <img
+          src="/icon.png"
+          alt="LiteIDE"
+          draggable={false}
+          class="w-16 h-16 drop-shadow-[0_10px_32px_var(--accent-glow)]"
+        />
 
         <div class="space-y-2">
           <h1 class="text-xl font-semibold tracking-tight text-[var(--text-primary)]">LiteIDE</h1>

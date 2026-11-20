@@ -84,27 +84,12 @@ export function TitleBar(props: TitleBarProps) {
           class="flex items-center gap-2 px-1.5 py-1 text-[12.5px] font-semibold tracking-tight text-[var(--text-primary)]"
           data-tauri-drag-region
         >
-          <span class="w-5 h-5 rounded-md bg-gradient-to-br from-[#7aa2ff] to-[#6366f1] flex items-center justify-center shadow-[0_2px_10px_var(--accent-glow),inset_0_1px_0_rgba(255,255,255,0.28)] pointer-events-none">
-            <svg
-              viewBox="0 0 16 16"
-              fill="none"
-              class="w-3 h-3 text-white pointer-events-none"
-              aria-hidden="true"
-            >
-              <path
-                d="M8 2.2 13.4 5.3 8 8.4 2.6 5.3 8 2.2Z"
-                fill="currentColor"
-                fill-opacity="0.95"
-              />
-              <path
-                d="M2.6 8.2 8 11.3l5.4-3.1M2.6 10.9 8 14l5.4-3.1"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </span>
+          <img
+            src="/icon.png"
+            alt=""
+            draggable={false}
+            class="w-5 h-5 pointer-events-none drop-shadow-[0_2px_10px_var(--accent-glow)]"
+          />
           <span class="pointer-events-none">LiteIDE</span>
         </div>
 

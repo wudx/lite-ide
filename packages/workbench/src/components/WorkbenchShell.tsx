@@ -248,10 +248,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
 
     window.addEventListener('keydown', handleKeyDown, true)
-    window.addEventListener('beforeunload', handleBeforeUnload)
+    // beforeunload 拦截仅用于浏览器 mock 模式的刷新保护；Tauri 下 preventDefault
+    // 会阻塞 webview 卸载，使已确认的 close()/destroy()（如"不保存退出"路径，此时
+    // 脏缓冲仍在）静默失败，窗口无法关闭。
+    if (!isTauriEnvironment()) {
+      window.addEventListener('beforeunload', handleBeforeUnload)
+    }
     onCleanup(() => {
       window.removeEventListener('keydown', handleKeyDown, true)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
+      if (!isTauriEnvironment()) {
+        window.removeEventListener('beforeunload', handleBeforeUnload)
+      }
       disposables.dispose()
     })
   })
