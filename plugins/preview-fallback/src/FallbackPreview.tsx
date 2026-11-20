@@ -9,14 +9,14 @@ export default function FallbackPreview(props: PreviewProps) {
   }
 
   return (
-    <div class="flex-1 flex items-center justify-center p-6">
-      <div class="max-w-md w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-lg space-y-4">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-lg bg-[var(--bg-app)] border border-[var(--border-subtle)] flex items-center justify-center">
+    <div class="flex-1 flex items-center justify-center p-6 animate-fade-up">
+      <div class="max-w-md w-full rounded-2xl border border-[var(--border-panel)] bg-[var(--bg-surface)]/70 p-6 shadow-[var(--shadow-panel)] space-y-5">
+        <div class="flex items-center gap-3.5">
+          <div class="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center shrink-0">
             <FileWarning class="w-5 h-5 text-amber-400" />
           </div>
           <div class="min-w-0">
-            <h2 class="text-sm font-semibold text-[var(--text-primary)] truncate">
+            <h2 class="text-sm font-semibold text-[var(--text-primary)] truncate leading-normal">
               {props.file.name}
             </h2>
             <p class="text-xs text-[var(--text-secondary)]">
@@ -27,23 +27,33 @@ export default function FallbackPreview(props: PreviewProps) {
           </div>
         </div>
 
-        <dl class="grid grid-cols-[100px_1fr] gap-y-2 gap-x-3 text-xs border-t border-[var(--border-subtle)] pt-4">
-          <dt class="text-[var(--text-muted)]">Path</dt>
-          <dd class="font-mono text-[var(--text-primary)] break-all">{props.file.relPath}</dd>
+        <dl class="divide-y divide-[var(--border-subtle)] border-t border-[var(--border-subtle)] text-xs">
+          <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
+            <dt class="text-[var(--text-muted)]">Path</dt>
+            <dd class="font-mono text-[var(--text-primary)] break-all">{props.file.relPath}</dd>
+          </div>
 
-          <dt class="text-[var(--text-muted)]">Size</dt>
-          <dd class="font-mono text-[var(--text-primary)]">
-            {formatBytes(props.file.size)} ({props.file.size.toLocaleString()} bytes)
-          </dd>
+          <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
+            <dt class="text-[var(--text-muted)]">Size</dt>
+            <dd class="font-mono text-[var(--text-primary)] tabular-nums">
+              {formatBytes(props.file.size)} ({props.file.size.toLocaleString()} bytes)
+            </dd>
+          </div>
 
-          <dt class="text-[var(--text-muted)]">MIME Type</dt>
-          <dd class="font-mono text-[var(--text-primary)]">{props.file.mime}</dd>
+          <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
+            <dt class="text-[var(--text-muted)]">MIME Type</dt>
+            <dd class="font-mono text-[var(--text-primary)]">{props.file.mime}</dd>
+          </div>
 
-          <dt class="text-[var(--text-muted)]">Encoding</dt>
-          <dd class="font-mono uppercase text-[var(--text-primary)]">{props.file.encoding}</dd>
+          <div class="py-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
+            <dt class="text-[var(--text-muted)]">Encoding</dt>
+            <dd class="font-mono uppercase text-[var(--text-primary)]">{props.file.encoding}</dd>
+          </div>
 
-          <dt class="text-[var(--text-muted)]">Modified</dt>
-          <dd class="text-[var(--text-primary)]">{modifiedAt()}</dd>
+          <div class="pt-2.5 grid grid-cols-[100px_1fr] gap-3 items-baseline">
+            <dt class="text-[var(--text-muted)]">Modified</dt>
+            <dd class="text-[var(--text-primary)] tabular-nums">{modifiedAt()}</dd>
+          </div>
         </dl>
       </div>
     </div>

@@ -135,10 +135,10 @@ export default function MarkdownPreview(props: PreviewProps) {
   }
 
   return (
-    <div class="flex-1 min-h-0 overflow-y-auto px-8 py-6">
+    <div class="flex-1 min-h-0 overflow-y-auto px-10 py-8">
       <Show when={error()}>
         {(msg) => (
-          <div class="p-3 rounded border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
+          <div class="p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs">
             Failed to render Markdown: {msg()}
           </div>
         )}
@@ -146,13 +146,13 @@ export default function MarkdownPreview(props: PreviewProps) {
 
       <Show when={loading() && !markdownText()}>
         <div class="flex items-center justify-center gap-2 py-12 text-xs text-[var(--text-secondary)]">
-          <Loader2 class="w-4 h-4 animate-spin" />
+          <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
           <span>Loading Markdown...</span>
         </div>
       </Show>
 
       <article
-        class="markdown-body max-w-4xl mx-auto"
+        class="markdown-body max-w-[780px] mx-auto"
         innerHTML={renderedHtml()}
         onClick={handleContainerClick}
       />

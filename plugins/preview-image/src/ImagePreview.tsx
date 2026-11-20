@@ -89,73 +89,7 @@ export default function ImagePreview(props: PreviewProps) {
   }
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col">
-      {/* Toolbar */}
-      <div class="h-[36px] shrink-0 px-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/40 flex items-center justify-between text-xs">
-        <div class="flex items-center gap-3 text-[var(--text-secondary)]">
-          <Show when={naturalSize()}>
-            {(dim) => (
-              <span class="font-mono">
-                {dim().w} × {dim().h} px
-              </span>
-            )}
-          </Show>
-          <span>{props.file.mime}</span>
-          <span>{formatBytes(props.file.size)}</span>
-        </div>
-
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            title="Zoom Out"
-            class="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            onClick={() => zoomBy(0.8)}
-          >
-            <ZoomOut class="w-3.5 h-3.5" />
-          </button>
-          <span class="w-14 text-center font-mono text-[11px] text-[var(--text-primary)]">
-            {fitMode() ? 'Fit' : `${Math.round(scale() * 100)}%`}
-          </span>
-          <button
-            type="button"
-            title="Zoom In"
-            class="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            onClick={() => zoomBy(1.25)}
-          >
-            <ZoomIn class="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            class={`px-2 py-1 rounded text-[11px] hover:bg-[var(--bg-hover)] ${
-              !fitMode() && scale() === 1
-                ? 'text-[var(--accent)]'
-                : 'text-[var(--text-secondary)]'
-            }`}
-            onClick={resetToActualSize}
-          >
-            100%
-          </button>
-          <button
-            type="button"
-            title="Fit to Viewport"
-            class={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
-              fitMode() ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'
-            }`}
-            onClick={resetToFit}
-          >
-            <Maximize2 class="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            title="Reset Pan"
-            class="p-1.5 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            onClick={() => setOffset({ x: 0, y: 0 })}
-          >
-            <RotateCcw class="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
+    <div class="flex-1 min-h-0 relative flex flex-col">
       {/* Interactive image viewport */}
       <div
         class={`flex-1 min-h-0 overflow-hidden flex items-center justify-center checkerboard-bg select-none ${
@@ -170,7 +104,7 @@ export default function ImagePreview(props: PreviewProps) {
         <Show
           when={!imgError()}
           fallback={
-            <div class="px-4 py-3 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs text-red-300">
+            <div class="px-4 py-3 rounded-xl glass-surface text-xs text-red-300">
               Unable to load image: {props.file.relPath}
             </div>
           }
@@ -179,7 +113,11 @@ export default function ImagePreview(props: PreviewProps) {
             src={imageUrl()}
             alt={props.file.name}
             draggable={false}
-            class={fitMode() ? 'max-w-[90%] max-h-[90%] object-contain shadow-lg' : 'max-w-none shadow-lg'}
+            class={
+              fitMode()
+                ? 'max-w-[88%] max-h-[85%] object-contain rounded-lg shadow-[0_14px_44px_rgba(0,0,0,0.45)]'
+                : 'max-w-none rounded-lg shadow-[0_14px_44px_rgba(0,0,0,0.45)]'
+            }
             style={{
               transform: `translate(${offset().x}px, ${offset().y}px) scale(${fitMode() ? 1 : scale()})`,
             }}
@@ -190,6 +128,80 @@ export default function ImagePreview(props: PreviewProps) {
             onError={() => setImgError(true)}
           />
         </Show>
+      </div>
+
+      {/* Top-left floating metadata pill */}
+      <div class="pointer-events-none absolute top-3.5 left-4 z-10 flex items-center gap-2 glass-pill rounded-full px-3 py-1 text-[11px] text-[var(--text-secondary)] tabular-nums">
+        <Show when={naturalSize()}>
+          {(dim) => (
+            <>
+              <span class="font-mono text-[var(--text-primary)]">
+                {dim().w} × {dim().h} px
+              </span>
+              <span class="text-white/15">·</span>
+            </>
+          )}
+        </Show>
+        <span>{props.file.mime}</span>
+        <span class="text-white/15">·</span>
+        <span>{formatBytes(props.file.size)}</span>
+      </div>
+
+      {/* Bottom-center floating zoom HUD */}
+      <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 glass-pill rounded-full px-2 py-1 flex items-center gap-0.5 text-xs">
+        <button
+          type="button"
+          title="Zoom Out"
+          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          onClick={() => zoomBy(0.8)}
+        >
+          <ZoomOut class="w-3.5 h-3.5" />
+        </button>
+        <span class="w-12 text-center font-mono text-[11px] text-[var(--text-primary)] tabular-nums select-none">
+          {fitMode() ? 'Fit' : `${Math.round(scale() * 100)}%`}
+        </span>
+        <button
+          type="button"
+          title="Zoom In"
+          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          onClick={() => zoomBy(1.25)}
+        >
+          <ZoomIn class="w-3.5 h-3.5" />
+        </button>
+
+        <span class="mx-1 h-3.5 w-px bg-white/[0.12]" />
+
+        <button
+          type="button"
+          class={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+            !fitMode() && scale() === 1
+              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08]'
+          }`}
+          onClick={resetToActualSize}
+        >
+          100%
+        </button>
+        <button
+          type="button"
+          title="Fit to Viewport"
+          class={`p-1.5 rounded-full transition-colors ${
+            fitMode()
+              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08]'
+          }`}
+          onClick={resetToFit}
+        >
+          <Maximize2 class="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          title="Reset Pan"
+          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          onClick={() => setOffset({ x: 0, y: 0 })}
+        >
+          <RotateCcw class="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   )

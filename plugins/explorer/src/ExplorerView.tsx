@@ -7,7 +7,6 @@ import {
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
-import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
 import ChevronsDownUp from 'lucide-solid/icons/chevrons-down-up'
 import Eye from 'lucide-solid/icons/eye'
@@ -113,15 +112,15 @@ function InlineNameInput(props: InlineNameInputProps) {
           }
         }}
         onBlur={() => void trySubmit(true)}
-        class={`w-full h-[20px] px-1.5 rounded bg-[var(--bg-app)] border outline-none text-xs text-[var(--text-primary)] leading-normal ${
+        class={`w-full h-[22px] px-2 rounded-md bg-black/45 border outline-none text-xs text-[var(--text-primary)] leading-normal transition-all ${
           props.error
-            ? 'border-red-500/80'
-            : 'border-[var(--accent)]'
+            ? 'border-red-500/80 shadow-[0_0_0_2px_rgba(239,68,68,0.18)]'
+            : 'border-[var(--accent-border)] shadow-[0_0_0_2px_var(--accent-soft)]'
         }`}
       />
       <Show when={props.error}>
         {(errMsg) => (
-          <div class="absolute left-0 top-[22px] z-30 max-w-[260px] px-2 py-1 rounded bg-red-950/95 border border-red-500/50 text-[10px] text-red-200 shadow-lg whitespace-normal break-words">
+          <div class="absolute left-0 top-[25px] z-30 max-w-[260px] px-2.5 py-1.5 rounded-lg glass-surface border-red-500/40 bg-red-950/85 text-[10.5px] text-red-200 whitespace-normal break-words animate-popover-in">
             {errMsg()}
           </div>
         )}
@@ -149,7 +148,7 @@ export function ExplorerView(props: ExplorerViewProps) {
       return store.visibleNodes().length
     },
     getScrollElement: () => scrollEl ?? null,
-    estimateSize: () => 26,
+    estimateSize: () => 28,
     overscan: 15,
   })
 
@@ -365,83 +364,97 @@ export function ExplorerView(props: ExplorerViewProps) {
 
   return (
     <div class="flex-1 min-h-0 flex flex-col select-none relative">
-      {/* Filter & toolbar */}
-      <div class="px-2 py-1.5 border-b border-[var(--border-subtle)] flex items-center gap-1">
-        <div class="relative flex-1 min-w-0">
-          <Search class="w-3 h-3 text-[var(--text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={store.filterQuery()}
-            onInput={(e) => store.setFilterQuery(e.currentTarget.value)}
-            placeholder="Filter files..."
-            class="w-full h-6 pl-6 pr-5 rounded bg-[var(--bg-app)] border border-[var(--border-subtle)] focus:border-[var(--accent)] outline-none text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-          />
-          <Show when={store.filterQuery().length > 0}>
-            <button
-              type="button"
-              title="Clear Filter"
-              class="absolute right-1 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              onClick={() => store.setFilterQuery('')}
-            >
-              <X class="w-3 h-3" />
-            </button>
-          </Show>
+      {/* Two-row filter & action toolbar */}
+      <div class="shrink-0 border-b border-[var(--border-subtle)]">
+        <div class="px-2.5 pt-2.5 pb-1.5">
+          <div class="relative flex items-center h-[30px] rounded-lg bg-black/25 border border-[var(--border-subtle)] focus-within:border-[var(--accent-border)] focus-within:bg-black/35 focus-within:shadow-[0_0_0_2px_var(--accent-soft)] transition-all">
+            <Search class="w-3.5 h-3.5 text-[var(--text-muted)] ml-2.5 shrink-0 pointer-events-none" />
+            <input
+              type="text"
+              value={store.filterQuery()}
+              onInput={(e) => store.setFilterQuery(e.currentTarget.value)}
+              placeholder="Filter files..."
+              class="w-full h-full px-2 bg-transparent outline-none text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            />
+            <Show when={store.filterQuery().length > 0}>
+              <button
+                type="button"
+                title="Clear Filter"
+                class="mr-1.5 p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] transition-colors"
+                onClick={() => store.setFilterQuery('')}
+              >
+                <X class="w-3 h-3" />
+              </button>
+            </Show>
+          </div>
         </div>
 
-        <button
-          type="button"
-          title="New File"
-          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          onClick={() => void store.startCreate('file', resolveTargetParentDir())}
-        >
-          <FilePlus class="w-3.5 h-3.5" />
-        </button>
+        <div class="px-2.5 pb-1.5 flex items-center justify-between gap-2">
+          <span class="text-[10.5px] font-medium uppercase tracking-wider text-[var(--text-muted)] pl-1 tabular-nums">
+            <Show when={store.filterQuery().trim().length > 0} fallback="Files">
+              {store.visibleNodes().length} matches
+            </Show>
+          </span>
 
-        <button
-          type="button"
-          title="New Folder"
-          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          onClick={() => void store.startCreate('dir', resolveTargetParentDir())}
-        >
-          <FolderPlus class="w-3.5 h-3.5" />
-        </button>
+          <div class="flex items-center gap-0.5">
+            <button
+              type="button"
+              title="New File"
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
+              onClick={() => void store.startCreate('file', resolveTargetParentDir())}
+            >
+              <FilePlus class="w-3.5 h-3.5" />
+            </button>
 
-        <button
-          type="button"
-          title="Refresh Tree"
-          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          onClick={() => void store.refreshAllExpanded()}
-        >
-          <RefreshCw class={`w-3.5 h-3.5 ${store.rootLoading() ? 'animate-spin' : ''}`} />
-        </button>
+            <button
+              type="button"
+              title="New Folder"
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
+              onClick={() => void store.startCreate('dir', resolveTargetParentDir())}
+            >
+              <FolderPlus class="w-3.5 h-3.5" />
+            </button>
 
-        <button
-          type="button"
-          title="Collapse All Folders"
-          class="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          onClick={() => store.collapseAll()}
-        >
-          <ChevronsDownUp class="w-3.5 h-3.5" />
-        </button>
+            <button
+              type="button"
+              title="Refresh Tree"
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
+              onClick={() => void store.refreshAllExpanded()}
+            >
+              <RefreshCw class={`w-3.5 h-3.5 ${store.rootLoading() ? 'animate-spin' : ''}`} />
+            </button>
 
-        <button
-          type="button"
-          title={store.showIgnored() ? 'Hide Ignored Files' : 'Show Ignored Files'}
-          class={`p-1 rounded hover:bg-[var(--bg-hover)] ${
-            store.showIgnored() ? 'text-[var(--text-secondary)]' : 'text-[var(--accent)]'
-          }`}
-          onClick={() => store.toggleShowIgnored()}
-        >
-          <Show when={store.showIgnored()} fallback={<EyeOff class="w-3.5 h-3.5" />}>
-            <Eye class="w-3.5 h-3.5" />
-          </Show>
-        </button>
+            <button
+              type="button"
+              title="Collapse All Folders"
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
+              onClick={() => store.collapseAll()}
+            >
+              <ChevronsDownUp class="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              title={store.showIgnored() ? 'Hide Ignored Files' : 'Show Ignored Files'}
+              class={`p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-all duration-150 active:scale-95 ${
+                store.showIgnored()
+                  ? 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  : 'text-[var(--accent)] bg-[var(--accent-soft)]'
+              }`}
+              onClick={() => store.toggleShowIgnored()}
+            >
+              <Show when={store.showIgnored()} fallback={<EyeOff class="w-3.5 h-3.5" />}>
+                <Eye class="w-3.5 h-3.5" />
+              </Show>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Error banner */}
       <Show when={store.error()}>
         {(msg) => (
-          <div class="px-2.5 py-1.5 text-[11px] text-red-300 bg-red-500/10 border-b border-red-500/20">
+          <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-red-300 bg-red-500/10 border border-red-500/20">
             {msg()}
           </div>
         )}
@@ -452,7 +465,7 @@ export function ExplorerView(props: ExplorerViewProps) {
         ref={scrollEl}
         tabIndex={0}
         role="tree"
-        class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden outline-none py-1"
+        class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden outline-none py-1.5"
         onScroll={(e) => {
           store.setScrollOffset(e.currentTarget.scrollTop)
           if (contextMenu()) setContextMenu(null)
@@ -467,7 +480,7 @@ export function ExplorerView(props: ExplorerViewProps) {
           when={!store.rootLoading() || store.visibleNodes().length > 0}
           fallback={
             <div class="flex items-center justify-center gap-2 py-8 text-xs text-[var(--text-muted)]">
-              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <Loader2 class="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />
               <span>Loading project files...</span>
             </div>
           }
@@ -475,7 +488,7 @@ export function ExplorerView(props: ExplorerViewProps) {
           <Show
             when={store.visibleNodes().length > 0}
             fallback={
-              <div class="px-3 py-6 text-center text-xs text-[var(--text-muted)]">
+              <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
                 No matching files
               </div>
             }
@@ -508,6 +521,8 @@ export function ExplorerView(props: ExplorerViewProps) {
                           !isCreating() &&
                           !item().entry.isDir &&
                           (buffers?.isDirty(item().entry.relPath) ?? false)
+                        const indentLevels = () =>
+                          Array.from({ length: item().depth }, (_, idx) => idx)
 
                         return (
                           <div
@@ -519,9 +534,9 @@ export function ExplorerView(props: ExplorerViewProps) {
                                 ? 'Enter name'
                                 : item().entry.relPath
                             }
-                            class={`absolute top-0 left-0 right-0 flex items-center gap-1 pr-2 cursor-pointer text-xs transition-colors ${
+                            class={`group/row absolute top-0 left-1.5 right-1.5 rounded-lg flex items-center gap-1.5 pr-2 text-xs transition-colors duration-100 ${
                               isSelected()
-                                ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
+                                ? 'bg-[var(--bg-active)] text-[var(--text-primary)] font-medium shadow-[inset_0_0_0_1px_rgba(122,162,255,0.22)]'
                                 : isFocused()
                                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -542,18 +557,35 @@ export function ExplorerView(props: ExplorerViewProps) {
                               openMenuAt(e.clientX, e.clientY, item().entry)
                             }}
                           >
+                            {/* Selected row accent indicator */}
+                            <Show when={isSelected()}>
+                              <span class="absolute left-0.5 top-1/2 -translate-y-1/2 w-[2.5px] h-3.5 rounded-full bg-[var(--accent)]" />
+                            </Show>
+
+                            {/* Indent guide lines */}
+                            <For each={indentLevels()}>
+                              {(level) => (
+                                <span
+                                  aria-hidden="true"
+                                  class="pointer-events-none absolute top-0 bottom-0 w-px bg-white/[0.055]"
+                                  style={{ left: `${14 + level * 14}px` }}
+                                />
+                              )}
+                            </For>
+
                             <span class="w-4 h-4 flex items-center justify-center shrink-0 text-[var(--text-muted)]">
                               <Show when={item().entry.isDir && !isCreating()}>
                                 <Show
                                   when={!item().loading}
-                                  fallback={<Loader2 class="w-3 h-3 animate-spin" />}
+                                  fallback={<Loader2 class="w-3 h-3 animate-spin text-[var(--accent)]" />}
                                 >
-                                  <Show
-                                    when={item().expanded}
-                                    fallback={<ChevronRight class="w-3.5 h-3.5" />}
-                                  >
-                                    <ChevronDown class="w-3.5 h-3.5" />
-                                  </Show>
+                                  <ChevronRight
+                                    class={`w-3.5 h-3.5 transition-transform duration-150 ${
+                                      item().expanded
+                                        ? 'rotate-90 text-[var(--text-secondary)]'
+                                        : 'group-hover/row:text-[var(--text-secondary)]'
+                                    }`}
+                                  />
                                 </Show>
                               </Show>
                             </span>
@@ -579,7 +611,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                                   <Show when={isDirty()}>
                                     <span
                                       title="Unsaved changes"
-                                      class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0"
+                                      class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] shrink-0"
                                     />
                                   </Show>
                                 </>
@@ -626,7 +658,7 @@ export function ExplorerView(props: ExplorerViewProps) {
           return (
             <div
               role="menu"
-              class="fixed z-40 min-w-[168px] py-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-xl text-xs text-[var(--text-primary)]"
+              class="fixed z-40 min-w-[176px] p-1.5 rounded-xl glass-surface animate-popover-in text-xs text-[var(--text-primary)]"
               style={{
                 left: `${menu().x}px`,
                 top: `${menu().y}px`,
@@ -636,7 +668,7 @@ export function ExplorerView(props: ExplorerViewProps) {
               <Show when={entry() && !entry()!.isDir}>
                 <button
                   type="button"
-                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const target = entry()!
                     setContextMenu(null)
@@ -650,7 +682,7 @@ export function ExplorerView(props: ExplorerViewProps) {
               <Show when={!entry() || entry()!.isDir}>
                 <button
                   type="button"
-                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const parent = targetParent()
                     setContextMenu(null)
@@ -662,7 +694,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                 </button>
                 <button
                   type="button"
-                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const parent = targetParent()
                     setContextMenu(null)
@@ -678,7 +710,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                 <div class="my-1 border-t border-[var(--border-subtle)]" />
                 <button
                   type="button"
-                  class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setContextMenu(null)
                     void store.refreshAllExpanded()
@@ -695,7 +727,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     <div class="my-1 border-t border-[var(--border-subtle)]" />
                     <button
                       type="button"
-                      class="w-full px-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center justify-between gap-2"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center justify-between gap-2"
                       onClick={() => {
                         const item = target()
                         setContextMenu(null)
@@ -706,11 +738,11 @@ export function ExplorerView(props: ExplorerViewProps) {
                         <Pencil class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                         <span>Rename</span>
                       </span>
-                      <span class="text-[10px] text-[var(--text-muted)]">F2</span>
+                      <span class="text-[10px] font-mono text-[var(--text-muted)]">F2</span>
                     </button>
                     <button
                       type="button"
-                      class="w-full px-3 py-1.5 text-left hover:bg-red-500/15 text-red-300 transition-colors flex items-center justify-between gap-2"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-red-500/15 text-red-300 transition-colors flex items-center justify-between gap-2"
                       onClick={() => {
                         const item = target()
                         setContextMenu(null)
@@ -721,7 +753,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                         <Trash class="w-3.5 h-3.5" />
                         <span>Delete</span>
                       </span>
-                      <span class="text-[10px] text-red-300/60">Del</span>
+                      <span class="text-[10px] font-mono text-red-300/60">Del</span>
                     </button>
                   </>
                 )}

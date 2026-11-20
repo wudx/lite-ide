@@ -247,10 +247,10 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   })
 
   return (
-    <div class="h-screen w-screen overflow-hidden flex flex-col bg-[var(--bg-app)] text-[var(--text-primary)]">
+    <div class="h-screen w-screen overflow-hidden flex flex-col workbench-shell-bg text-[var(--text-primary)] ring-1 ring-inset ring-white/[0.05]">
       <TitleBar kernel={props.kernel} />
 
-      <main class="flex-1 min-h-0 flex relative">
+      <main class="flex-1 min-h-0 flex relative px-2 pb-1.5 pt-0.5">
         <Show
           when={props.kernel.projects().length > 0}
           fallback={<WelcomeEmpty kernel={props.kernel} />}

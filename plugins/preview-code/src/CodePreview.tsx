@@ -4,6 +4,7 @@ import {
   defaultHighlightStyle,
   foldGutter,
   foldKeymap,
+  HighlightStyle,
   indentOnInput,
   LanguageDescription,
   syntaxHighlighting,
@@ -16,7 +17,6 @@ import {
   searchKeymap,
 } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { oneDark } from '@codemirror/theme-one-dark'
 import {
   drawSelection,
   EditorView,
@@ -27,6 +27,7 @@ import {
   lineNumbers,
   type ViewUpdate,
 } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
 import type { PreviewProps } from '@lite-ide/kernel'
 import {
   DEFAULT_BUFFER_MAX_BYTES,
@@ -50,36 +51,112 @@ const languageCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const listenerCompartment = new Compartment()
 
-const ideTheme = EditorView.theme({
-  '&': {
-    height: '100%',
-    fontSize: '13px',
-    backgroundColor: 'var(--bg-editor)',
+const ideHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#c49bff' },
+  { tag: [tags.modifier, tags.self], color: '#d4b8ff' },
+  { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#e6ebf5' },
+  { tag: [tags.variableName], color: '#dce2ee' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#7aa2ff' },
+  { tag: [tags.propertyName, tags.attributeName], color: '#8ec5fc' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#7dd3fc' },
+  { tag: [tags.tagName], color: '#f38ba8' },
+  { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit], color: '#f4b17a' },
+  { tag: [tags.string, tags.docString, tags.attributeValue], color: '#8be0a4' },
+  { tag: [tags.regexp, tags.escape, tags.special(tags.string)], color: '#f9e2af' },
+  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: '#8b95aa' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], color: '#60697c', fontStyle: 'italic' },
+  { tag: [tags.meta, tags.annotation, tags.processingInstruction], color: '#a5b4fc' },
+  { tag: [tags.heading], color: '#93b4ff', fontWeight: '600' },
+  { tag: [tags.strong], fontWeight: '600', color: '#f4f6fb' },
+  { tag: [tags.emphasis], fontStyle: 'italic' },
+  { tag: [tags.link, tags.url], color: '#7aa2ff', textDecoration: 'underline' },
+  { tag: [tags.invalid], color: '#f87171' },
+])
+
+const ideTheme = EditorView.theme(
+  {
+    '&': {
+      height: '100%',
+      fontSize: '13px',
+      color: 'var(--text-primary)',
+      backgroundColor: 'var(--bg-editor)',
+    },
+    '.cm-content': {
+      padding: '12px 0',
+      caretColor: 'var(--accent)',
+    },
+    '.cm-scroller': {
+      overflow: 'auto',
+      fontFamily:
+        'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)',
+      lineHeight: '1.65',
+    },
+    '.cm-gutters': {
+      backgroundColor: 'var(--bg-editor)',
+      color: '#4d5466',
+      borderRight: 'none',
+      paddingRight: '8px',
+      paddingLeft: '4px',
+      fontVariantNumeric: 'tabular-nums',
+    },
+    '.cm-lineNumbers .cm-gutterElement': {
+      minWidth: '34px',
+      padding: '0 6px 0 8px',
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: 'transparent',
+      color: '#c2cad8',
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'rgba(255, 255, 255, 0.026)',
+    },
+    '&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
+      borderLeftColor: 'var(--accent)',
+      borderLeftWidth: '1.5px',
+    },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: 'rgba(122, 162, 255, 0.22)',
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: 'rgba(122, 162, 255, 0.14)',
+      borderRadius: '3px',
+    },
+    '&.cm-focused .cm-matchingBracket': {
+      backgroundColor: 'rgba(122, 162, 255, 0.2)',
+      outline: '1px solid rgba(122, 162, 255, 0.35)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch': {
+      backgroundColor: 'rgba(244, 177, 122, 0.18)',
+      outline: '1px solid rgba(244, 177, 122, 0.35)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'rgba(122, 162, 255, 0.3)',
+      outline: '1px solid rgba(122, 162, 255, 0.55)',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      border: '1px solid rgba(255, 255, 255, 0.1)',
+      color: 'var(--text-secondary)',
+      borderRadius: '5px',
+      padding: '0 6px',
+      margin: '0 4px',
+    },
+    '.cm-panels': {
+      backgroundColor: '#13151c',
+      color: 'var(--text-primary)',
+      borderBottom: '1px solid var(--border-subtle)',
+    },
+    '.cm-tooltip': {
+      backgroundColor: '#1b1e28',
+      border: '1px solid var(--border-strong)',
+      borderRadius: '8px',
+      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
+    },
   },
-  '.cm-scroller': {
-    overflow: 'auto',
-    fontFamily:
-      'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)',
-    lineHeight: '1.6',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'var(--bg-editor)',
-    color: 'var(--text-muted)',
-    borderRight: '1px solid var(--border-subtle)',
-  },
-  '.cm-activeLineGutter': {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    color: 'var(--text-primary)',
-  },
-  '.cm-activeLine': {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-  },
-  '.cm-panels': {
-    backgroundColor: 'var(--bg-surface)',
-    color: 'var(--text-primary)',
-    borderBottom: '1px solid var(--border-subtle)',
-  },
-})
+  { dark: true },
+)
 
 function computeCursorPosition(state: EditorState): { line: number; column: number } {
   const head = state.selection.main.head
@@ -93,6 +170,7 @@ function computeCursorPosition(state: EditorState): { line: number; column: numb
 function buildEditorExtensions(readOnly: boolean, listenerExt: Extension): Extension[] {
   return [
     lineNumbers(),
+    highlightActiveLine(),
     highlightActiveLineGutter(),
     highlightSpecialChars(),
     history(),
@@ -100,8 +178,8 @@ function buildEditorExtensions(readOnly: boolean, listenerExt: Extension): Exten
     drawSelection(),
     indentOnInput(),
     bracketMatching(),
+    syntaxHighlighting(ideHighlightStyle),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    oneDark,
     ideTheme,
     search({ top: true }),
     highlightSelectionMatches(),
@@ -403,14 +481,14 @@ export default function CodePreview(props: PreviewProps) {
       {/* Save failure banner */}
       <Show when={activeBuffer()?.saveError}>
         {(errMsg) => (
-          <div class="px-3 py-1.5 bg-red-500/12 border-b border-red-500/30 flex items-center justify-between gap-3 text-xs text-red-200">
+          <div class="px-3.5 py-2 bg-red-500/10 border-b border-red-500/25 flex items-center justify-between gap-3 text-xs text-red-200">
             <div class="flex items-center gap-2 min-w-0">
               <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-red-400" />
               <span class="truncate">Save failed: {errMsg()}</span>
             </div>
             <button
               type="button"
-              class="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-100 font-medium transition-colors shrink-0"
+              class="px-2.5 py-1 rounded-md bg-red-500/20 hover:bg-red-500/30 text-red-100 font-medium transition-colors shrink-0"
               onClick={() => {
                 const buf = activeBuffer()
                 if (!buf) return
@@ -429,7 +507,7 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={activeBuffer() && activeBuffer()!.conflict !== 'none'}>
         <Show when={activeBuffer()}>
           {(buf) => (
-            <div class="px-3 py-1.5 bg-amber-500/12 border-b border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-100">
+            <div class="px-3.5 py-2 bg-amber-500/10 border-b border-amber-500/25 flex items-center justify-between gap-3 text-xs text-amber-100">
               <div class="flex items-center gap-2 min-w-0">
                 <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-amber-400" />
                 <span class="truncate">
@@ -443,21 +521,21 @@ export default function CodePreview(props: PreviewProps) {
                 <Show when={buf().conflict === 'modified'}>
                   <button
                     type="button"
-                    class="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
                     onClick={() => void buffers.reloadBuffer(buf().relPath)}
                   >
                     Reload from Disk
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-0.5 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.11] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
                     Overwrite Disk
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-0.5 rounded hover:bg-amber-500/20 text-amber-200/80 transition-colors"
+                    class="px-2 py-1 rounded-md hover:bg-amber-500/20 text-amber-200/80 transition-colors"
                     onClick={() => buffers.dismissConflict(buf().relPath)}
                   >
                     Dismiss
@@ -467,14 +545,14 @@ export default function CodePreview(props: PreviewProps) {
                 <Show when={buf().conflict === 'deleted'}>
                   <button
                     type="button"
-                    class="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
                     Recreate & Save
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-0.5 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.11] border border-[var(--border-subtle)] text-[var(--text-primary)] transition-colors"
                     onClick={() => {
                       const path = buf().relPath
                       buffers.discardBuffer(path)
@@ -494,7 +572,7 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={activeBuffer()?.readOnly}>
         <Show when={activeBuffer()}>
           {(buf) => (
-            <div class="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/25 flex items-center justify-between gap-3 text-xs text-amber-200">
+            <div class="px-3.5 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between gap-3 text-xs text-amber-200">
               <div class="flex items-center gap-2 min-w-0">
                 <Lock class="w-3.5 h-3.5 shrink-0 text-amber-400" />
                 <span class="truncate">
@@ -506,7 +584,7 @@ export default function CodePreview(props: PreviewProps) {
               <Show when={buf().truncated && buf().maxBytes < EXTENDED_MAX_BYTES}>
                 <button
                   type="button"
-                  class="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors shrink-0"
+                  class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors shrink-0"
                   onClick={handleLoadExtended}
                 >
                   Load up to 10 MB
@@ -517,30 +595,33 @@ export default function CodePreview(props: PreviewProps) {
         </Show>
       </Show>
 
-      {/* Subtle bottom-right search & language indicator */}
-      <div class="absolute bottom-3 right-5 z-10 flex items-center gap-1.5">
+      {/* Floating glass pill: search & language indicator */}
+      <div class="absolute bottom-3.5 right-4 z-10 flex items-center">
         <button
           type="button"
           title="Find & Replace (Ctrl+F / Ctrl+H)"
-          class="px-2 py-1 rounded bg-[var(--bg-surface)]/90 border border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1 shadow-sm backdrop-blur"
+          class="glass-pill rounded-full px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-white/20 flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98]"
           onClick={openSearchPanel}
         >
-          <Search class="w-3 h-3" />
-          <span>{langLabel()}</span>
+          <Search class="w-3 h-3 text-[var(--accent)]" />
+          <span class="font-medium">{langLabel()}</span>
+          <span class="text-[10px] font-mono text-[var(--text-muted)] pl-1 border-l border-white/[0.1]">
+            Ctrl+F
+          </span>
         </button>
       </div>
 
       <Show when={error()}>
         {(msg) => (
-          <div class="m-4 p-3 rounded border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
+          <div class="m-4 p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs">
             Failed to read file: {msg()}
           </div>
         )}
       </Show>
 
       <Show when={loading() && !activeBuffer()}>
-        <div class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-[var(--bg-editor)]/80 text-xs text-[var(--text-secondary)]">
-          <Loader2 class="w-4 h-4 animate-spin" />
+        <div class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-[var(--bg-editor)]/80 backdrop-blur-[2px] text-xs text-[var(--text-secondary)]">
+          <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
           <span>Reading {props.file.name}...</span>
         </div>
       </Show>

@@ -22,10 +22,11 @@ export function StatusBar(props: StatusBarProps) {
   )
 
   return (
-    <footer class="h-[24px] shrink-0 px-3 flex items-center justify-between bg-[var(--bg-titlebar)] border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] select-none">
+    <footer class="h-[26px] shrink-0 px-3.5 flex items-center justify-between bg-transparent text-[11px] text-[var(--text-muted)] tabular-nums select-none">
       <div class="flex items-center gap-3 min-w-0">
-        <span class="text-[var(--text-muted)]">
-          Projects: {props.kernel.projects().length}
+        <span class="flex items-center gap-1.5 text-[var(--text-secondary)]">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400/80 shadow-[0_0_6px_rgba(52,211,153,0.45)]" />
+          <span>Projects: {props.kernel.projects().length}</span>
         </span>
         <For each={leftItems()}>
           {(item) => (

@@ -1,4 +1,5 @@
 import type { AppKernel, ProjectScope } from '@lite-ide/kernel'
+import Folder from 'lucide-solid/icons/folder'
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { LayoutStateKey } from '../services'
@@ -70,10 +71,10 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
       class="flex-1 min-h-0 min-w-0 flex"
       style={{ display: props.active ? 'flex' : 'none' }}
     >
-      {/* Left sidebar */}
+      {/* Left sidebar floating card */}
       <Show when={layout.sidebarVisible() && sortedViews().length > 0}>
         <aside
-          class="shrink-0 flex flex-col bg-[var(--bg-sidebar)] border-r border-[var(--border-subtle)] min-h-0 overflow-hidden"
+          class="shrink-0 flex flex-col rounded-xl bg-[var(--bg-sidebar)] panel-card min-h-0 overflow-hidden"
           style={{ width: `${layout.sidebarWidth()}px` }}
         >
           <Show
@@ -81,34 +82,39 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
             fallback={
               <Show when={currentView()}>
                 {(view) => (
-                  <div class="h-[34px] shrink-0 px-3 flex items-center justify-between border-b border-[var(--border-subtle)]">
-                    <span class="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                  <div class="h-[38px] shrink-0 px-3 flex items-center justify-between gap-2 border-b border-[var(--border-subtle)]">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <Folder class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
+                      <span class="text-[12px] font-semibold text-[var(--text-primary)] truncate leading-normal">
+                        {props.scope.name}
+                      </span>
+                    </div>
+                    <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.05] text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
                       {view().title}
-                    </span>
-                    <span class="text-[11px] text-[var(--text-muted)] truncate max-w-[120px]">
-                      {props.scope.name}
                     </span>
                   </div>
                 )}
               </Show>
             }
           >
-            <div class="h-[34px] shrink-0 px-2 flex items-center gap-1 border-b border-[var(--border-subtle)] overflow-x-auto no-scrollbar">
-              <For each={sortedViews()}>
-                {(view) => (
-                  <button
-                    type="button"
-                    class={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                      currentView()?.id === view.id
-                        ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                    }`}
-                    onClick={() => setActiveViewId(view.id)}
-                  >
-                    {view.title}
-                  </button>
-                )}
-              </For>
+            <div class="h-[38px] shrink-0 px-2 flex items-center border-b border-[var(--border-subtle)] overflow-x-auto no-scrollbar">
+              <div class="flex items-center gap-0.5 bg-black/25 p-0.5 rounded-lg border border-[var(--border-subtle)]">
+                <For each={sortedViews()}>
+                  {(view) => (
+                    <button
+                      type="button"
+                      class={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-150 ${
+                        currentView()?.id === view.id
+                          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-white/[0.07] shadow-sm'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
+                      }`}
+                      onClick={() => setActiveViewId(view.id)}
+                    >
+                      {view.title}
+                    </button>
+                  )}
+                </For>
+              </div>
             </div>
           </Show>
 
@@ -117,7 +123,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
               <div class="flex-1 min-h-0 flex flex-col">
                 <ErrorBoundary
                   fallback={(err) => (
-                    <div class="m-3 p-3 rounded border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
+                    <div class="m-3 p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
                       Sidebar view error: {err instanceof Error ? err.message : String(err)}
                     </div>
                   )}
@@ -129,23 +135,29 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
           </Show>
         </aside>
 
-        {/* Draggable split handle */}
+        {/* Breathing gap + subtle drag indicator */}
         <div
           role="separator"
           aria-orientation="vertical"
           title="Drag to resize, double-click to reset"
-          class={`w-[4px] -ml-[2px] z-10 shrink-0 cursor-col-resize transition-colors ${
-            dragging() ? 'bg-[var(--accent)]' : 'hover:bg-[var(--accent)]/60'
-          }`}
+          class="w-[8px] shrink-0 cursor-col-resize flex items-center justify-center group/split select-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
           onDblClick={() => layout.setSidebarWidth(260)}
-        />
+        >
+          <span
+            class={`w-[3px] rounded-full transition-all duration-150 ${
+              dragging()
+                ? 'h-20 bg-[var(--accent)] shadow-[0_0_10px_var(--accent)]'
+                : 'h-8 bg-transparent group-hover/split:h-14 group-hover/split:bg-white/20'
+            }`}
+          />
+        </div>
       </Show>
 
-      {/* Right preview pane */}
+      {/* Right preview / editor floating card */}
       <PreviewHost kernel={props.kernel} scope={props.scope} />
     </section>
   )

@@ -71,27 +71,47 @@ export function TitleBar(props: TitleBarProps) {
 
   return (
     <header
-      class={`h-[38px] shrink-0 flex items-stretch bg-[var(--bg-titlebar)] border-b border-[var(--border-subtle)] select-none ${
-        isMac ? 'pl-[72px]' : 'pl-2'
+      class={`h-[44px] shrink-0 flex items-center bg-[var(--bg-titlebar)] select-none ${
+        isMac ? 'pl-[76px] pr-2.5' : 'pl-2.5'
       }`}
     >
       {/* Brand + Sidebar toggle */}
-      <div class="flex items-center gap-1 pr-2 shrink-0">
+      <div class="flex items-center gap-1.5 pr-2.5 shrink-0">
         <div
-          class="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold tracking-tight text-[var(--text-secondary)]"
+          class="flex items-center gap-2 px-1.5 py-1 text-[12.5px] font-semibold tracking-tight text-[var(--text-primary)]"
           data-tauri-drag-region
         >
-          <span class="inline-block w-2 h-2 rounded-full bg-[var(--accent)] pointer-events-none" />
+          <span class="w-5 h-5 rounded-md bg-gradient-to-br from-[#7aa2ff] to-[#6366f1] flex items-center justify-center shadow-[0_2px_10px_rgba(122,162,255,0.35),inset_0_1px_0_rgba(255,255,255,0.28)] pointer-events-none">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              class="w-3 h-3 text-white pointer-events-none"
+              aria-hidden="true"
+            >
+              <path
+                d="M8 2.2 13.4 5.3 8 8.4 2.6 5.3 8 2.2Z"
+                fill="currentColor"
+                fill-opacity="0.95"
+              />
+              <path
+                d="M2.6 8.2 8 11.3l5.4-3.1M2.6 10.9 8 14l5.4-3.1"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
           <span class="pointer-events-none">LiteIDE</span>
         </div>
 
         <Show when={layout && props.kernel.projects().length > 0}>
           <button
             type="button"
-            class={`p-1.5 rounded hover:bg-[var(--bg-hover)] transition-colors ${
+            class={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150 active:scale-95 ${
               layout?.sidebarVisible()
-                ? 'text-[var(--text-primary)]'
-                : 'text-[var(--text-muted)]'
+                ? 'bg-white/[0.06] text-[var(--text-primary)] hover:bg-white/[0.1]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
             title="Toggle Sidebar (Ctrl+B)"
             onClick={() => void props.kernel.executeCommand('workbench.toggleSidebar')}
@@ -101,8 +121,8 @@ export function TitleBar(props: TitleBarProps) {
         </Show>
       </div>
 
-      {/* Project Tabs Strip (one tab = one project) */}
-      <div class="flex items-stretch overflow-x-auto no-scrollbar min-w-0">
+      {/* Project Tabs Strip (capsule tabs, one tab = one project) */}
+      <div class="flex items-center gap-1.5 py-1.5 overflow-x-auto no-scrollbar min-w-0">
         <For each={props.kernel.projects()}>
           {(scope) => {
             const isActive = () => props.kernel.activeProjectId() === scope.id
@@ -112,10 +132,10 @@ export function TitleBar(props: TitleBarProps) {
                 role="tab"
                 aria-selected={isActive()}
                 title={scope.rootPath}
-                class={`group relative flex items-center gap-1.5 px-3 min-w-[110px] max-w-[210px] border-r border-[var(--border-subtle)] cursor-pointer text-xs transition-colors ${
+                class={`group relative h-[30px] flex items-center gap-2 px-2.5 min-w-[112px] max-w-[216px] rounded-lg border text-xs transition-all duration-150 shrink-0 ${
                   isActive()
-                    ? 'bg-[var(--bg-editor)] text-[var(--text-primary)]'
-                    : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+                    ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-white/[0.09] shadow-[0_2px_10px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.07)]'
+                    : 'bg-transparent border-transparent text-[var(--text-secondary)] hover:bg-white/[0.045] hover:text-[var(--text-primary)]'
                 }`}
                 onClick={() => props.kernel.activateProject(scope.id)}
                 onMouseDown={(e) => {
@@ -125,13 +145,9 @@ export function TitleBar(props: TitleBarProps) {
                   }
                 }}
               >
-                <Show when={isActive()}>
-                  <span class="absolute top-0 left-0 right-0 h-[2px] bg-[var(--accent)]" />
-                </Show>
-
                 <FolderGit2
-                  class={`w-3.5 h-3.5 shrink-0 ${
-                    isActive() ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
+                  class={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                    isActive() ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]'
                   }`}
                 />
                 <span class="truncate flex-1 font-medium leading-normal">{scope.name}</span>
@@ -139,18 +155,18 @@ export function TitleBar(props: TitleBarProps) {
                   <Show when={hasDirty()}>
                     <span
                       title="Unsaved files in project"
-                      class="w-2 h-2 rounded-full bg-[var(--accent)] group-hover:hidden"
+                      class="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] group-hover:hidden"
                     />
                   </Show>
                   <button
                     type="button"
                     title="Close Project (Ctrl+Shift+W)"
-                    class={`p-0.5 rounded hover:bg-[var(--bg-active)] transition-opacity ${
+                    class={`p-0.5 rounded-md hover:bg-white/[0.1] transition-all duration-150 ${
                       hasDirty()
                         ? 'hidden group-hover:flex items-center justify-center'
                         : isActive()
-                          ? 'opacity-75 hover:opacity-100'
-                          : 'opacity-0 group-hover:opacity-80'
+                          ? 'opacity-65 hover:opacity-100'
+                          : 'opacity-0 group-hover:opacity-80 hover:opacity-100'
                     }`}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -167,23 +183,23 @@ export function TitleBar(props: TitleBarProps) {
 
         <button
           type="button"
-          class="flex items-center justify-center w-8 shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+          class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.06] transition-all duration-150 active:scale-95"
           title="Open Project Folder (Ctrl+O)"
           onClick={() => void props.kernel.executeCommand('workbench.openProject')}
         >
-          <Plus class="w-4 h-4" />
+          <Plus class="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* Draggable empty spacer */}
-      <div class="flex-1 min-w-[32px]" data-tauri-drag-region />
+      <div class="flex-1 min-w-[32px] h-full" data-tauri-drag-region />
 
       {/* Native-style window controls on Windows / Linux */}
       <Show when={isTauri && !isMac}>
-        <div class="flex items-stretch shrink-0">
+        <div class="flex items-stretch self-stretch shrink-0">
           <button
             type="button"
-            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)] transition-colors"
             title="Minimize"
             onClick={() => void handleMinimize()}
           >
@@ -191,7 +207,7 @@ export function TitleBar(props: TitleBarProps) {
           </button>
           <button
             type="button"
-            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-white/[0.06] hover:text-[var(--text-primary)] transition-colors"
             title={maximized() ? 'Restore' : 'Maximize'}
             onClick={() => void handleToggleMaximize()}
           >
@@ -201,7 +217,7 @@ export function TitleBar(props: TitleBarProps) {
           </button>
           <button
             type="button"
-            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-red-600 hover:text-white transition-colors"
+            class="w-11 flex items-center justify-center text-[var(--text-secondary)] hover:bg-red-500/85 hover:text-white transition-colors"
             title="Close"
             onClick={() => void handleCloseWindow()}
           >
