@@ -37,42 +37,43 @@ const CONFIG_EXTS = new Set(['toml', 'yaml', 'yml', 'lock', 'ini', 'env'])
 
 export function FileIcon(props: FileIconProps) {
   const ext = createMemo(() => getExtension(props.name))
-  const dirColorClass = () => (props.ignored ? 'text-[#5b6273]' : 'text-[#7aa2ff]/90')
+  const dirColorClass = () =>
+    props.ignored ? 'text-[var(--icon-folder-ignored)]' : 'text-[var(--icon-folder)]'
 
   return (
     <Show
       when={props.isDir}
       fallback={
-        <Switch fallback={<File class="w-3.5 h-3.5 shrink-0 text-[#7d8597]" />}>
+        <Switch fallback={<File class="w-3.5 h-3.5 shrink-0 text-[var(--icon-default)]" />}>
           <Match when={TS_EXTS.has(ext())}>
-            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[#689dff]" />
+            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[var(--icon-ts)]" />
           </Match>
           <Match when={JS_EXTS.has(ext())}>
-            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[#e8b86d]" />
+            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[var(--icon-js)]" />
           </Match>
           <Match when={STYLE_EXTS.has(ext())}>
-            <Palette class="w-3.5 h-3.5 shrink-0 text-[#7dd3fc]" />
+            <Palette class="w-3.5 h-3.5 shrink-0 text-[var(--icon-style)]" />
           </Match>
           <Match when={WEB_EXTS.has(ext())}>
-            <Globe class="w-3.5 h-3.5 shrink-0 text-[#f29e74]" />
+            <Globe class="w-3.5 h-3.5 shrink-0 text-[var(--icon-web)]" />
           </Match>
           <Match when={SHELL_EXTS.has(ext())}>
-            <FileTerminal class="w-3.5 h-3.5 shrink-0 text-[#86efac]" />
+            <FileTerminal class="w-3.5 h-3.5 shrink-0 text-[var(--icon-shell)]" />
           </Match>
           <Match when={CODE_EXTS.has(ext())}>
-            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[#f09b78]" />
+            <FileCode2 class="w-3.5 h-3.5 shrink-0 text-[var(--icon-code)]" />
           </Match>
           <Match when={JSON_EXTS.has(ext())}>
-            <FileJson class="w-3.5 h-3.5 shrink-0 text-[#e9cb74]" />
+            <FileJson class="w-3.5 h-3.5 shrink-0 text-[var(--icon-json)]" />
           </Match>
           <Match when={DOC_EXTS.has(ext())}>
-            <FileText class="w-3.5 h-3.5 shrink-0 text-[#78d9a6]" />
+            <FileText class="w-3.5 h-3.5 shrink-0 text-[var(--icon-doc)]" />
           </Match>
           <Match when={IMAGE_EXTS.has(ext())}>
-            <Image class="w-3.5 h-3.5 shrink-0 text-[#c49bff]" />
+            <Image class="w-3.5 h-3.5 shrink-0 text-[var(--icon-image)]" />
           </Match>
           <Match when={CONFIG_EXTS.has(ext()) || props.name.startsWith('.')}>
-            <Settings class="w-3.5 h-3.5 shrink-0 text-[#8a93a6]" />
+            <Settings class="w-3.5 h-3.5 shrink-0 text-[var(--icon-config)]" />
           </Match>
         </Switch>
       }

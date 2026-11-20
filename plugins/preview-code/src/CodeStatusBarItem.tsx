@@ -21,7 +21,7 @@ export function CodeStatusBarItem(props: { scope?: ProjectScope }) {
                 </Show>
                 <Show when={s().readOnly}>
                   <span
-                    class="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 text-[10px] font-medium leading-none"
+                    class="px-1.5 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-text)] text-[10px] font-medium leading-none"
                     title="Read-Only"
                   >
                     RO
@@ -30,16 +30,16 @@ export function CodeStatusBarItem(props: { scope?: ProjectScope }) {
                 <span>
                   Ln {s().line}, Col {s().column}
                 </span>
-                <span class="text-white/15">·</span>
+                <span class="text-[var(--divider)]">·</span>
                 <span>{s().lineCount} lines</span>
-                <span class="text-white/15">·</span>
+                <span class="text-[var(--divider)]">·</span>
                 <span>{s().language}</span>
-                <span class="text-white/15">·</span>
+                <span class="text-[var(--divider)]">·</span>
               </>
             )}
           </Show>
           <span class="uppercase">{stats()?.encoding ?? file().encoding}</span>
-          <span class="text-white/15">·</span>
+          <span class="text-[var(--divider)]">·</span>
           <span>{formatBytes(stats()?.size ?? file().size)}</span>
         </div>
       )}

@@ -11,11 +11,11 @@ export interface ConfirmDialogProps {
 function buttonClasses(variant: ConfirmAction['variant']): string {
   switch (variant) {
     case 'primary':
-      return 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-foreground)] font-semibold shadow-[0_2px_10px_rgba(122,162,255,0.28)]'
+      return 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-foreground)] font-semibold shadow-[0_2px_10px_var(--accent-glow)]'
     case 'danger':
       return 'bg-red-500/90 hover:bg-red-500 text-white font-semibold shadow-[0_2px_10px_rgba(239,68,68,0.25)]'
     default:
-      return 'bg-white/[0.05] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:bg-white/[0.09] hover:text-[var(--text-primary)]'
+      return 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
   }
 }
 
@@ -60,7 +60,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="lite-ide-confirm-title"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4 animate-backdrop-in"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-backdrop)] backdrop-blur-sm p-4 animate-backdrop-in"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 service?.dismiss()
@@ -70,8 +70,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             <div class="w-full max-w-[430px] rounded-2xl glass-surface overflow-hidden animate-dialog-in">
               <div class="px-5 py-3.5 border-b border-[var(--border-subtle)] flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-7 h-7 rounded-lg bg-amber-500/12 border border-amber-500/25 flex items-center justify-center shrink-0">
-                    <AlertTriangle class="w-3.5 h-3.5 text-amber-400" />
+                  <div class="w-7 h-7 rounded-lg bg-[var(--warning-bg)] border border-[var(--warning-border)] flex items-center justify-center shrink-0">
+                    <AlertTriangle class="w-3.5 h-3.5 text-[var(--warning-icon)]" />
                   </div>
                   <h2
                     id="lite-ide-confirm-title"
@@ -83,7 +83,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 <button
                   type="button"
                   title="Cancel"
-                  class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.07] transition-colors"
+                  class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                   onClick={() => service?.dismiss()}
                 >
                   <X class="w-3.5 h-3.5" />
@@ -94,7 +94,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 <p>{req().message}</p>
 
                 <Show when={req().details && req().details!.length > 0}>
-                  <ul class="max-h-32 overflow-y-auto rounded-xl bg-black/30 border border-[var(--border-subtle)] px-3 py-2.5 space-y-1 font-mono text-[11px] text-[var(--text-primary)]">
+                  <ul class="max-h-32 overflow-y-auto rounded-xl bg-[var(--bg-inset)] border border-[var(--border-subtle)] px-3 py-2.5 space-y-1 font-mono text-[11px] text-[var(--text-primary)]">
                     <For each={req().details}>
                       {(line) => <li class="truncate leading-normal">{line}</li>}
                     </For>
@@ -102,7 +102,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 </Show>
               </div>
 
-              <div class="px-5 py-3.5 border-t border-[var(--border-subtle)] bg-black/20 flex items-center justify-end gap-2">
+              <div class="px-5 py-3.5 border-t border-[var(--border-subtle)] bg-[var(--bg-dialog-footer)] flex items-center justify-end gap-2">
                 <For each={req().actions}>
                   {(action, idx) => (
                     <button

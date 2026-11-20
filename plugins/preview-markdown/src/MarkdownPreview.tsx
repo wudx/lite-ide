@@ -138,7 +138,7 @@ export default function MarkdownPreview(props: PreviewProps) {
     <div class="flex-1 min-h-0 overflow-y-auto px-10 py-8">
       <Show when={error()}>
         {(msg) => (
-          <div class="p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs">
+          <div class="p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
             Failed to render Markdown: {msg()}
           </div>
         )}

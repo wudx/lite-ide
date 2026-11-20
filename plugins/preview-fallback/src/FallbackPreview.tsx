@@ -12,8 +12,8 @@ export default function FallbackPreview(props: PreviewProps) {
     <div class="flex-1 flex items-center justify-center p-6 animate-fade-up">
       <div class="max-w-md w-full rounded-2xl border border-[var(--border-panel)] bg-[var(--bg-surface)]/70 p-6 shadow-[var(--shadow-panel)] space-y-5">
         <div class="flex items-center gap-3.5">
-          <div class="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center shrink-0">
-            <FileWarning class="w-5 h-5 text-amber-400" />
+          <div class="w-11 h-11 rounded-xl bg-[var(--warning-bg)] border border-[var(--warning-border)] flex items-center justify-center shrink-0">
+            <FileWarning class="w-5 h-5 text-[var(--warning-icon)]" />
           </div>
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-[var(--text-primary)] truncate leading-normal">

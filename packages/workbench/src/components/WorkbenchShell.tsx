@@ -9,7 +9,7 @@ import {
   requestSaveFile,
 } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
-import { LayoutStateKey, ProjectSelectionKey } from '../services'
+import { LayoutStateKey, ProjectSelectionKey, ThemeStateKey } from '../services'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProjectWorkspace } from './ProjectWorkspace'
 import { StatusBar } from './StatusBar'
@@ -103,6 +103,16 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         shortcut: 'Mod+B',
         run: () => {
           layout.toggleSidebar()
+        },
+      }),
+    )
+
+    disposables.add(
+      props.kernel.contribute('command', {
+        id: 'workbench.toggleTheme',
+        title: 'Toggle Color Theme',
+        run: ({ kernel }) => {
+          kernel.tryGet(ThemeStateKey)?.toggleTheme()
         },
       }),
     )
@@ -247,7 +257,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   })
 
   return (
-    <div class="h-screen w-screen overflow-hidden flex flex-col workbench-shell-bg text-[var(--text-primary)] ring-1 ring-inset ring-white/[0.05]">
+    <div class="h-screen w-screen overflow-hidden flex flex-col workbench-shell-bg text-[var(--text-primary)] ring-1 ring-inset ring-[var(--window-ring)]">
       <TitleBar kernel={props.kernel} />
 
       <main class="flex-1 min-h-0 flex relative px-2 pb-1.5 pt-0.5">

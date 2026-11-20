@@ -104,7 +104,7 @@ export default function ImagePreview(props: PreviewProps) {
         <Show
           when={!imgError()}
           fallback={
-            <div class="px-4 py-3 rounded-xl glass-surface text-xs text-red-300">
+            <div class="px-4 py-3 rounded-xl glass-surface text-xs text-[var(--danger-text)]">
               Unable to load image: {props.file.relPath}
             </div>
           }
@@ -115,8 +115,8 @@ export default function ImagePreview(props: PreviewProps) {
             draggable={false}
             class={
               fitMode()
-                ? 'max-w-[88%] max-h-[85%] object-contain rounded-lg shadow-[0_14px_44px_rgba(0,0,0,0.45)]'
-                : 'max-w-none rounded-lg shadow-[0_14px_44px_rgba(0,0,0,0.45)]'
+                ? 'max-w-[88%] max-h-[85%] object-contain rounded-lg shadow-[var(--shadow-image)]'
+                : 'max-w-none rounded-lg shadow-[var(--shadow-image)]'
             }
             style={{
               transform: `translate(${offset().x}px, ${offset().y}px) scale(${fitMode() ? 1 : scale()})`,
@@ -138,12 +138,12 @@ export default function ImagePreview(props: PreviewProps) {
               <span class="font-mono text-[var(--text-primary)]">
                 {dim().w} × {dim().h} px
               </span>
-              <span class="text-white/15">·</span>
+              <span class="text-[var(--divider)]">·</span>
             </>
           )}
         </Show>
         <span>{props.file.mime}</span>
-        <span class="text-white/15">·</span>
+        <span class="text-[var(--divider)]">·</span>
         <span>{formatBytes(props.file.size)}</span>
       </div>
 
@@ -152,7 +152,7 @@ export default function ImagePreview(props: PreviewProps) {
         <button
           type="button"
           title="Zoom Out"
-          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          class="p-1.5 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           onClick={() => zoomBy(0.8)}
         >
           <ZoomOut class="w-3.5 h-3.5" />
@@ -163,20 +163,20 @@ export default function ImagePreview(props: PreviewProps) {
         <button
           type="button"
           title="Zoom In"
-          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          class="p-1.5 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           onClick={() => zoomBy(1.25)}
         >
           <ZoomIn class="w-3.5 h-3.5" />
         </button>
 
-        <span class="mx-1 h-3.5 w-px bg-white/[0.12]" />
+        <span class="mx-1 h-3.5 w-px bg-[var(--divider)]" />
 
         <button
           type="button"
           class={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
             !fitMode() && scale() === 1
               ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
           onClick={resetToActualSize}
         >
@@ -188,7 +188,7 @@ export default function ImagePreview(props: PreviewProps) {
           class={`p-1.5 rounded-full transition-colors ${
             fitMode()
               ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/[0.08]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
           }`}
           onClick={resetToFit}
         >
@@ -197,7 +197,7 @@ export default function ImagePreview(props: PreviewProps) {
         <button
           type="button"
           title="Reset Pan"
-          class="p-1.5 rounded-full hover:bg-white/[0.08] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          class="p-1.5 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           onClick={() => setOffset({ x: 0, y: 0 })}
         >
           <RotateCcw class="w-3.5 h-3.5" />

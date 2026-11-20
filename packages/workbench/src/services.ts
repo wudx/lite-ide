@@ -47,6 +47,14 @@ export interface LayoutStateService {
   setSidebarWidth(width: number): void
 }
 
+export type ThemeMode = 'dark' | 'light'
+
+export interface ThemeStateService {
+  readonly theme: Accessor<ThemeMode>
+  setTheme(mode: ThemeMode): void
+  toggleTheme(): void
+}
+
 export const WorkspaceBackendKey = createServiceKey<WorkspaceBackend>('workbench.backend')
 export const ProjectSelectionKey = createServiceKey<ProjectSelectionService>(
   'workbench.projectSelection',
@@ -55,6 +63,7 @@ export const ProjectFsEventsKey = createServiceKey<EventBus<{ delta: FsDelta }>>
   'workbench.projectFsEvents',
 )
 export const LayoutStateKey = createServiceKey<LayoutStateService>('workbench.layoutState')
+export const ThemeStateKey = createServiceKey<ThemeStateService>('workbench.themeState')
 
 function baseNameOf(relPath: string): string {
   const normalized = relPath.replace(/\\/g, '/')
@@ -312,6 +321,51 @@ export function createLayoutState(): LayoutStateService {
   }
 }
 
+export const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
+
+function readStoredTheme(): ThemeMode {
+  if (typeof localStorage === 'undefined') return 'dark'
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
+
+function applyThemeToDom(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  root.dataset.theme = mode
+  root.classList.toggle('dark', mode === 'dark')
+  root.classList.toggle('light', mode === 'light')
+}
+
+export function createThemeState(): ThemeStateService {
+  const initial = readStoredTheme()
+  applyThemeToDom(initial)
+  const [theme, setThemeSignal] = createSignal<ThemeMode>(initial)
+
+  function setTheme(mode: ThemeMode) {
+    setThemeSignal(mode)
+    applyThemeToDom(mode)
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, mode)
+      } catch {
+        // Ignore storage quota / privacy errors.
+      }
+    }
+  }
+
+  return {
+    theme,
+    setTheme,
+    toggleTheme() {
+      setTheme(theme() === 'dark' ? 'light' : 'dark')
+    },
+  }
+}
+
 export function createKernelHostFromBackend(backend: WorkspaceBackend): KernelProjectHost {
   return {
     async open(rootPath: string) {
@@ -368,6 +422,7 @@ export function createWorkbenchKernel(
   })
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
+  kernel.provide(ThemeStateKey, createThemeState())
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   return kernel
 }

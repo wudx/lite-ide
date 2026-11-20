@@ -89,7 +89,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
                         {props.scope.name}
                       </span>
                     </div>
-                    <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.05] text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                    <span class="shrink-0 px-1.5 py-0.5 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
                       {view().title}
                     </span>
                   </div>
@@ -98,14 +98,14 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
             }
           >
             <div class="h-[38px] shrink-0 px-2 flex items-center border-b border-[var(--border-subtle)] overflow-x-auto no-scrollbar">
-              <div class="flex items-center gap-0.5 bg-black/25 p-0.5 rounded-lg border border-[var(--border-subtle)]">
+              <div class="flex items-center gap-0.5 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]">
                 <For each={sortedViews()}>
                   {(view) => (
                     <button
                       type="button"
                       class={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-150 ${
                         currentView()?.id === view.id
-                          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-white/[0.07] shadow-sm'
+                          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
                       }`}
                       onClick={() => setActiveViewId(view.id)}
@@ -123,7 +123,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
               <div class="flex-1 min-h-0 flex flex-col">
                 <ErrorBoundary
                   fallback={(err) => (
-                    <div class="m-3 p-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-xs">
+                    <div class="m-3 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
                       Sidebar view error: {err instanceof Error ? err.message : String(err)}
                     </div>
                   )}
@@ -151,7 +151,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
             class={`w-[3px] rounded-full transition-all duration-150 ${
               dragging()
                 ? 'h-20 bg-[var(--accent)] shadow-[0_0_10px_var(--accent)]'
-                : 'h-8 bg-transparent group-hover/split:h-14 group-hover/split:bg-white/20'
+                : 'h-8 bg-transparent group-hover/split:h-14 group-hover/split:bg-[var(--border-strong)]'
             }`}
           />
         </div>

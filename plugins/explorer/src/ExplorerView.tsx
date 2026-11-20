@@ -112,15 +112,15 @@ function InlineNameInput(props: InlineNameInputProps) {
           }
         }}
         onBlur={() => void trySubmit(true)}
-        class={`w-full h-[22px] px-2 rounded-md bg-black/45 border outline-none text-xs text-[var(--text-primary)] leading-normal transition-all ${
+        class={`w-full h-[22px] px-2 rounded-md bg-[var(--bg-inset-focus)] border outline-none text-xs text-[var(--text-primary)] leading-normal transition-all ${
           props.error
-            ? 'border-red-500/80 shadow-[0_0_0_2px_rgba(239,68,68,0.18)]'
+            ? 'border-[var(--danger-border)] shadow-[0_0_0_2px_var(--danger-bg)]'
             : 'border-[var(--accent-border)] shadow-[0_0_0_2px_var(--accent-soft)]'
         }`}
       />
       <Show when={props.error}>
         {(errMsg) => (
-          <div class="absolute left-0 top-[25px] z-30 max-w-[260px] px-2.5 py-1.5 rounded-lg glass-surface border-red-500/40 bg-red-950/85 text-[10.5px] text-red-200 whitespace-normal break-words animate-popover-in">
+          <div class="absolute left-0 top-[25px] z-30 max-w-[260px] px-2.5 py-1.5 rounded-lg glass-surface border-[var(--danger-border)] bg-[var(--danger-bg)] text-[10.5px] text-[var(--danger-text)] whitespace-normal break-words animate-popover-in">
             {errMsg()}
           </div>
         )}
@@ -367,7 +367,7 @@ export function ExplorerView(props: ExplorerViewProps) {
       {/* Two-row filter & action toolbar */}
       <div class="shrink-0 border-b border-[var(--border-subtle)]">
         <div class="px-2.5 pt-2.5 pb-1.5">
-          <div class="relative flex items-center h-[30px] rounded-lg bg-black/25 border border-[var(--border-subtle)] focus-within:border-[var(--accent-border)] focus-within:bg-black/35 focus-within:shadow-[0_0_0_2px_var(--accent-soft)] transition-all">
+          <div class="relative flex items-center h-[30px] rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus-within:border-[var(--accent-border)] focus-within:bg-[var(--bg-inset-focus)] focus-within:shadow-[0_0_0_2px_var(--accent-soft)] transition-all">
             <Search class="w-3.5 h-3.5 text-[var(--text-muted)] ml-2.5 shrink-0 pointer-events-none" />
             <input
               type="text"
@@ -380,7 +380,7 @@ export function ExplorerView(props: ExplorerViewProps) {
               <button
                 type="button"
                 title="Clear Filter"
-                class="mr-1.5 p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/[0.08] transition-colors"
+                class="mr-1.5 p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
                 onClick={() => store.setFilterQuery('')}
               >
                 <X class="w-3 h-3" />
@@ -454,7 +454,7 @@ export function ExplorerView(props: ExplorerViewProps) {
       {/* Error banner */}
       <Show when={store.error()}>
         {(msg) => (
-          <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-red-300 bg-red-500/10 border border-red-500/20">
+          <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[var(--danger-text)] bg-[var(--danger-bg)] border border-[var(--danger-border)]">
             {msg()}
           </div>
         )}
@@ -536,7 +536,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                             }
                             class={`group/row absolute top-0 left-1.5 right-1.5 rounded-lg flex items-center gap-1.5 pr-2 text-xs transition-colors duration-100 ${
                               isSelected()
-                                ? 'bg-[var(--bg-active)] text-[var(--text-primary)] font-medium shadow-[inset_0_0_0_1px_rgba(122,162,255,0.22)]'
+                                ? 'bg-[var(--bg-active)] text-[var(--text-primary)] font-medium ring-1 ring-inset ring-[var(--accent-border)]'
                                 : isFocused()
                                   ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -567,7 +567,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                               {(level) => (
                                 <span
                                   aria-hidden="true"
-                                  class="pointer-events-none absolute top-0 bottom-0 w-px bg-white/[0.055]"
+                                  class="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--guide-line)]"
                                   style={{ left: `${14 + level * 14}px` }}
                                 />
                               )}
@@ -668,7 +668,7 @@ export function ExplorerView(props: ExplorerViewProps) {
               <Show when={entry() && !entry()!.isDir}>
                 <button
                   type="button"
-                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const target = entry()!
                     setContextMenu(null)
@@ -682,7 +682,7 @@ export function ExplorerView(props: ExplorerViewProps) {
               <Show when={!entry() || entry()!.isDir}>
                 <button
                   type="button"
-                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const parent = targetParent()
                     setContextMenu(null)
@@ -694,7 +694,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                 </button>
                 <button
                   type="button"
-                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   onClick={() => {
                     const parent = targetParent()
                     setContextMenu(null)
@@ -710,7 +710,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                 <div class="my-1 border-t border-[var(--border-subtle)]" />
                 <button
                   type="button"
-                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center gap-2"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setContextMenu(null)
                     void store.refreshAllExpanded()
@@ -727,7 +727,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     <div class="my-1 border-t border-[var(--border-subtle)]" />
                     <button
                       type="button"
-                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors flex items-center justify-between gap-2"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center justify-between gap-2"
                       onClick={() => {
                         const item = target()
                         setContextMenu(null)
@@ -742,7 +742,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                     </button>
                     <button
                       type="button"
-                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-red-500/15 text-red-300 transition-colors flex items-center justify-between gap-2"
+                      class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--danger-bg)] text-[var(--danger-text)] transition-colors flex items-center justify-between gap-2"
                       onClick={() => {
                         const item = target()
                         setContextMenu(null)
@@ -753,7 +753,7 @@ export function ExplorerView(props: ExplorerViewProps) {
                         <Trash class="w-3.5 h-3.5" />
                         <span>Delete</span>
                       </span>
-                      <span class="text-[10px] font-mono text-red-300/60">Del</span>
+                      <span class="text-[10px] font-mono opacity-65">Del</span>
                     </button>
                   </>
                 )}

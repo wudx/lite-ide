@@ -222,8 +222,8 @@ export function PreviewHost(props: PreviewHostProps) {
                   title={tab.relPath}
                   class={`group relative flex items-center gap-1.5 min-w-[96px] max-w-[220px] text-xs transition-all duration-150 shrink-0 ${
                     isActive()
-                      ? 'h-[32px] rounded-t-lg px-3 bg-[var(--bg-editor)] text-[var(--text-primary)] border-t border-x border-[var(--border-subtle)] -mb-px z-10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                      : 'h-[29px] mb-[2px] rounded-lg px-2.5 bg-transparent text-[var(--text-secondary)] hover:bg-white/[0.045] hover:text-[var(--text-primary)]'
+                      ? 'h-[32px] rounded-t-lg px-3 bg-[var(--bg-editor)] text-[var(--text-primary)] border-t border-x border-[var(--border-subtle)] -mb-px z-10 shadow-[var(--shadow-tab-doc)]'
+                      : 'h-[29px] mb-[2px] rounded-lg px-2.5 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
                   }`}
                   onClick={() => void selection.selectFile(tab.relPath)}
                   onMouseDown={(e) => {
@@ -271,7 +271,7 @@ export function PreviewHost(props: PreviewHostProps) {
                     <button
                       type="button"
                       title="Close Tab (Ctrl+W)"
-                      class={`p-0.5 rounded-md hover:bg-white/[0.1] transition-all duration-150 ${
+                      class={`p-0.5 rounded-md hover:bg-[var(--bg-hover-strong)] transition-all duration-150 ${
                         isDirty()
                           ? 'hidden group-hover:flex items-center justify-center'
                           : isActive()
@@ -341,12 +341,12 @@ export function PreviewHost(props: PreviewHostProps) {
                       </span>
                     </Show>
                     <Show when={!buf().saving && buf().conflict === 'deleted'}>
-                      <span class="shrink-0 px-2 py-0.5 rounded-full bg-red-500/15 text-red-300 border border-red-500/25 text-[10.5px] font-medium">
+                      <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-text)] border border-[var(--danger-border)] text-[10.5px] font-medium">
                         Deleted on disk
                       </span>
                     </Show>
                     <Show when={!buf().saving && buf().conflict === 'modified'}>
-                      <span class="shrink-0 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25 text-[10.5px] font-medium">
+                      <span class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-text)] border border-[var(--warning-border)] text-[10.5px] font-medium">
                         External change
                       </span>
                     </Show>
@@ -358,7 +358,7 @@ export function PreviewHost(props: PreviewHostProps) {
                     <Show when={buf().readOnly}>
                       <span
                         title={buf().readOnlyReason ?? 'Read-only file'}
-                        class="shrink-0 px-2 py-0.5 rounded-full bg-white/[0.04] border border-[var(--border-subtle)] text-[var(--text-muted)] text-[10.5px] flex items-center gap-1"
+                        class="shrink-0 px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-muted)] text-[10.5px] flex items-center gap-1"
                       >
                         <Lock class="w-2.5 h-2.5" />
                         <span>Read-Only</span>
@@ -388,7 +388,7 @@ export function PreviewHost(props: PreviewHostProps) {
                         type="button"
                         disabled={buf().readOnly || buf().saving}
                         title="Save file (Ctrl+S)"
-                        class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-foreground)] shadow-[0_2px_10px_rgba(122,162,255,0.28)] active:scale-[0.98] disabled:opacity-50 flex items-center gap-1 transition-all duration-150"
+                        class="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--accent-foreground)] shadow-[0_2px_10px_var(--accent-glow)] active:scale-[0.98] disabled:opacity-50 flex items-center gap-1 transition-all duration-150"
                         onClick={() => void handleSaveCurrent()}
                       >
                         <Show when={buf().saving} fallback={<Save class="w-3 h-3" />}>
@@ -406,7 +406,7 @@ export function PreviewHost(props: PreviewHostProps) {
                       }
                     >
                       <span class="px-2 py-0.5 rounded-full text-[11px] text-[var(--text-muted)] flex items-center gap-1 select-none">
-                        <Check class="w-3 h-3 text-emerald-400/80" />
+                        <Check class="w-3 h-3 text-[var(--success-text)]" />
                         <span>Saved</span>
                       </span>
                     </Show>
@@ -415,7 +415,7 @@ export function PreviewHost(props: PreviewHostProps) {
               </Show>
 
               <Show when={matchedProviders().length > 1}>
-                <div class="flex items-center gap-0.5 shrink-0 bg-black/25 p-0.5 rounded-lg border border-[var(--border-subtle)]">
+                <div class="flex items-center gap-0.5 shrink-0 bg-[var(--bg-inset)] p-0.5 rounded-lg border border-[var(--border-subtle)]">
                   <For each={matchedProviders()}>
                     {(provider) => {
                       const isCurrent = () => activeProvider()?.id === provider.id
@@ -424,7 +424,7 @@ export function PreviewHost(props: PreviewHostProps) {
                           type="button"
                           class={`px-2.5 py-0.5 rounded-md text-[11px] font-medium transition-all duration-150 ${
                             isCurrent()
-                              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-white/[0.07] shadow-sm'
+                              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
                               : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
                           }`}
                           onClick={() => selection.setPreferredPreviewerId(provider.id)}
@@ -447,8 +447,8 @@ export function PreviewHost(props: PreviewHostProps) {
           when={selection.selectedPath()}
           fallback={
             <div class="flex-1 flex flex-col items-center justify-center gap-4 text-[var(--text-muted)] select-none px-6 text-center animate-fade-up">
-              <div class="w-12 h-12 rounded-2xl bg-[var(--bg-surface)]/80 border border-[var(--border-panel)] shadow-[var(--shadow-panel)] flex items-center justify-center">
-                <FileCode2 class="w-5 h-5 text-[var(--accent)] opacity-80" />
+              <div class="w-12 h-12 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-panel)] flex items-center justify-center">
+                <FileCode2 class="w-5 h-5 text-[var(--accent)] opacity-85" />
               </div>
               <div class="space-y-1.5 max-w-sm">
                 <p class="text-[13px] font-medium text-[var(--text-primary)]">
@@ -458,24 +458,24 @@ export function PreviewHost(props: PreviewHostProps) {
                   Choose a file from the explorer to start editing or previewing
                 </p>
               </div>
-              <div class="px-3 py-1 rounded-full bg-black/25 border border-[var(--border-subtle)] text-[11px] font-mono text-[var(--text-muted)] max-w-md truncate">
+              <div class="px-3 py-1 rounded-full bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[11px] font-mono text-[var(--text-muted)] max-w-md truncate">
                 {props.scope.rootPath}
               </div>
               <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 pt-1 text-[11px] text-[var(--text-muted)]">
                 <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-white/[0.08] font-mono text-[10px] text-[var(--text-secondary)]">
+                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+B
                   </kbd>
                   <span>Sidebar</span>
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-white/[0.08] font-mono text-[10px] text-[var(--text-secondary)]">
+                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+O
                   </kbd>
                   <span>Open Project</span>
                 </span>
                 <span class="flex items-center gap-1.5">
-                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-white/[0.08] font-mono text-[10px] text-[var(--text-secondary)]">
+                  <kbd class="px-1.5 py-0.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-panel)] shadow-[var(--shadow-kbd)] font-mono text-[10px] text-[var(--text-secondary)]">
                     Ctrl+Tab
                   </kbd>
                   <span>Switch Project</span>
@@ -486,8 +486,8 @@ export function PreviewHost(props: PreviewHostProps) {
         >
           <Show when={selection.error()}>
             {(errMsg) => (
-              <div class="m-4 p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs flex items-center gap-2">
-                <AlertTriangle class="w-4 h-4 shrink-0" />
+              <div class="m-4 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs flex items-center gap-2">
+                <AlertTriangle class="w-4 h-4 shrink-0 text-[var(--danger-icon)]" />
                 <span>{errMsg()}</span>
               </div>
             )}
@@ -495,8 +495,8 @@ export function PreviewHost(props: PreviewHostProps) {
 
           <Show when={loadError()}>
             {(errMsg) => (
-              <div class="m-4 p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs flex items-center gap-2">
-                <AlertTriangle class="w-4 h-4 shrink-0" />
+              <div class="m-4 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs flex items-center gap-2">
+                <AlertTriangle class="w-4 h-4 shrink-0 text-[var(--danger-icon)]" />
                 <span>Failed to load view: {errMsg()}</span>
               </div>
             )}
@@ -523,7 +523,7 @@ export function PreviewHost(props: PreviewHostProps) {
                 {(view) => (
                   <ErrorBoundary
                     fallback={(err) => (
-                      <div class="m-4 p-4 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs">
+                      <div class="m-4 p-4 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
                         Editor view crashed: {err instanceof Error ? err.message : String(err)}
                       </div>
                     )}
@@ -557,7 +557,7 @@ export function PreviewHost(props: PreviewHostProps) {
           >
             <button
               type="button"
-              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors"
+              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors"
               onClick={() => {
                 const target = menu().relPath
                 setTabMenu(null)
@@ -569,7 +569,7 @@ export function PreviewHost(props: PreviewHostProps) {
             <button
               type="button"
               disabled={selection.openTabs().length <= 1}
-              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
               onClick={() => {
                 const target = menu().relPath
                 setTabMenu(null)
@@ -580,7 +580,7 @@ export function PreviewHost(props: PreviewHostProps) {
             </button>
             <button
               type="button"
-              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.07] transition-colors"
+              class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors"
               onClick={() => {
                 setTabMenu(null)
                 void requestCloseAllTabs(props.kernel, props.scope)

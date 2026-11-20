@@ -34,7 +34,9 @@ import {
   EditorBufferKey,
   formatBytes,
   ProjectSelectionKey,
+  ThemeStateKey,
   type DocumentBuffer,
+  type ThemeMode,
 } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Lock from 'lucide-solid/icons/lock'
@@ -50,8 +52,9 @@ const EXTENDED_MAX_BYTES = 10 * 1024 * 1024
 const languageCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const listenerCompartment = new Compartment()
+const themeCompartment = new Compartment()
 
-const ideHighlightStyle = HighlightStyle.define([
+const ideDarkHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#c49bff' },
   { tag: [tags.modifier, tags.self], color: '#d4b8ff' },
   { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#e6ebf5' },
@@ -73,46 +76,83 @@ const ideHighlightStyle = HighlightStyle.define([
   { tag: [tags.invalid], color: '#f87171' },
 ])
 
-const ideTheme = EditorView.theme(
+const ideLightHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#7c3aed' },
+  { tag: [tags.modifier, tags.self], color: '#6d28d9' },
+  { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#181c25' },
+  { tag: [tags.variableName], color: '#1e2433' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#2563eb' },
+  { tag: [tags.propertyName, tags.attributeName], color: '#0369a1' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#0284c7' },
+  { tag: [tags.tagName], color: '#e11d48' },
+  { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit], color: '#c2410c' },
+  { tag: [tags.string, tags.docString, tags.attributeValue], color: '#15803d' },
+  { tag: [tags.regexp, tags.escape, tags.special(tags.string)], color: '#b45309' },
+  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: '#64748b' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], color: '#8b95a7', fontStyle: 'italic' },
+  { tag: [tags.meta, tags.annotation, tags.processingInstruction], color: '#4f46e5' },
+  { tag: [tags.heading], color: '#2563eb', fontWeight: '600' },
+  { tag: [tags.strong], fontWeight: '600', color: '#0f172a' },
+  { tag: [tags.emphasis], fontStyle: 'italic' },
+  { tag: [tags.link, tags.url], color: '#2563eb', textDecoration: 'underline' },
+  { tag: [tags.invalid], color: '#dc2626' },
+])
+
+const baseThemeStyles = {
+  '&': {
+    height: '100%',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-editor)',
+  },
+  '.cm-content': {
+    padding: '12px 0',
+    caretColor: 'var(--accent)',
+  },
+  '.cm-scroller': {
+    overflow: 'auto',
+    fontFamily:
+      'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)',
+    lineHeight: '1.65',
+  },
+  '.cm-gutters': {
+    backgroundColor: 'var(--bg-editor)',
+    borderRight: 'none',
+    paddingRight: '8px',
+    paddingLeft: '4px',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  '.cm-lineNumbers .cm-gutterElement': {
+    minWidth: '34px',
+    padding: '0 6px 0 8px',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'transparent',
+  },
+  '&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
+    borderLeftColor: 'var(--accent)',
+    borderLeftWidth: '1.5px',
+  },
+  '.cm-panels': {
+    backgroundColor: 'var(--bg-editor-chrome)',
+    color: 'var(--text-primary)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+}
+
+const ideDarkTheme = EditorView.theme(
   {
-    '&': {
-      height: '100%',
-      fontSize: '13px',
-      color: 'var(--text-primary)',
-      backgroundColor: 'var(--bg-editor)',
-    },
-    '.cm-content': {
-      padding: '12px 0',
-      caretColor: 'var(--accent)',
-    },
-    '.cm-scroller': {
-      overflow: 'auto',
-      fontFamily:
-        'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)',
-      lineHeight: '1.65',
-    },
+    ...baseThemeStyles,
     '.cm-gutters': {
-      backgroundColor: 'var(--bg-editor)',
+      ...baseThemeStyles['.cm-gutters'],
       color: '#4d5466',
-      borderRight: 'none',
-      paddingRight: '8px',
-      paddingLeft: '4px',
-      fontVariantNumeric: 'tabular-nums',
-    },
-    '.cm-lineNumbers .cm-gutterElement': {
-      minWidth: '34px',
-      padding: '0 6px 0 8px',
     },
     '.cm-activeLineGutter': {
-      backgroundColor: 'transparent',
+      ...baseThemeStyles['.cm-activeLineGutter'],
       color: '#c2cad8',
     },
     '.cm-activeLine': {
       backgroundColor: 'rgba(255, 255, 255, 0.026)',
-    },
-    '&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
-      borderLeftColor: 'var(--accent)',
-      borderLeftWidth: '1.5px',
     },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
       backgroundColor: 'rgba(122, 162, 255, 0.22)',
@@ -143,11 +183,6 @@ const ideTheme = EditorView.theme(
       padding: '0 6px',
       margin: '0 4px',
     },
-    '.cm-panels': {
-      backgroundColor: '#13151c',
-      color: 'var(--text-primary)',
-      borderBottom: '1px solid var(--border-subtle)',
-    },
     '.cm-tooltip': {
       backgroundColor: '#1b1e28',
       border: '1px solid var(--border-strong)',
@@ -158,6 +193,73 @@ const ideTheme = EditorView.theme(
   { dark: true },
 )
 
+const ideLightTheme = EditorView.theme(
+  {
+    ...baseThemeStyles,
+    '.cm-gutters': {
+      ...baseThemeStyles['.cm-gutters'],
+      color: '#9ca3af',
+    },
+    '.cm-activeLineGutter': {
+      ...baseThemeStyles['.cm-activeLineGutter'],
+      color: '#1f2937',
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'rgba(15, 23, 42, 0.032)',
+    },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: 'rgba(59, 111, 246, 0.16)',
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: 'rgba(59, 111, 246, 0.11)',
+      borderRadius: '3px',
+    },
+    '&.cm-focused .cm-matchingBracket': {
+      backgroundColor: 'rgba(59, 111, 246, 0.14)',
+      outline: '1px solid rgba(59, 111, 246, 0.35)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch': {
+      backgroundColor: 'rgba(245, 158, 11, 0.22)',
+      outline: '1px solid rgba(217, 119, 6, 0.38)',
+      borderRadius: '3px',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'rgba(59, 111, 246, 0.24)',
+      outline: '1px solid rgba(59, 111, 246, 0.5)',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: 'rgba(15, 23, 42, 0.05)',
+      border: '1px solid rgba(15, 23, 42, 0.12)',
+      color: 'var(--text-secondary)',
+      borderRadius: '5px',
+      padding: '0 6px',
+      margin: '0 4px',
+    },
+    '.cm-tooltip': {
+      backgroundColor: '#ffffff',
+      border: '1px solid var(--border-strong)',
+      borderRadius: '8px',
+      boxShadow: '0 10px 28px rgba(15, 23, 42, 0.12)',
+    },
+  },
+  { dark: false },
+)
+
+function getEditorThemeExtension(mode: ThemeMode): Extension {
+  return mode === 'light'
+    ? [
+        syntaxHighlighting(ideLightHighlightStyle),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        ideLightTheme,
+      ]
+    : [
+        syntaxHighlighting(ideDarkHighlightStyle),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        ideDarkTheme,
+      ]
+}
+
 function computeCursorPosition(state: EditorState): { line: number; column: number } {
   const head = state.selection.main.head
   const lineInfo = state.doc.lineAt(head)
@@ -167,7 +269,11 @@ function computeCursorPosition(state: EditorState): { line: number; column: numb
   }
 }
 
-function buildEditorExtensions(readOnly: boolean, listenerExt: Extension): Extension[] {
+function buildEditorExtensions(
+  readOnly: boolean,
+  listenerExt: Extension,
+  themeMode: ThemeMode,
+): Extension[] {
   return [
     lineNumbers(),
     highlightActiveLine(),
@@ -178,9 +284,7 @@ function buildEditorExtensions(readOnly: boolean, listenerExt: Extension): Exten
     drawSelection(),
     indentOnInput(),
     bracketMatching(),
-    syntaxHighlighting(ideHighlightStyle),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    ideTheme,
+    themeCompartment.of(getEditorThemeExtension(themeMode)),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([indentWithTab, ...searchKeymap, ...historyKeymap, ...defaultKeymap, ...foldKeymap]),
@@ -197,6 +301,7 @@ function buildEditorExtensions(readOnly: boolean, listenerExt: Extension): Exten
 export default function CodePreview(props: PreviewProps) {
   const buffers = props.scope.get(EditorBufferKey)
   const selection = props.scope.tryGet(ProjectSelectionKey)
+  const themeState = props.scope.tryGet(ThemeStateKey)
   const codeStats = props.scope.tryGet(CodeStatsKey)
   const editorCache = props.scope.tryGet(CodeEditorCacheKey)
 
@@ -207,6 +312,7 @@ export default function CodePreview(props: PreviewProps) {
 
   const activeBuffer = createMemo(() => buffers.getBuffer(props.file.relPath))
   const activeDiskRevision = createMemo(() => activeBuffer()?.diskRevision ?? -1)
+  const currentTheme = (): ThemeMode => themeState?.theme() ?? 'dark'
 
   let containerEl: HTMLDivElement | undefined
   let view: EditorView | undefined
@@ -303,6 +409,7 @@ export default function CodePreview(props: PreviewProps) {
       Boolean(cached) &&
       cached!.diskRevision === buf.diskRevision &&
       cached!.state.doc.toString() === buf.content
+    const mode = untrack(currentTheme)
 
     mountedRelPath = buf.relPath
     mountedDiskRevision = buf.diskRevision
@@ -319,6 +426,7 @@ export default function CodePreview(props: PreviewProps) {
               EditorView.editable.of(!buf.readOnly),
             ]),
             listenerCompartment.reconfigure(listenerExt),
+            themeCompartment.reconfigure(getEditorThemeExtension(mode)),
           ],
         })
         const targetScrollTop = cached.scrollTop
@@ -332,7 +440,7 @@ export default function CodePreview(props: PreviewProps) {
       } else {
         const nextState = EditorState.create({
           doc: buf.content,
-          extensions: buildEditorExtensions(buf.readOnly, listenerExt),
+          extensions: buildEditorExtensions(buf.readOnly, listenerExt, mode),
         })
         view.setState(nextState)
         applyLanguageSupport(buf.relPath, fileName, fileExt)
@@ -350,7 +458,7 @@ export default function CodePreview(props: PreviewProps) {
       parent: containerEl,
       state: EditorState.create({
         doc: '',
-        extensions: buildEditorExtensions(true, []),
+        extensions: buildEditorExtensions(true, [], untrack(currentTheme)),
       }),
     })
   })
@@ -361,6 +469,20 @@ export default function CodePreview(props: PreviewProps) {
     view?.destroy()
     view = undefined
     mountedRelPath = null
+  })
+
+  // Keep CodeMirror theme & highlight palette synced with workbench theme.
+  createEffect(() => {
+    const mode = currentTheme()
+    if (!view) return
+    isApplyingExternal = true
+    try {
+      view.dispatch({
+        effects: themeCompartment.reconfigure(getEditorThemeExtension(mode)),
+      })
+    } finally {
+      isApplyingExternal = false
+    }
   })
 
   // Restore or reset byte cap when switching files.
@@ -481,14 +603,14 @@ export default function CodePreview(props: PreviewProps) {
       {/* Save failure banner */}
       <Show when={activeBuffer()?.saveError}>
         {(errMsg) => (
-          <div class="px-3.5 py-2 bg-red-500/10 border-b border-red-500/25 flex items-center justify-between gap-3 text-xs text-red-200">
+          <div class="px-3.5 py-2 bg-[var(--danger-bg)] border-b border-[var(--danger-border)] flex items-center justify-between gap-3 text-xs text-[var(--danger-text)]">
             <div class="flex items-center gap-2 min-w-0">
-              <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-red-400" />
+              <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-[var(--danger-icon)]" />
               <span class="truncate">Save failed: {errMsg()}</span>
             </div>
             <button
               type="button"
-              class="px-2.5 py-1 rounded-md bg-red-500/20 hover:bg-red-500/30 text-red-100 font-medium transition-colors shrink-0"
+              class="px-2.5 py-1 rounded-md bg-[var(--danger-btn-bg)] hover:bg-[var(--danger-btn-hover)] text-[var(--danger-text)] font-medium transition-colors shrink-0"
               onClick={() => {
                 const buf = activeBuffer()
                 if (!buf) return
@@ -507,9 +629,9 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={activeBuffer() && activeBuffer()!.conflict !== 'none'}>
         <Show when={activeBuffer()}>
           {(buf) => (
-            <div class="px-3.5 py-2 bg-amber-500/10 border-b border-amber-500/25 flex items-center justify-between gap-3 text-xs text-amber-100">
+            <div class="px-3.5 py-2 bg-[var(--warning-bg)] border-b border-[var(--warning-border)] flex items-center justify-between gap-3 text-xs text-[var(--warning-text)]">
               <div class="flex items-center gap-2 min-w-0">
-                <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-[var(--warning-icon)]" />
                 <span class="truncate">
                   {buf().conflict === 'deleted'
                     ? 'This file was deleted on disk. Your unsaved edits remain in memory.'
@@ -521,21 +643,21 @@ export default function CodePreview(props: PreviewProps) {
                 <Show when={buf().conflict === 'modified'}>
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors"
                     onClick={() => void buffers.reloadBuffer(buf().relPath)}
                   >
                     Reload from Disk
                   </button>
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.11] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
                     Overwrite Disk
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-1 rounded-md hover:bg-amber-500/20 text-amber-200/80 transition-colors"
+                    class="px-2 py-1 rounded-md hover:bg-[var(--warning-btn-bg)] text-[var(--warning-text)] transition-colors"
                     onClick={() => buffers.dismissConflict(buf().relPath)}
                   >
                     Dismiss
@@ -545,14 +667,14 @@ export default function CodePreview(props: PreviewProps) {
                 <Show when={buf().conflict === 'deleted'}>
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors"
                     onClick={() => void buffers.overwriteConflict(buf().relPath)}
                   >
                     Recreate & Save
                   </button>
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.11] border border-[var(--border-subtle)] text-[var(--text-primary)] transition-colors"
+                    class="px-2.5 py-1 rounded-md bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] transition-colors"
                     onClick={() => {
                       const path = buf().relPath
                       buffers.discardBuffer(path)
@@ -572,9 +694,9 @@ export default function CodePreview(props: PreviewProps) {
       <Show when={activeBuffer()?.readOnly}>
         <Show when={activeBuffer()}>
           {(buf) => (
-            <div class="px-3.5 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between gap-3 text-xs text-amber-200">
+            <div class="px-3.5 py-2 bg-[var(--warning-bg)] border-b border-[var(--warning-border)] flex items-center justify-between gap-3 text-xs text-[var(--warning-text)]">
               <div class="flex items-center gap-2 min-w-0">
-                <Lock class="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                <Lock class="w-3.5 h-3.5 shrink-0 text-[var(--warning-icon)]" />
                 <span class="truncate">
                   {buf().truncated
                     ? `Showing first ${formatBytes(buf().loadedBytes)} of ${formatBytes(buf().totalBytes)} (Read-Only).`
@@ -584,7 +706,7 @@ export default function CodePreview(props: PreviewProps) {
               <Show when={buf().truncated && buf().maxBytes < EXTENDED_MAX_BYTES}>
                 <button
                   type="button"
-                  class="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition-colors shrink-0"
+                  class="px-2.5 py-1 rounded-md bg-[var(--warning-btn-bg)] hover:bg-[var(--warning-btn-hover)] text-[var(--warning-text)] font-medium transition-colors shrink-0"
                   onClick={handleLoadExtended}
                 >
                   Load up to 10 MB
@@ -600,12 +722,12 @@ export default function CodePreview(props: PreviewProps) {
         <button
           type="button"
           title="Find & Replace (Ctrl+F / Ctrl+H)"
-          class="glass-pill rounded-full px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-white/20 flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98]"
+          class="glass-pill rounded-full px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent-border)] flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98]"
           onClick={openSearchPanel}
         >
           <Search class="w-3 h-3 text-[var(--accent)]" />
           <span class="font-medium">{langLabel()}</span>
-          <span class="text-[10px] font-mono text-[var(--text-muted)] pl-1 border-l border-white/[0.1]">
+          <span class="text-[10px] font-mono text-[var(--text-muted)] pl-1.5 border-l border-[var(--divider)]">
             Ctrl+F
           </span>
         </button>
@@ -613,7 +735,7 @@ export default function CodePreview(props: PreviewProps) {
 
       <Show when={error()}>
         {(msg) => (
-          <div class="m-4 p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-300 text-xs">
+          <div class="m-4 p-3 rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-xs">
             Failed to read file: {msg()}
           </div>
         )}
