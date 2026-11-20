@@ -20,8 +20,8 @@ const NORD_VARIABLES: Record<string, string> = {
   '--bg-subtle': 'rgba(216, 222, 233, 0.05)',
   '--bg-inset': 'rgba(0, 0, 0, 0.26)',
   '--bg-inset-focus': 'rgba(0, 0, 0, 0.38)',
-  '--bg-popover': 'rgba(43, 48, 59, 0.92)',
-  '--bg-pill': 'rgba(59, 66, 82, 0.85)',
+  '--bg-popover': '#2b303b',
+  '--bg-pill': '#3b4252',
   '--bg-backdrop': 'rgba(20, 24, 31, 0.55)',
   '--bg-dialog-footer': 'rgba(0, 0, 0, 0.22)',
 
