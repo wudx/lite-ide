@@ -119,6 +119,24 @@ function bytesToBase64(bytes: Uint8Array): string {
 const DEMO_WAV_BYTES = createDemoWavBytes()
 const DEMO_WAV_DATA_URL = `data:audio/wav;base64,${bytesToBase64(DEMO_WAV_BYTES)}`
 
+// 长文件 demo（代码导航 e2e 用）：定义在文件头部（第 6 行）、跨文件引用在
+// 第 100 行，行号由数组拼接保证——e2e 断言依赖确切行位，勿手动重排。
+const LONG_REFERENCE_TS = [
+  '// Long-file fixture for code navigation: the definition sits near the top',
+  '// while cross-file usages live ~100 lines down, so scroll positions matter.',
+  "import { createServiceKey } from './kernel'",
+  '',
+  '// Jump target: called from the appended section of src/kernel.ts.',
+  'export function longTarget(): string {',
+  "  return 'long-target'",
+  '}',
+  '',
+  ...Array.from({ length: 88 }, (_, i) => `// padding line ${i + 10}`),
+  '',
+  '// Cross-file usage of kernel.ts createServiceKey, far below the import.',
+  "export const longRefKey = createServiceKey('demo.longRef')",
+].join('\n')
+
 const MOCK_REPO_TEMPLATES: MockRepoTemplate[] = [
   {
     id: 'mock-lite-ide',
@@ -200,6 +218,9 @@ export function createServiceKey<T>(name: string) {
 export function activateDemo() {
   console.log('LiteIDE micro-kernel activated')
 }
+
+// Cross-file demo: longTarget is defined in long-reference.ts.
+longTarget()
 `,
       },
       // 跨文件符号演示：services.ts 引用 kernel.ts 的 createServiceKey，
@@ -250,6 +271,12 @@ export async function persistState(snapshot: string) {
   await store.store('state.json', snapshot)
 }
 `,
+      },
+      // 代码导航长文件 fixture：longTarget 定义在第 6 行、createServiceKey
+      // 调用在第 100 行（见上方 LONG_REFERENCE_TS 的行号注释）。
+      'src/long-reference.ts': {
+        mime: 'text/typescript',
+        content: `${LONG_REFERENCE_TS}\n`,
       },
       // Post-image of the preset unstaged diff in createMockGitBackend(): the
       // uptime week3 cell changed to 99.98 and the throughput row was added.

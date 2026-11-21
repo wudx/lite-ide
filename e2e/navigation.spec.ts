@@ -48,8 +48,9 @@ async function clickSymbol(
   word: string,
   target: SymbolClickTarget,
   modifiers?: { modifiers: ('Control' | 'Meta' | 'Shift' | 'Alt')[] },
+  occurrence = 0,
 ): Promise<void> {
-  const loc = page.getByText(word, { exact: true }).first()
+  const loc = page.getByText(word, { exact: true }).nth(occurrence)
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await loc.click(modifiers)
     const status = (await page.locator('footer').textContent()) ?? ''
@@ -67,6 +68,39 @@ async function clickSymbol(
   throw new Error(
     `cursor never landed inside "${word}" (want line ${target.line} cols ${target.colStart}-${target.colEnd})`,
   )
+}
+
+/** Scroll the editor (CodeMirror's virtual viewport only renders near lines). */
+async function scrollEditorTo(page: Page, scrollTop: number): Promise<void> {
+  await page.evaluate((top) => {
+    const el = document.querySelector<HTMLElement>('.cm-scroller')
+    if (el) el.scrollTop = top
+  }, scrollTop)
+  await page.waitForTimeout(150)
+}
+
+async function readEditorScroll(page: Page): Promise<number> {
+  return page.evaluate(
+    () => document.querySelector<HTMLElement>('.cm-scroller')?.scrollTop ?? 0,
+  )
+}
+
+/**
+ * True while the editor line containing `snippet` is inside the viewport.
+ * Text-matched (not index-based) because CodeMirror's virtual viewport
+ * renders only a contiguous block of lines around the current scroll.
+ */
+async function editorLineWithTextInView(page: Page, snippet: string): Promise<boolean> {
+  return page.evaluate((s) => {
+    const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+    const target = [...document.querySelectorAll('.cm-line')].find((l) =>
+      (l.textContent ?? '').includes(s),
+    )
+    if (!scroller || !target) return false
+    const a = target.getBoundingClientRect()
+    const b = scroller.getBoundingClientRect()
+    return a.bottom > b.top && a.top < b.bottom
+  }, snippet)
 }
 
 test('F12 jumps from a usage in services.ts to the definition in kernel.ts', async ({
@@ -120,23 +154,27 @@ test('Shift+F12 opens the references panel and rows jump to their location', asy
   const panel = page.getByRole('dialog', { name: PANEL })
   await expect(panel).toBeVisible()
   const rows = panel.locator('[data-navigation-row]')
-  await expect(rows).toHaveCount(3)
-  // Definition row (kernel.ts) is flagged; services.ts references follow.
+  // Six occurrences: kernel.ts def, long-reference.ts import + comment + call
+  // (the word scan is regex-based, so the line-99 comment counts too),
+  // services.ts import + call. Current file first, then path order.
+  await expect(rows).toHaveCount(6)
   await expect(rows.first()).toHaveAttribute('data-rel-path', 'src/kernel.ts')
-  await expect(rows.nth(1)).toHaveAttribute('data-rel-path', 'src/services.ts')
+  await expect(rows.nth(1)).toHaveAttribute('data-rel-path', 'src/long-reference.ts')
+  await expect(rows.nth(4)).toHaveAttribute('data-rel-path', 'src/services.ts')
   await expect(panel.getByText('定义', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('nav-references-panel.png'), animations: 'disabled' })
 
   // Clicking a reference row reveals it and keeps the panel open for browsing.
-  await rows.nth(1).click()
+  await panel.locator('[data-navigation-row][data-rel-path="src/services.ts"]').first().click()
   await expect(page.getByRole('tab', { name: 'services.ts' })).toBeVisible()
   await expect(panel).toBeVisible()
 
   // Keyboard flow: focus returns to the panel, ArrowDown moves the highlight
-  // (mouse hover left it on row 1) and Enter reveals the selected reference.
+  // (mouse hover left it on the services.ts:1 row) and Enter reveals the next
+  // reference (services.ts:9).
   await panel.focus()
   await page.keyboard.press('ArrowDown')
-  await expect(rows.nth(2)).toHaveAttribute('aria-selected', 'true')
+  await expect(rows.nth(5)).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Enter')
   await expect(page.getByText('第 9 行', { exact: false })).toBeVisible()
   await expect(panel).toBeVisible()
@@ -176,6 +214,61 @@ test('navigation without a code cursor shows guidance instead of jumping', async
   await page.screenshot({ path: testInfo.outputPath('nav-no-cursor.png'), animations: 'disabled' })
   await page.keyboard.press('Escape')
   await expect(panel).toBeHidden()
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('jumping away and back preserves the source file line and scroll', async ({ page }) => {
+  const consoleErrors = await trackConsoleErrors(page)
+  await openFile(page, 'long-reference.ts')
+
+  // The createServiceKey call sits at line 100. CodeMirror only renders
+  // lines near the viewport, so scroll down first — afterwards the deep call
+  // is the only mounted occurrence of the word (the line-3 import is gone).
+  await scrollEditorTo(page, 100_000)
+  await clickSymbol(page, 'createServiceKey', { line: 100, colStart: 27, colEnd: 42 })
+  const scrollBefore = await readEditorScroll(page)
+  expect(scrollBefore).toBeGreaterThan(100)
+
+  await page.keyboard.press('F12')
+  await expect(page.getByRole('tab', { name: 'kernel.ts' })).toBeVisible()
+  await expect(page.getByText('第 5 行', { exact: false })).toBeVisible()
+
+  // Returning to the source tab must restore both the cursor line and the
+  // exact scroll position the user left behind (±4px for fractional scroll
+  // clamping at lineHeight granularity).
+  await page.getByRole('tab', { name: 'long-reference.ts' }).click()
+  await expect(page.getByText('第 100 行', { exact: false })).toBeVisible()
+  await expect
+    .poll(async () => Math.abs((await readEditorScroll(page)) - scrollBefore))
+    .toBeLessThanOrEqual(4)
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('reveal into a previously viewed file centers the target line', async ({ page }) => {
+  const consoleErrors = await trackConsoleErrors(page)
+  // Open the long file first and scroll deep, so it gains an editor-cache
+  // entry whose stored scroll position is far from the jump target.
+  await openFile(page, 'long-reference.ts')
+  await scrollEditorTo(page, 100_000)
+  await clickSymbol(page, 'createServiceKey', { line: 100, colStart: 27, colEnd: 42 })
+
+  await page.getByRole('treeitem', { name: 'kernel.ts' }).click()
+  await expect(page.getByRole('tab', { name: 'kernel.ts' })).toBeVisible()
+
+  // F12 on the appended longTarget() call (kernel.ts line 15) → definition at
+  // long-reference.ts line 6. The cached deep-scroll restoration must not
+  // yank the view back on the next animation frame.
+  await clickSymbol(page, 'longTarget', { line: 15, colStart: 1, colEnd: 10 })
+  await page.keyboard.press('F12')
+
+  await expect(page.getByRole('tab', { name: 'long-reference.ts' })).toBeVisible()
+  await expect(page.getByText('第 6 行', { exact: false })).toBeVisible()
+  // Line-based viewport check (the 1.6s flash decoration is timing-fragile).
+  await expect
+    .poll(() => editorLineWithTextInView(page, 'export function longTarget(): string'))
+    .toBe(true)
 
   expect(consoleErrors).toEqual([])
 })

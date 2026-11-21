@@ -461,7 +461,6 @@ export default function CodePreview(props: PreviewProps) {
   let isApplyingExternal = false
   let readSeq = 0
   let langSeq = 0
-  let lastRevealSeq = -1
   let flashTimer: ReturnType<typeof setTimeout> | undefined
 
   /** Jump to a navigation location: place the cursor, center the line, flash. */
@@ -490,11 +489,14 @@ export default function CodePreview(props: PreviewProps) {
 
   /** Consume a pending reveal that matches the currently mounted buffer. */
   function consumePendingReveal() {
-    const request = navigation?.revealRequest()
-    if (!request || !view) return
+    if (!navigation || !view) return
+    const request = navigation.revealRequest()
+    if (!request) return
     if (request.relPath !== mountedRelPath) return
-    if (request.seq === lastRevealSeq) return
-    lastRevealSeq = request.seq
+    // Consumption state lives on the service, surviving previewer remounts:
+    // a reveal applied once (possibly minutes ago) must never re-fire.
+    if (request.seq <= navigation.revealConsumedSeq()) return
+    navigation.markRevealConsumed(request.seq)
     performReveal(request)
   }
 
@@ -607,6 +609,17 @@ export default function CodePreview(props: PreviewProps) {
     mountedDiskRevision = buf.diskRevision
     mountedMaxBytes = buf.maxBytes
 
+    // A pending reveal for the incoming buffer takes over scrolling (its
+    // scrollIntoView below must win). Restoring the cached scroll in a rAF
+    // would otherwise fire one frame later and yank the view back to the
+    // file's previous position, hiding the jump target on long files.
+    const pendingReveal = navigation?.revealRequest()
+    const revealTakesScroll = Boolean(
+      pendingReveal &&
+        pendingReveal.relPath === buf.relPath &&
+        pendingReveal.seq > (navigation?.revealConsumedSeq() ?? -1),
+    )
+
     isApplyingExternal = true
     try {
       if (canRestoreCached && cached) {
@@ -622,14 +635,26 @@ export default function CodePreview(props: PreviewProps) {
             phrasesCompartment.reconfigure(getPhrasesExtension(currentLocale)),
           ],
         })
-        const targetScrollTop = cached.scrollTop
-        const targetScrollLeft = cached.scrollLeft
-        requestAnimationFrame(() => {
-          if (view && mountedRelPath === buf.relPath) {
-            view.scrollDOM.scrollTop = targetScrollTop
-            view.scrollDOM.scrollLeft = targetScrollLeft
-          }
-        })
+        if (!revealTakesScroll) {
+          const targetScrollTop = cached.scrollTop
+          const targetScrollLeft = cached.scrollLeft
+          // The reveal request may arrive AFTER this frame is queued (the
+          // buffer was already loaded, so applyBufferToView runs during
+          // selectFile's await, before revealLocation sets the request).
+          // Skip the restore if a reveal was consumed in the meantime — its
+          // scrollIntoView must win over the cached scroll.
+          const consumedAtQueue = navigation?.revealConsumedSeq() ?? -1
+          requestAnimationFrame(() => {
+            if (
+              view &&
+              mountedRelPath === buf.relPath &&
+              (navigation?.revealConsumedSeq() ?? -1) === consumedAtQueue
+            ) {
+              view.scrollDOM.scrollTop = targetScrollTop
+              view.scrollDOM.scrollLeft = targetScrollLeft
+            }
+          })
+        }
       } else {
         const nextState = EditorState.create({
           doc: buf.content,
@@ -780,12 +805,12 @@ export default function CodePreview(props: PreviewProps) {
   createEffect(() => {
     const request = navigation?.revealRequest()
     const buf = activeBuffer()
-    if (!request || !buf) return
+    if (!request || !buf || !navigation) return
     if (request.relPath !== buf.relPath) return
-    if (request.seq === lastRevealSeq) return
+    if (request.seq <= navigation.revealConsumedSeq()) return
     // Buffer content may still be loading; applyBufferToView will consume it.
     if (buf.relPath !== mountedRelPath) return
-    lastRevealSeq = request.seq
+    navigation.markRevealConsumed(request.seq)
     performReveal(request)
   })
 

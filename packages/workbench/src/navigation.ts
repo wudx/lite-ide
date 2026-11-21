@@ -50,6 +50,13 @@ export interface CodeNavigationService {
   readonly revealRequest: () => RevealLocationRequest | null
   /** Open `relPath` (if needed) and ask the editor to reveal line/column. */
   revealLocation(relPath: string, line: number, column?: number): Promise<void>
+  /**
+   * Highest reveal seq already applied by an editor. Consumption state lives
+   * on the service (not the previewer component) so it survives previewer
+   * unmount/remount cycles — a stale reveal must never re-fire.
+   */
+  readonly revealConsumedSeq: () => number
+  markRevealConsumed(seq: number): void
   readonly panel: () => NavigationPanelState | null
   closePanel(): void
   /** F12 — jump straight when unique, otherwise list candidates in the panel. */
@@ -83,6 +90,7 @@ export function createNavigationService(
   const [cursor, setCursor] = createSignal<EditorCursorInfo | null>(null)
   const [revealRequest, setRevealRequest] = createSignal<RevealLocationRequest | null>(null)
   const [panel, setPanel] = createSignal<NavigationPanelState | null>(null)
+  const [revealConsumedSeq, setRevealConsumedSeq] = createSignal(-1)
   let revealSeq = 0
   let actionSeq = 0
 
@@ -284,6 +292,11 @@ export function createNavigationService(
     setCursor,
     revealRequest,
     revealLocation,
+    revealConsumedSeq,
+    markRevealConsumed(seq: number) {
+      // Monotonic: an older reveal consumed after a newer one stays consumed.
+      if (seq > revealConsumedSeq()) setRevealConsumedSeq(seq)
+    },
     panel,
     closePanel() {
       setPanel(null)
