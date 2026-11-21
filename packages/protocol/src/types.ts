@@ -54,11 +54,19 @@ export interface PickFolderOptions {
 
 /**
  * Manifest of an installable external plugin (`plugin.json` inside the plugin
- * folder). Entry scripts are classic scripts registering themselves through
- * the injected `liteide.plugin({...})` global at load time.
+ * folder). Two entry formats are supported:
+ *
+ * - `classic` (default): a plain script registering through the injected
+ *   `liteide.plugin({...})` global at load time (samples' `main.js`).
+ * - `bundle`: a CommonJS single file built from ordinary ES imports; shared
+ *   modules (`solid-js`, workspace packages, the `liteide` host API) stay
+ *   external and are injected by the plugin loader's require table.
  */
 export interface PluginManifest {
-  /** Unique id: ASCII letters, digits, `-` and `_` (also the folder name). */
+  /**
+   * Unique id: ASCII letters, digits, `-`, `_` and internal `.` (also the
+   * folder name; leading/trailing dots rejected).
+   */
   id: string
   name: string
   version: string
@@ -66,6 +74,14 @@ export interface PluginManifest {
   author?: string
   /** Entry script filename inside the plugin folder; defaults to `main.js`. */
   main?: string
+  /** Entry format; absent or `classic` = plain script, `bundle` = CJS file. */
+  format?: 'classic' | 'bundle'
+  /** Stylesheet asset filename; injected as a `<style>` tag while the plugin runs. */
+  css?: string
+  /** Lazy script chunks: logical name → asset filename, eval'd on `liteide.loadChunk(name)`. */
+  chunks?: Record<string, string>
+  /** Host plugin API version required by the plugin (bundle plugins set 2). */
+  api?: number
 }
 
 /** A plugin installed in the backend-managed plugins directory. */
@@ -278,6 +294,8 @@ export interface WorkspaceBackend {
   pluginUninstall?(pluginId: string): Promise<void>
   /** Entry script source of an installed plugin, ready for evaluation. */
   pluginReadEntry?(pluginId: string): Promise<string>
+  /** Text asset (stylesheet or script chunk) of an installed plugin. */
+  pluginReadAsset?(pluginId: string, fileName: string): Promise<string>
   /** Installable catalog; absent when the backend ships no catalog. */
   pluginCatalog?(): Promise<CatalogPlugin[]>
 }

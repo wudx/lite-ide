@@ -47,24 +47,9 @@ importers:
       '@lite-ide/plugin-git':
         specifier: workspace:*
         version: link:../../plugins/git
-      '@lite-ide/plugin-preview-audio':
-        specifier: workspace:*
-        version: link:../../plugins/preview-audio
       '@lite-ide/plugin-preview-code':
         specifier: workspace:*
         version: link:../../plugins/preview-code
-      '@lite-ide/plugin-preview-fallback':
-        specifier: workspace:*
-        version: link:../../plugins/preview-fallback
-      '@lite-ide/plugin-preview-image':
-        specifier: workspace:*
-        version: link:../../plugins/preview-image
-      '@lite-ide/plugin-preview-markdown':
-        specifier: workspace:*
-        version: link:../../plugins/preview-markdown
-      '@lite-ide/plugin-theme-nord':
-        specifier: workspace:*
-        version: link:../../plugins/theme-nord
       '@lite-ide/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -100,6 +85,16 @@ importers:
         specifier: ^1.9.19
         version: 1.9.19
 
+  packages/plugin-sdk:
+    dependencies:
+      '@lite-ide/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/protocol:
     dependencies:
       '@tauri-apps/api':
@@ -117,6 +112,9 @@ importers:
       '@lite-ide/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@lite-ide/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@lite-ide/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -192,6 +190,13 @@ importers:
       solid-js:
         specifier: ^1.9.19
         version: 1.9.19
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/preview-code:
     dependencies:
@@ -252,6 +257,13 @@ importers:
       solid-js:
         specifier: ^1.9.19
         version: 1.9.19
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/preview-image:
     dependencies:
@@ -270,6 +282,13 @@ importers:
       solid-js:
         specifier: ^1.9.19
         version: 1.9.19
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/preview-markdown:
     dependencies:
@@ -295,18 +314,58 @@ importers:
         specifier: ^1.9.19
         version: 1.9.19
     devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
       '@types/dompurify':
         specifier: ^3.2.0
         version: 3.2.0
       '@types/markdown-it':
         specifier: ^14.2.0
         version: 14.2.0
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/theme-nord:
     dependencies:
       '@lite-ide/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+
+  samples/plugins/bundle-notes:
+    dependencies:
+      '@lite-ide/kernel':
+        specifier: workspace:*
+        version: link:../../../packages/kernel
+      '@lite-ide/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-sdk
+      '@lite-ide/protocol':
+        specifier: workspace:*
+        version: link:../../../packages/protocol
+      '@lite-ide/workbench':
+        specifier: workspace:*
+        version: link:../../../packages/workbench
+      lucide-solid:
+        specifier: ^1.76.0
+        version: 1.76.0(solid-js@1.9.19)
+      solid-js:
+        specifier: ^1.9.19
+        version: 1.9.19
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.4.6
+        version: 6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)
+      vite-plugin-solid:
+        specifier: ^2.11.17
+        version: 2.11.17(solid-js@1.9.19)(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
 
 packages:
 

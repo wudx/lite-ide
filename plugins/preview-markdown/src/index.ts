@@ -1,4 +1,8 @@
 import type { Plugin } from '@lite-ide/kernel'
+// Bundle-format build: the preview component is statically imported so the
+// CJS dist stays a single file (no rollup dynamic-import chunks).
+import MarkdownPreview from './MarkdownPreview'
+import './plugin.css'
 
 const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx'])
 
@@ -29,7 +33,9 @@ export const previewMarkdownPlugin: Plugin = {
       labelKey: 'previewMarkdown.label',
       priority: 50,
       canHandle: (file) => !file.isBinary && MARKDOWN_EXTS.has(file.ext),
-      load: () => import('./MarkdownPreview'),
+      load: () => Promise.resolve({ default: MarkdownPreview }),
     })
   },
 }
+
+export default previewMarkdownPlugin

@@ -535,6 +535,8 @@ const MOCK_PLUGIN_STORE_KEY = 'lite-ide.mock-plugins.v1'
 interface StoredMockPlugin {
   manifest: PluginManifest
   mainJs: string
+  /** Extra text assets keyed by bare filename (stylesheet / lazy chunks). */
+  assets?: Record<string, string>
   installedMs: number
 }
 
@@ -988,6 +990,7 @@ export function createMockBackend(): WorkspaceBackend {
       const installed: StoredMockPlugin = {
         manifest: sample.manifest,
         mainJs: sample.mainJs,
+        assets: sample.assets,
         installedMs: Date.now(),
       }
       store[catalogId] = installed
@@ -1012,6 +1015,17 @@ export function createMockBackend(): WorkspaceBackend {
       const entry = store[pluginId]
       if (!entry) throw new Error(`Plugin not installed: ${pluginId}`)
       return entry.mainJs
+    },
+
+    async pluginReadAsset(pluginId: string, fileName: string): Promise<string> {
+      const store = loadMockPluginStore()
+      const entry = store[pluginId]
+      if (!entry) throw new Error(`Plugin not installed: ${pluginId}`)
+      const asset = entry.assets?.[fileName]
+      if (typeof asset !== 'string') {
+        throw new Error(`Plugin asset not found: ${pluginId}/${fileName}`)
+      }
+      return asset
     },
 
     resolveFileUrl(projectId: string, relPath: string): string {

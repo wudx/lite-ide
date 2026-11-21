@@ -145,6 +145,8 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'plugins.installFromFolderTitle': '选择包含 plugin.json 的插件文件夹',
   'plugins.rootPath': '插件目录：{path}',
   'plugins.unsupported': '当前后端不支持插件管理。',
+  'plugins.embedded': '内置',
+  'plugins.embeddedHint': '内置插件随应用分发，可停用但不可卸载',
   'plugins.opFailed': '操作失败：{message}',
 
   // QuickOpenDialog
@@ -378,6 +380,8 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'plugins.installFromFolderTitle': 'Choose a plugin folder with plugin.json',
   'plugins.rootPath': 'Plugins directory: {path}',
   'plugins.unsupported': 'Plugin management is not supported by this backend.',
+  'plugins.embedded': 'Built-in',
+  'plugins.embeddedHint': 'Built-in plugin ships with the app; it can be disabled but not uninstalled',
   'plugins.opFailed': 'Operation failed: {message}',
 
   // QuickOpenDialog

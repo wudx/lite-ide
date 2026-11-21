@@ -1,0 +1,25 @@
+{
+  "name": "@lite-ide/sample-plugin-bundle-notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bundle-format sample external plugin for LiteIDE (notes sidebar + chunked previewer)",
+  "scripts": {
+    "build:plugin": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.6",
+    "vite-plugin-solid": "^2.11.17"
+  },
+  "dependencies": {
+    "@lite-ide/kernel": "workspace:*",
+    "@lite-ide/plugin-sdk": "workspace:*",
+    "@lite-ide/protocol": "workspace:*",
+    "@lite-ide/workbench": "workspace:*",
+    "lucide-solid": "^1.76.0",
+    "solid-js": "^1.9.19"
+  }
+}

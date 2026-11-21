@@ -1,0 +1,14 @@
+{
+  "id": "bundle-notes",
+  "name": "Bundle Notes",
+  "version": "0.1.0",
+  "description": "Bundle-format sample: notes sidebar, i18n, own service key and a lazily-loaded .log previewer chunk",
+  "author": "LiteIDE samples",
+  "main": "plugin.js",
+  "format": "bundle",
+  "css": "plugin.css",
+  "chunks": {
+    "logView": "log-view.js"
+  },
+  "api": 2
+}

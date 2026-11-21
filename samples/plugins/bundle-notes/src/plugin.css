@@ -1,0 +1,11 @@
+/*
+ * Plugin stylesheet shipped as a manifest `css` asset and injected by the
+ * host while the plugin runs. Theme + utilities layers only — never import
+ * preflight (it would reset host page styles). Utilities used by the plugin
+ * components are compiled from source scanning; classes referenced from the
+ * host's global stylesheet (glass-pill etc.) are NOT redeclared here.
+ */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+/* Plugin-owned custom classes (if any) go here. */

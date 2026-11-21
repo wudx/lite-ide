@@ -24,7 +24,9 @@ export default defineConfig({
     permissions: ['clipboard-read', 'clipboard-write'],
   },
   webServer: {
-    command: `node apps/desktop/node_modules/vite/bin/vite.js apps/desktop --host 127.0.0.1 --port ${port} --strictPort`,
+    // 嵌入式内置插件的 dist 不在 git 里（可由 build:plugins 再生），
+    // fresh clone 上必须先产出，否则 main.tsx 的 ?raw 导入解析失败。
+    command: `pnpm build:plugins && node apps/desktop/node_modules/vite/bin/vite.js apps/desktop --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

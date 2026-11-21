@@ -1,5 +1,9 @@
 import type { Plugin } from '@lite-ide/kernel'
 import { isAudioExtension } from '@lite-ide/workbench'
+// Bundle-format build: the preview component is statically imported so the
+// CJS dist stays a single file (no rollup dynamic-import chunks).
+import AudioPreview from './AudioPreview'
+import './plugin.css'
 
 export const previewAudioPlugin: Plugin = {
   id: 'builtin.preview-audio',
@@ -60,7 +64,9 @@ export const previewAudioPlugin: Plugin = {
       labelKey: 'previewAudio.label',
       priority: 60,
       canHandle: (file) => isAudioExtension(file.ext),
-      load: () => import('./AudioPreview'),
+      load: () => Promise.resolve({ default: AudioPreview }),
     })
   },
 }
+
+export default previewAudioPlugin

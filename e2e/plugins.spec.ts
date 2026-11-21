@@ -32,7 +32,9 @@ test('plugins section lists the catalog and installs the Hello Status plugin', a
   await expect(page.getByRole('tree')).toBeVisible()
 
   const dialog = await openPluginsSection(page)
-  await expect(dialog.getByText('尚未安装任何插件')).toBeVisible()
+  // 嵌入式内置插件常驻已安装列表（可停用、不可卸载）。
+  await expect(dialog.getByTestId('plugin-embedded-builtin.preview-markdown')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-uninstall-builtin.preview-markdown')).toHaveCount(0)
   await expect(dialog.getByText('可安装的插件')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('plugins-section.png'), animations: 'disabled' })
 
@@ -154,7 +156,9 @@ test('uninstalling (two-click confirm) removes plugins and their contributions',
   await dialog.getByTestId('plugin-uninstall-hello-status').click()
   await dialog.getByTestId('plugin-uninstall-hello-status').click()
   await expect(page.getByText('你好，插件！')).toHaveCount(0)
-  await expect(dialog.getByText('尚未安装任何插件')).toBeVisible()
+  // 用户插件全部卸载后，嵌入式内置插件仍在列且不受影响。
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-nord')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-status-hello-status')).toHaveCount(0)
 
   // The store is emptied and catalog entries come back.
   const store = JSON.parse(
@@ -162,6 +166,81 @@ test('uninstalling (two-click confirm) removes plugins and their contributions',
   )
   expect(Object.keys(store)).toEqual([])
   await expect(dialog.getByTestId('plugin-catalog-install-hello-status')).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('catalog install of the bundle-format sample activates sidebar, css and chunked previewer', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  const dialog = await openPluginsSection(page)
+  // bundle-notes 样例：format=bundle + css 资产 + 懒加载 chunk 的全能力样例。
+  await dialog.getByTestId('plugin-catalog-install-bundle-notes').click()
+  await expect(dialog.getByTestId('plugin-status-bundle-notes')).toHaveText('运行中')
+
+  // 关闭设置对话框，回到工作台验证贡献。
+  await dialog.getByRole('button', { name: '关闭' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 侧栏出现「笔记」视图（bundle 里的 Solid 组件经宿主 solid 单例渲染）。
+  const notesTab = page.getByRole('button', { name: '笔记' })
+  await expect(notesTab).toBeVisible()
+  await notesTab.click()
+  await expect(page.getByPlaceholder('记录一条笔记…')).toBeVisible()
+
+  // manifest.css 资产经 pluginReadAsset 注入 <style> 标签。
+  const styleTag = await page.evaluate(() =>
+    document.querySelector('style[data-liteide-plugin="bundle-notes"]')?.textContent.slice(0, 60),
+  )
+  expect(styleTag).toBeTruthy()
+
+  // 添加一条笔记：插件自有服务键 + localStorage 持久化。
+  await page.getByPlaceholder('记录一条笔记…').fill('hello from bundle plugin')
+  await page.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByText('hello from bundle plugin')).toBeVisible()
+  const noteStore = await page.evaluate(() =>
+    Object.keys(localStorage).filter((k) => k.startsWith('lite-ide.sample.bundle-notes.')),
+  )
+  expect(noteStore).toHaveLength(1)
+  await page.screenshot({
+    path: testInfo.outputPath('plugins-bundle-notes.png'),
+    animations: 'disabled',
+  })
+
+  // chunk 预览器：新建 .log 文件 → previewer.provider load() 经
+  // liteide.loadChunk('logView') 求值 log-view.js → 行号预览。
+  await page.getByRole('button', { name: '资源管理器' }).click()
+  await page.getByRole('button', { name: '新建文件', exact: true }).click()
+  const nameInput = page.getByPlaceholder('新文件名称…')
+  await expect(nameInput).toBeVisible()
+  await nameInput.fill('error.log')
+  await nameInput.press('Enter')
+  const logEntry = page.getByRole('treeitem').filter({ hasText: 'error.log' }).first()
+  await expect(logEntry).toBeVisible()
+  await logEntry.click()
+  // 行号 "1" 出现即代表懒 chunk 已求值并渲染。
+  await expect(page.locator('pre').filter({ hasText: /^1/ }).first()).toBeVisible({ timeout: 10_000 })
+  await page.screenshot({
+    path: testInfo.outputPath('plugins-bundle-log-chunk.png'),
+    animations: 'disabled',
+  })
+
+  // 卸载：贡献与注入的样式一起移除。
+  const dialog2 = await openPluginsSection(page)
+  await dialog2.getByTestId('plugin-uninstall-bundle-notes').click()
+  await dialog2.getByTestId('plugin-uninstall-bundle-notes').click()
+  await expect(dialog2.getByTestId('plugin-status-bundle-notes')).toHaveCount(0)
+  await dialog2.getByRole('button', { name: '关闭' }).click()
+  await expect(page.getByRole('button', { name: '笔记' })).toHaveCount(0)
+  expect(
+    await page.evaluate(
+      () => document.querySelector('style[data-liteide-plugin="bundle-notes"]'),
+    ),
+  ).toBeNull()
 
   expect(consoleErrors).toEqual([])
 })

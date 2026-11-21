@@ -3,31 +3,72 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { explorerPlugin } from '@lite-ide/plugin-explorer'
 import { gitPlugin } from '@lite-ide/plugin-git'
-import { previewAudioPlugin } from '@lite-ide/plugin-preview-audio'
 import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
-import { previewFallbackPlugin } from '@lite-ide/plugin-preview-fallback'
-import { previewImagePlugin } from '@lite-ide/plugin-preview-image'
-import { previewMarkdownPlugin } from '@lite-ide/plugin-preview-markdown'
-import { themeNordPlugin } from '@lite-ide/plugin-theme-nord'
-import { createDefaultBackend, MOCK_DEMO_PATHS } from '@lite-ide/protocol'
-import { createWorkbenchKernel, WorkbenchShell } from '@lite-ide/workbench'
+import { createDefaultBackend, MOCK_DEMO_PATHS, type PluginManifest } from '@lite-ide/protocol'
+import {
+  createWorkbenchKernel,
+  WorkbenchShell,
+  type EmbeddedPluginSource,
+} from '@lite-ide/workbench'
 import { render } from 'solid-js/web'
+// 嵌入式内置插件（"一切皆插件"）：按外部插件格式构建的 dist 内联进应用包，
+// 与用户安装的外部插件走同一加载器。dist 由根脚本 `build:plugins` 产出，
+// dev 时可运行 `watch:plugins` 让改动即时生效。
+import previewAudioManifest from '../../../plugins/preview-audio/plugin.json'
+import previewAudioSource from '../../../plugins/preview-audio/dist/plugin.js?raw'
+import previewAudioCss from '../../../plugins/preview-audio/dist/plugin.css?raw'
+import previewFallbackManifest from '../../../plugins/preview-fallback/plugin.json'
+import previewFallbackSource from '../../../plugins/preview-fallback/dist/plugin.js?raw'
+import previewFallbackCss from '../../../plugins/preview-fallback/dist/plugin.css?raw'
+import previewImageManifest from '../../../plugins/preview-image/plugin.json'
+import previewImageSource from '../../../plugins/preview-image/dist/plugin.js?raw'
+import previewImageCss from '../../../plugins/preview-image/dist/plugin.css?raw'
+import previewMarkdownManifest from '../../../plugins/preview-markdown/plugin.json'
+import previewMarkdownSource from '../../../plugins/preview-markdown/dist/plugin.js?raw'
+import previewMarkdownCss from '../../../plugins/preview-markdown/dist/plugin.css?raw'
+import themeNordManifest from '../../../plugins/theme-nord/plugin.json'
+import themeNordSource from '../../../plugins/theme-nord/dist/plugin.js?raw'
 
 const OPEN_PROJECTS_STORAGE_KEY = 'lite-ide.openProjects.v1'
 const ACTIVE_PROJECT_STORAGE_KEY = 'lite-ide.activeProject.v1'
 
-const backend = createDefaultBackend()
-const kernel = createWorkbenchKernel(backend, 5)
+// resolveJsonModule 把可选联合字段宽化为 string，这里收窄回契约类型。
+const asManifest = (m: unknown) => m as PluginManifest
 
-// Register all first-party built-in plugins through the micro-kernel API.
+const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
+  {
+    manifest: asManifest(themeNordManifest),
+    source: themeNordSource,
+  },
+  {
+    manifest: asManifest(previewMarkdownManifest),
+    source: previewMarkdownSource,
+    assets: { 'plugin.css': previewMarkdownCss },
+  },
+  {
+    manifest: asManifest(previewImageManifest),
+    source: previewImageSource,
+    assets: { 'plugin.css': previewImageCss },
+  },
+  {
+    manifest: asManifest(previewAudioManifest),
+    source: previewAudioSource,
+    assets: { 'plugin.css': previewAudioCss },
+  },
+  {
+    manifest: asManifest(previewFallbackManifest),
+    source: previewFallbackSource,
+    assets: { 'plugin.css': previewFallbackCss },
+  },
+]
+
+const backend = createDefaultBackend()
+const kernel = createWorkbenchKernel(backend, 5, { embeddedPlugins: EMBEDDED_PLUGINS })
+
+// 仍以内核 API 直接注册的重型内置插件（后续逐个迁出为外部格式）。
 kernel.registerPlugin(explorerPlugin)
 kernel.registerPlugin(gitPlugin)
 kernel.registerPlugin(previewCodePlugin)
-kernel.registerPlugin(previewMarkdownPlugin)
-kernel.registerPlugin(previewImagePlugin)
-kernel.registerPlugin(previewAudioPlugin)
-kernel.registerPlugin(previewFallbackPlugin)
-kernel.registerPlugin(themeNordPlugin)
 
 let restoringSession = true
 

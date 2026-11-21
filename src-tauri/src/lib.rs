@@ -404,7 +404,8 @@ pub fn run() {
             plugins::plugin_install_from_path,
             plugins::plugin_install_from_catalog,
             plugins::plugin_uninstall,
-            plugins::plugin_read_entry
+            plugins::plugin_read_entry,
+            plugins::plugin_read_asset
         ])
         .run(tauri::generate_context!())
         .expect("error while running LiteIDE");

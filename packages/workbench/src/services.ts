@@ -19,7 +19,7 @@ import {
 } from './editor-buffers'
 import { createI18nState, I18nStateKey } from './i18n'
 import { createNavigationService, CodeNavigationKey } from './navigation'
-import { createPluginRegistry, PluginRegistryKey } from './plugin-registry'
+import { createPluginRegistry, PluginRegistryKey, type EmbeddedPluginSource } from './plugin-registry'
 import { createQuickOpenService, QuickOpenKey } from './quick-open'
 import { createSymbolIndexService, SymbolIndexKey } from './symbol-index'
 
@@ -598,6 +598,7 @@ export function createKernelHostFromBackend(backend: WorkspaceBackend): KernelPr
 export function createWorkbenchKernel(
   backend: WorkspaceBackend,
   maxWarmProjects = 5,
+  options: { embeddedPlugins?: readonly EmbeddedPluginSource[] } = {},
 ): AppKernel {
   const kernel = createAppKernel({
     host: createKernelHostFromBackend(backend),
@@ -612,7 +613,10 @@ export function createWorkbenchKernel(
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   kernel.provide(QuickOpenKey, createQuickOpenService())
   kernel.provide(AiModelKey, createAiModelService())
-  // 外部插件注册表：构造时自动从后端拉取已装列表并激活启用项。
-  kernel.provide(PluginRegistryKey, createPluginRegistry(kernel, backend))
+  // 外部插件注册表：构造时激活嵌入式内置插件，并自动从后端拉取已装列表。
+  kernel.provide(
+    PluginRegistryKey,
+    createPluginRegistry(kernel, backend, options.embeddedPlugins ?? []),
+  )
   return kernel
 }

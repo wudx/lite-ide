@@ -1,0 +1,7 @@
+/*
+ * Plugin stylesheet shipped as the manifest `css` asset and injected by the
+ * host while the plugin runs. Theme + utilities layers only — never preflight.
+ */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+

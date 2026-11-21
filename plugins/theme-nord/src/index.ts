@@ -118,3 +118,5 @@ export const themeNordPlugin: Plugin = {
     })
   },
 }
+
+export default themeNordPlugin

@@ -167,6 +167,10 @@ export function createTauriBackend(): WorkspaceBackend {
       return invoke<string>('plugin_read_entry', { pluginId })
     },
 
+    async pluginReadAsset(pluginId: string, fileName: string): Promise<string> {
+      return invoke<string>('plugin_read_asset', { pluginId, fileName })
+    },
+
     async pluginCatalog(): Promise<CatalogPlugin[]> {
       return invoke<CatalogPlugin[]>('plugin_catalog')
     },

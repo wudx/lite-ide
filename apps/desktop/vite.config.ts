@@ -23,8 +23,6 @@ export default defineConfig({
       '@lite-ide/protocol > @tauri-apps/api/window',
       '@lite-ide/protocol > @tauri-apps/plugin-dialog',
       '@lite-ide/plugin-explorer > @tanstack/solid-virtual',
-      '@lite-ide/plugin-preview-markdown > markdown-it',
-      '@lite-ide/plugin-preview-markdown > dompurify',
       '@lite-ide/plugin-preview-code > @codemirror/commands',
       '@lite-ide/plugin-preview-code > @codemirror/language',
       '@lite-ide/plugin-preview-code > @codemirror/language-data',
@@ -41,9 +39,6 @@ export default defineConfig({
       '@lite-ide/plugin-explorer',
       '@lite-ide/plugin-git',
       '@lite-ide/plugin-preview-code',
-      '@lite-ide/plugin-preview-markdown',
-      '@lite-ide/plugin-preview-image',
-      '@lite-ide/plugin-preview-fallback',
     ],
   },
   build: {

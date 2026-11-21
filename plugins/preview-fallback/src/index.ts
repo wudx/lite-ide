@@ -1,4 +1,8 @@
 import type { Plugin } from '@lite-ide/kernel'
+// Bundle-format build: the preview component is statically imported so the
+// CJS dist stays a single file (no rollup dynamic-import chunks).
+import FallbackPreview from './FallbackPreview'
+import './plugin.css'
 
 export const previewFallbackPlugin: Plugin = {
   id: 'builtin.preview-fallback',
@@ -41,7 +45,9 @@ export const previewFallbackPlugin: Plugin = {
       labelKey: 'previewFallback.label',
       priority: 0,
       canHandle: () => true,
-      load: () => import('./FallbackPreview'),
+      load: () => Promise.resolve({ default: FallbackPreview }),
     })
   },
 }
+
+export default previewFallbackPlugin

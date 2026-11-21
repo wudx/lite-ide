@@ -5,6 +5,9 @@ node_modules/
 # Build outputs
 dist/
 *.tsbuildinfo
+# bundle-notes 样例 dist 是编译期内嵌资源（Rust include_str! + 前端 ?raw），必须检入；
+# 插件包自身的 dist 可由 `pnpm build:plugins` 再生，保持忽略。
+!samples/plugins/bundle-notes/dist/
 
 # Rust / Tauri
 src-tauri/target/

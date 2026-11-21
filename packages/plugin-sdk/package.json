@@ -1,0 +1,19 @@
+{
+  "name": "@lite-ide/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typing & authoring helpers for LiteIDE external plugins (bundle/classic formats)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lite-ide/kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

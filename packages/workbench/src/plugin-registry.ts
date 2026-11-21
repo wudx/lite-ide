@@ -3,9 +3,19 @@ import type {
   CatalogPlugin,
   InstalledPlugin,
   PluginListResult,
+  PluginManifest,
   WorkspaceBackend,
 } from '@lite-ide/protocol'
 import { batch, createMemo, createSignal, type Accessor } from 'solid-js'
+import {
+  HOST_API_VERSION,
+  buildHostRequire,
+  evaluateCjsModule,
+  injectPluginStyles,
+  normalizePluginDefinition,
+  removePluginStyles,
+  type LiteideHostApi,
+} from './plugin-host'
 
 export type ExternalPluginStatus = 'loading' | 'running' | 'stopped' | 'error'
 
@@ -17,10 +27,12 @@ export interface ExternalPluginState {
   enabled: boolean
   status: ExternalPluginStatus
   error: string | null
+  /** Embedded built-ins ship with the app and cannot be uninstalled. */
+  embedded: boolean
 }
 
 export interface PluginRegistryService {
-  /** True when the backend implements plugin management. */
+  /** True when the registry manages at least one source (embedded or backend). */
   readonly supported: boolean
   readonly states: Accessor<readonly ExternalPluginState[]>
   readonly catalog: Accessor<readonly CatalogPlugin[]>
@@ -39,6 +51,18 @@ export const PluginRegistryKey = createServiceKey<PluginRegistryService>(
 )
 
 const DISABLED_STORAGE_KEY = 'lite-ide.plugins.disabled.v1'
+
+/**
+ * An embedded built-in plugin: dist bundle inlined into the app (via `?raw`
+ * imports in apps/desktop) and loaded through the same evaluator as
+ * user-installed plugins — the "built-in extension" distribution model.
+ */
+export interface EmbeddedPluginSource {
+  manifest: PluginManifest
+  source: string
+  /** Bare filename → asset text (stylesheet / chunks), matching the manifest. */
+  assets?: Record<string, string>
+}
 
 function readDisabledIds(): Set<string> {
   if (typeof localStorage === 'undefined') return new Set()
@@ -62,13 +86,43 @@ function writeDisabledIds(ids: Set<string>): void {
   }
 }
 
+export interface EvaluateOptions {
+  pluginId: string
+  format: 'classic' | 'bundle'
+  loadChunk(name: string): Promise<Record<string, unknown>>
+}
+
 /**
- * Evaluates an external plugin's classic entry script and captures the
- * definition registered through the injected `liteide.plugin({...})` global.
- * CSP 未启用（tauri.conf.json csp: null），`new Function` 可用；脚本在
- * 独立全局捕获层下执行，结束后恢复 `liteide` 全局的旧值。
+ * Evaluates an external plugin entry and normalizes the registered
+ * definition. CSP 未启用（tauri.conf.json csp: null），`new Function` 可用。
+ *
+ * - `classic`: plain script under a swapped `globalThis.liteide` capture
+ *   shim (restored afterwards); registers via `liteide.plugin({...})`.
+ * - `bundle`: CommonJS source whose `require` resolves through the host
+ *   module table; accepts `module.exports.activate`,
+ *   `module.exports.default` or a `liteide.plugin()` capture.
  */
-export function evaluateExternalPlugin(source: string, pluginId: string): Plugin {
+export function evaluateExternalPlugin(source: string, options: EvaluateOptions): Plugin {
+  const { pluginId, format } = options
+
+  if (format === 'bundle') {
+    let captured: unknown
+    const liteide: LiteideHostApi = {
+      apiVersion: HOST_API_VERSION,
+      plugin(def) {
+        if (captured !== undefined) {
+          throw new Error(`Plugin "${pluginId}" calls liteide.plugin() more than once`)
+        }
+        captured = def
+      },
+      loadChunk: options.loadChunk,
+    }
+    const hostRequire = buildHostRequire(liteide)
+    const exports = evaluateCjsModule(source, hostRequire, liteide)
+    const normalized = normalizePluginDefinition(pluginId, exports, captured)
+    return { id: pluginId, name: normalized.name, activate: normalized.activate }
+  }
+
   const holder = globalThis as Record<string, unknown>
   const previous = holder.liteide
   let captured: unknown
@@ -112,8 +166,10 @@ export function evaluateExternalPlugin(source: string, pluginId: string): Plugin
 export function createPluginRegistry(
   kernel: AppKernel,
   backend: WorkspaceBackend,
+  embeddedPlugins: readonly EmbeddedPluginSource[] = [],
 ): PluginRegistryService {
-  const supported = typeof backend.pluginList === 'function'
+  const embeddedByManifest = new Map(embeddedPlugins.map((e) => [e.manifest.id, e]))
+  const supported = embeddedPlugins.length > 0 || typeof backend.pluginList === 'function'
   const [installed, setInstalled] = createSignal<readonly InstalledPlugin[]>([])
   const [rootPath, setRootPath] = createSignal<string | null>(null)
   const [catalog, setCatalog] = createSignal<readonly CatalogPlugin[]>([])
@@ -124,6 +180,7 @@ export function createPluginRegistry(
 
   const running = new Map<string, Disposable>()
   const activating = new Set<string>()
+  const chunkCache = new Map<string, Promise<Record<string, unknown>>>()
   let refreshSeq = 0
 
   function setRuntimeEntry(id: string, status: ExternalPluginStatus, error: string | null) {
@@ -139,24 +196,110 @@ export function createPluginRegistry(
     if (!disposable) return
     running.delete(id)
     disposable.dispose()
+    removePluginStyles(id)
     setRuntimeEntry(id, 'stopped', null)
   }
 
-  async function activate(entry: InstalledPlugin): Promise<void> {
+  /** Reads a manifest-declared asset from the embedded sources or the backend. */
+  async function readPluginAsset(
+    id: string,
+    manifest: PluginManifest,
+    fileName: string,
+  ): Promise<string> {
+    const embedded = embeddedByManifest.get(id)
+    if (embedded) {
+      const asset = embedded.assets?.[fileName]
+      if (typeof asset !== 'string') {
+        throw new Error(`Plugin asset not found: ${id}/${fileName}`)
+      }
+      return asset
+    }
+    if (!backend.pluginReadAsset) {
+      throw new Error('backend does not implement pluginReadAsset')
+    }
+    return backend.pluginReadAsset(id, fileName)
+  }
+
+  function loadChunk(id: string, manifest: PluginManifest, name: string): Promise<Record<string, unknown>> {
+    const cacheKey = `${id}:${name}`
+    const cached = chunkCache.get(cacheKey)
+    if (cached) return cached
+    const declared = manifest.chunks?.[name]
+    if (!declared) {
+      return Promise.reject(new Error(`Plugin "${id}" declares no chunk named "${name}"`))
+    }
+    const pending = readPluginAsset(id, manifest, declared)
+      .then((source) => {
+        const chunkLiteide: LiteideHostApi = {
+          apiVersion: HOST_API_VERSION,
+          plugin() {
+            throw new Error(`Plugin "${id}" chunk evaluation must not call liteide.plugin()`)
+          },
+          loadChunk: (chunkName) => loadChunk(id, manifest, chunkName),
+        }
+        return evaluateCjsModule(source, buildHostRequire(chunkLiteide), chunkLiteide)
+      })
+      .catch((err) => {
+        // 失败不进缓存：修好资产或重载后允许重新求值。
+        chunkCache.delete(cacheKey)
+        throw err
+      })
+    chunkCache.set(cacheKey, pending)
+    return pending
+  }
+
+  function readEmbeddedSource(id: string): string | null {
+    return embeddedByManifest.get(id)?.source ?? null
+  }
+
+  async function activate(entry: InstalledPlugin, isEmbedded: boolean): Promise<void> {
     const id = entry.manifest.id
     // 并发保护：构造期 refresh 与手动启用/重载可能同时触发同一插件。
     if (running.has(id) || activating.has(id)) return
-    if (!backend.pluginReadEntry) {
-      setRuntimeEntry(id, 'error', 'backend does not implement pluginReadEntry')
-      return
-    }
     activating.add(id)
     setRuntimeEntry(id, 'loading', null)
     try {
-      const source = await backend.pluginReadEntry(id)
-      const plugin = evaluateExternalPlugin(source, id)
+      const apiRequired = entry.manifest.api
+      if (apiRequired !== undefined && apiRequired > HOST_API_VERSION) {
+        throw new Error(
+          `plugin requires LiteIDE plugin API v${apiRequired}, but this LiteIDE provides v${HOST_API_VERSION}. 请更新 LiteIDE。`,
+        )
+      }
+
+      const format: 'classic' | 'bundle' = entry.manifest.format === 'bundle' ? 'bundle' : 'classic'
+      const source = isEmbedded
+        ? readEmbeddedSource(id)
+        : typeof backend.pluginReadEntry === 'function'
+          ? await backend.pluginReadEntry(id)
+          : null
+      if (source === null) {
+        throw new Error(
+          isEmbedded
+            ? 'embedded plugin source is missing'
+            : 'backend does not implement pluginReadEntry',
+        )
+      }
+
+      // 样式资产先读后注册：资产读取失败时插件未注册，不会留下半激活状态
+      // （若注册后再读，失败路径需 dispose 补偿，且重激活会撞 duplicate id）。
+      let css: string | null = null
+      if (entry.manifest.css) {
+        css = await readPluginAsset(id, entry.manifest, entry.manifest.css)
+      }
+
+      const plugin = evaluateExternalPlugin(source, {
+        pluginId: id,
+        format,
+        loadChunk: (name) => loadChunk(id, entry.manifest, name),
+      })
       const disposable = kernel.registerPlugin(plugin)
       running.set(id, disposable)
+
+      // Stylesheet asset: injected while running, removed on deactivate.
+      if (css !== null) {
+        injectPluginStyles(id, css)
+      }
+
       setRuntimeEntry(id, 'running', null)
     } catch (err) {
       running.delete(id)
@@ -166,25 +309,42 @@ export function createPluginRegistry(
     }
   }
 
+  /** Merged view: embedded built-ins first, then backend-managed installs. */
+  function mergedInstalled(): readonly InstalledPlugin[] {
+    const backendEntries = installed()
+    const embeddedEntries: InstalledPlugin[] = embeddedPlugins.map((e) => ({
+      manifest: e.manifest,
+      dirName: e.manifest.id,
+      installedMs: 0,
+      error: null,
+    }))
+    const embeddedIds = new Set(embeddedEntries.map((e) => e.manifest.id))
+    return [...embeddedEntries, ...backendEntries.filter((e) => !embeddedIds.has(e.manifest.id))]
+  }
+
   /** Re-reads the installed list and reconciles running plugins with it. */
   async function refresh(): Promise<void> {
-    if (!backend.pluginList) return
     const seq = ++refreshSeq
-    const result: PluginListResult = await backend.pluginList()
-    if (seq !== refreshSeq) return
-
-    batch(() => {
-      setRootPath(result.rootPath)
-      setInstalled(result.plugins)
-    })
+    if (backend.pluginList) {
+      try {
+        const result: PluginListResult = await backend.pluginList()
+        if (seq !== refreshSeq) return
+        batch(() => {
+          setRootPath(result.rootPath)
+          setInstalled(result.plugins)
+        })
+      } catch {
+        // 后端列表读取失败不阻断嵌入式内置插件激活（保持既有已装快照）。
+      }
+    }
 
     // 卸载残留（列表里已消失的）先下线，再补齐启用项。
-    const known = new Set(result.plugins.map((p) => p.manifest.id))
+    const known = new Set(mergedInstalled().map((p) => p.manifest.id))
     for (const id of [...running.keys()]) {
       if (!known.has(id)) deactivate(id)
     }
 
-    for (const entry of result.plugins) {
+    for (const entry of mergedInstalled()) {
       const id = entry.manifest.id
       if (entry.error) {
         deactivate(id)
@@ -193,7 +353,7 @@ export function createPluginRegistry(
       }
       const enabled = !disabledIds().has(id)
       if (enabled && !running.has(id)) {
-        await activate(entry)
+        await activate(entry, embeddedByManifest.has(id))
       } else if (!enabled && running.has(id)) {
         deactivate(id)
       } else if (!enabled) {
@@ -208,7 +368,7 @@ export function createPluginRegistry(
   }
 
   const states = createMemo<readonly ExternalPluginState[]>(() =>
-    installed().map((entry) => {
+    mergedInstalled().map((entry) => {
       const id = entry.manifest.id
       const enabled = !disabledIds().has(id)
       const rt = runtime().get(id)
@@ -222,6 +382,7 @@ export function createPluginRegistry(
         enabled,
         status,
         error: rt?.error ?? entry.error ?? null,
+        embedded: embeddedByManifest.has(id),
       }
     }),
   )
@@ -252,6 +413,9 @@ export function createPluginRegistry(
     },
 
     async uninstall(pluginId: string): Promise<void> {
+      if (embeddedByManifest.has(pluginId)) {
+        throw new Error('内置插件不可卸载，可在设置中停用')
+      }
       deactivate(pluginId)
       if (backend.pluginUninstall) {
         await backend.pluginUninstall(pluginId)
@@ -275,17 +439,24 @@ export function createPluginRegistry(
       persistDisabled(next)
 
       if (enabled) {
-        const entry = installed().find((p) => p.manifest.id === pluginId)
-        if (entry && !entry.error) await activate(entry)
+        const entry = mergedInstalled().find((p) => p.manifest.id === pluginId)
+        if (entry && !entry.error) await activate(entry, embeddedByManifest.has(pluginId))
       } else {
         deactivate(pluginId)
+        // 与 refresh() 的停用分支对齐：未激活插件的陈旧 error 一并清成 stopped，
+        // 否则停用一个加载失败的插件仍显示 error（诊断信息已随行展示）。
+        if (!running.has(pluginId)) setRuntimeEntry(pluginId, 'stopped', null)
       }
     },
 
     async reload(pluginId: string): Promise<void> {
       deactivate(pluginId)
-      const entry = installed().find((p) => p.manifest.id === pluginId)
-      if (entry && !entry.error) await activate(entry)
+      // 只清该插件的 chunk 缓存（key 前缀 `${id}:`），不动其他插件的。
+      for (const key of [...chunkCache.keys()]) {
+        if (key.startsWith(`${pluginId}:`)) chunkCache.delete(key)
+      }
+      const entry = mergedInstalled().find((p) => p.manifest.id === pluginId)
+      if (entry && !entry.error) await activate(entry, embeddedByManifest.has(pluginId))
     },
   }
 

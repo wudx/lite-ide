@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.liteide.app",
   "build": {
-    "beforeDevCommand": "pnpm --filter @lite-ide/desktop dev",
+    "beforeDevCommand": "pnpm build:plugins && pnpm --filter @lite-ide/desktop dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --filter @lite-ide/desktop build",
+    "beforeBuildCommand": "pnpm build:plugins && pnpm --filter @lite-ide/desktop build",
     "frontendDist": "../apps/desktop/dist"
   },
   "app": {

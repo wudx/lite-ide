@@ -1,4 +1,8 @@
 import type { Plugin } from '@lite-ide/kernel'
+// Bundle-format build: the preview component is statically imported so the
+// CJS dist stays a single file (no rollup dynamic-import chunks).
+import ImagePreview from './ImagePreview'
+import './plugin.css'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'svg'])
 
@@ -37,7 +41,9 @@ export const previewImagePlugin: Plugin = {
       labelKey: 'previewImage.label',
       priority: 60,
       canHandle: (file) => IMAGE_EXTS.has(file.ext),
-      load: () => import('./ImagePreview'),
+      load: () => Promise.resolve({ default: ImagePreview }),
     })
   },
 }
+
+export default previewImagePlugin

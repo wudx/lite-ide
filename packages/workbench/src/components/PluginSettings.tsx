@@ -174,6 +174,14 @@ export function PluginSettings(props: PluginSettingsProps) {
                             <span class="ml-1.5 font-normal text-[var(--text-muted)]">
                               v{state.manifest.version}
                             </span>
+                            <Show when={state.embedded}>
+                              <span
+                                class="ml-1.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-soft)] px-1 py-px text-[10px] text-[var(--accent)]"
+                                data-testid={`plugin-embedded-${id}`}
+                              >
+                                {i18n.t('plugins.embedded')}
+                              </span>
+                            </Show>
                             <span
                               class={`ml-2 ${statusBadgeClass(state.status)}`}
                               data-testid={`plugin-status-${id}`}
@@ -229,21 +237,34 @@ export function PluginSettings(props: PluginSettingsProps) {
                               <RotateCcw class="w-3 h-3" />
                             </button>
                           </Show>
-                          <button
-                            type="button"
-                            data-testid={`plugin-uninstall-${id}`}
-                            class={`h-[26px] px-2.5 rounded-lg border text-[11px] transition-colors disabled:opacity-50 disabled:pointer-events-none ${
-                              isUninstallArmed()
-                                ? 'border-[var(--danger-border)] bg-[var(--danger-btn-bg)] text-[var(--danger-text)]'
-                                : 'border-[var(--border-panel)] bg-transparent text-[var(--text-secondary)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)]'
-                            }`}
-                            disabled={busyId() !== null}
-                            onClick={() => uninstallPlugin(state)}
+                          {/* 嵌入式内置插件随应用分发：只可停用，不可卸载。 */}
+                          <Show
+                            when={!state.embedded}
+                            fallback={
+                              <span
+                                class="h-[26px] px-2.5 inline-flex items-center text-[11px] text-[var(--text-muted)]"
+                                title={i18n.t('plugins.embeddedHint')}
+                              >
+                                {i18n.t('plugins.embeddedHint')}
+                              </span>
+                            }
                           >
-                            {isUninstallArmed()
-                              ? i18n.t('plugins.action.uninstallConfirm')
-                              : i18n.t('plugins.action.uninstall')}
-                          </button>
+                            <button
+                              type="button"
+                              data-testid={`plugin-uninstall-${id}`}
+                              class={`h-[26px] px-2.5 rounded-lg border text-[11px] transition-colors disabled:opacity-50 disabled:pointer-events-none ${
+                                isUninstallArmed()
+                                  ? 'border-[var(--danger-border)] bg-[var(--danger-btn-bg)] text-[var(--danger-text)]'
+                                  : 'border-[var(--border-panel)] bg-transparent text-[var(--text-secondary)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)]'
+                              }`}
+                              disabled={busyId() !== null}
+                              onClick={() => uninstallPlugin(state)}
+                            >
+                              {isUninstallArmed()
+                                ? i18n.t('plugins.action.uninstallConfirm')
+                                : i18n.t('plugins.action.uninstall')}
+                            </button>
+                          </Show>
                         </div>
                       </div>
                       <Show when={state.error}>
