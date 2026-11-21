@@ -32,6 +32,8 @@ export interface ContributionMap {
     priority: number
     canHandle: (file: FileMeta) => boolean
     load: () => Promise<{ default: Component<PreviewProps> }>
+    /** 该 provider 提供可编辑文本视图：宿主可据此显示"已保存"等编辑态徽章 */
+    editable?: boolean
   }
   command: {
     id: string

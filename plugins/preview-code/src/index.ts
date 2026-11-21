@@ -1,8 +1,12 @@
 import { DisposableStore, type Plugin } from '@lite-ide/kernel'
 import { EditorBufferKey } from '@lite-ide/workbench'
 import { CodeStatusBarItem } from './CodeStatusBarItem'
+// Bundle-format build: the preview component is statically imported so the
+// CJS dist stays a single file (no rollup dynamic-import chunks).
+import CodePreview from './CodePreview'
 import { CodeEditorCacheKey, createCodeEditorCacheService } from './editor-cache'
 import { PREVIEW_CODE_EN_US, PREVIEW_CODE_ZH_CN } from './i18n'
+import './plugin.css'
 import { CodeStatsKey, createCodeStatsService } from './stats'
 
 export const previewCodePlugin: Plugin = {
@@ -52,7 +56,8 @@ export const previewCodePlugin: Plugin = {
       labelKey: 'previewCode.label',
       priority: 10,
       canHandle: (file) => !file.isBinary,
-      load: () => import('./CodePreview'),
+      load: () => Promise.resolve({ default: CodePreview }),
+      editable: true,
     })
 
     ctx.contribute('statusbar.item', {
@@ -63,3 +68,5 @@ export const previewCodePlugin: Plugin = {
     })
   },
 }
+
+export default previewCodePlugin

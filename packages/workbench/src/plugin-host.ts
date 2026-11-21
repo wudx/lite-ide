@@ -8,7 +8,7 @@ import * as solidWeb from 'solid-js/web'
 import { AiModelKey } from './ai-model'
 import { copyTextToClipboard } from './clipboard'
 import { ConfirmDialogKey, SettingsDialogKey } from './dialogs'
-import { EditorBufferKey } from './editor-buffers'
+import { DEFAULT_BUFFER_MAX_BYTES, EditorBufferKey } from './editor-buffers'
 import { FileIcon } from './components/FileIcon'
 import { formatBytes } from './format'
 import { getI18n, I18nStateKey } from './i18n'
@@ -82,6 +82,7 @@ export function buildHostRequire(liteide: LiteideHostApi): HostRequire {
       // Helpers & shared components.
       getI18n,
       formatBytes,
+      DEFAULT_BUFFER_MAX_BYTES,
       joinNativePath,
       copyTextToClipboard,
       isAudioExtension,

@@ -1,0 +1,10 @@
+{
+  "id": "builtin.preview-code",
+  "name": "Code & Text Editor",
+  "version": "0.1.0",
+  "author": "LiteIDE built-in",
+  "main": "plugin.js",
+  "format": "bundle",
+  "css": "plugin.css",
+  "api": 2
+}

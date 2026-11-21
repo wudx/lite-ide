@@ -599,9 +599,7 @@ export function PreviewHost(props: PreviewHostProps) {
 
                     <Show
                       when={
-                        !buf().dirty &&
-                        !buf().readOnly &&
-                        activeProvider()?.id === 'preview-code'
+                        !buf().dirty && !buf().readOnly && activeProvider()?.editable === true
                       }
                     >
                       <span class="px-2 py-0.5 rounded-full text-[11px] text-[var(--text-muted)] flex items-center gap-1 select-none">

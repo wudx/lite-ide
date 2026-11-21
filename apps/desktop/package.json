@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@lite-ide/kernel": "workspace:*",
-    "@lite-ide/plugin-preview-code": "workspace:*",
     "@lite-ide/protocol": "workspace:*",
     "@lite-ide/workbench": "workspace:*",
     "@tauri-apps/api": "^2.12.5",

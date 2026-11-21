@@ -1,7 +1,6 @@
 import './styles/app.css'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { createDefaultBackend, MOCK_DEMO_PATHS, type PluginManifest } from '@lite-ide/protocol'
 import {
   createWorkbenchKernel,
@@ -31,6 +30,9 @@ import previewImageCss from '../../../plugins/preview-image/dist/plugin.css?raw'
 import previewMarkdownManifest from '../../../plugins/preview-markdown/plugin.json'
 import previewMarkdownSource from '../../../plugins/preview-markdown/dist/plugin.js?raw'
 import previewMarkdownCss from '../../../plugins/preview-markdown/dist/plugin.css?raw'
+import previewCodeManifest from '../../../plugins/preview-code/plugin.json'
+import previewCodeSource from '../../../plugins/preview-code/dist/plugin.js?raw'
+import previewCodeCss from '../../../plugins/preview-code/dist/plugin.css?raw'
 import themeNordManifest from '../../../plugins/theme-nord/plugin.json'
 import themeNordSource from '../../../plugins/theme-nord/dist/plugin.js?raw'
 
@@ -75,14 +77,15 @@ const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
     source: previewFallbackSource,
     assets: { 'plugin.css': previewFallbackCss },
   },
+  {
+    manifest: asManifest(previewCodeManifest),
+    source: previewCodeSource,
+    assets: { 'plugin.css': previewCodeCss },
+  },
 ]
 
 const backend = createDefaultBackend()
 const kernel = createWorkbenchKernel(backend, 5, { embeddedPlugins: EMBEDDED_PLUGINS })
-
-// 仍以内核 API 直接注册的内置插件（CodeMirror 体量大且 PreviewHost 存在
-// 'preview-code' 硬编码 id 耦合，暂缓迁出）。
-kernel.registerPlugin(previewCodePlugin)
 
 let restoringSession = true
 
