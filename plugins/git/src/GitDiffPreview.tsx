@@ -49,13 +49,18 @@ type DiffViewMode = 'unified' | 'split' | 'table'
 
 const DIFF_VIEW_MODE_STORAGE_KEY = 'lite-ide:git:diff-view-mode'
 
-function readStoredDiffViewMode(): DiffViewMode {
-  if (typeof localStorage === 'undefined') return 'unified'
+/**
+ * The user's persisted view mode, or null when they have never picked one —
+ * null lets tabular files open in the table view by default instead of
+ * forcing every first visit through the line-based unified view.
+ */
+function readStoredDiffViewMode(): DiffViewMode | null {
+  if (typeof localStorage === 'undefined') return null
   try {
     const stored = localStorage.getItem(DIFF_VIEW_MODE_STORAGE_KEY)
-    return stored === 'split' || stored === 'table' ? stored : 'unified'
+    return stored === 'split' || stored === 'table' ? stored : stored === 'unified' ? 'unified' : null
   } catch {
-    return 'unified'
+    return null
   }
 }
 
@@ -137,7 +142,12 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
 
   const [section, setSection] = createSignal<GitDiffSection>(initialSection())
   const [rev, setRev] = createSignal<string | null>(initialRev())
-  const [viewMode, setViewMode] = createSignal<DiffViewMode>(readStoredDiffViewMode())
+  const [viewMode, setViewMode] = createSignal<DiffViewMode>(
+    readStoredDiffViewMode() ??
+      (isTabularFile(props.file.relPath) || isSpreadsheetFile(props.file.relPath)
+        ? 'table'
+        : 'unified'),
+  )
   // Table mode only applies to tabular files (CSV/TSV) and spreadsheets;
   // other files fall back to the unified view while the stored preference
   // stays intact for reuse.
@@ -195,6 +205,11 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setRev(initialRev())
       setRawDiff(null)
       setError(null)
+      // The instance is reused across tabs; without a stored preference the
+      // per-file-type default (table for spreadsheets) must follow the new file.
+      if (readStoredDiffViewMode() === null) {
+        setViewMode(tabular() ? 'table' : 'unified')
+      }
     }
     // Status refreshes after every git action and debounced fs event, so the
     // diff tracks stage/unstage/discard without extra wiring. Commit diffs

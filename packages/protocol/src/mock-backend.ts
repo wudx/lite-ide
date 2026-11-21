@@ -253,6 +253,15 @@ export async function persistState(snapshot: string) {
       },
       // Post-image of the preset unstaged diff in createMockGitBackend(): the
       // uptime week3 cell changed to 99.98 and the throughput row was added.
+      // The workbook bytes themselves are produced lazily by the mock git
+      // backend's readBlob (dynamic SheetJS import), so this entry only
+      // registers the path for the explorer; byteLength stays a placeholder.
+      'data/metrics.xlsx': {
+        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        isBinary: true,
+        content: '',
+        byteLength: 0,
+      },
       'data/metrics.csv': {
         mime: 'text/csv',
         content: `metric,week1,week2,week3

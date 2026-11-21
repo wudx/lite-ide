@@ -26,9 +26,7 @@ test('csv diff renders an aligned table view with cell-level highlights', async 
   await expect(diffView).toBeVisible()
   await expect(diffView).toHaveAttribute('data-git-diff-section', 'unstaged')
 
-  // Tabular files expose the third "表格" view mode; default stays unified.
-  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'unified')
-  await diffView.locator('[data-testid="git-diff-view-toggle"][data-view="table"]').click()
+  // Tabular files open straight into the table view (no stored preference).
   await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'table')
 
   const table = diffView.getByTestId('git-diff-table')

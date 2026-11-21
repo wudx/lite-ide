@@ -311,8 +311,9 @@ index 4c1f9a2..7d8e5b3 100644
 // changes and the throughput row is added, plus a date column. Blob bytes are
 // built lazily on the first readBlob call so the heavy parser never loads
 // until the spreadsheet's diff preview actually opens in mock mode; the real
-// desktop backend streams bytes from git instead. The file deliberately has
-// no mock-FS template, so only the Git panel (not the explorer) surfaces it.
+// desktop backend streams bytes from git instead. The mock-FS template only
+// registers the path so the explorer can open it; the bytes always come from
+// the lazy builder below.
 const METRICS_XLSX_PATH = 'data/metrics.xlsx'
 const METRICS_XLSX_OLD_ROWS: (string | number)[][] = [
   ['metric', 'week1', 'week2', 'week3', 'updated'],

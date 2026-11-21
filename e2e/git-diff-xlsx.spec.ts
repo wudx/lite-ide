@@ -25,9 +25,7 @@ test('xlsx diff compares workbook versions as an aligned table view', async ({
   await expect(diffView).toBeVisible()
   await expect(diffView).toHaveAttribute('data-git-diff-section', 'unstaged')
 
-  // Spreadsheets expose the table view mode; switch into it.
-  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'unified')
-  await diffView.locator('[data-testid="git-diff-view-toggle"][data-view="table"]').click()
+  // Spreadsheets open straight into the table view (no stored preference).
   await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'table')
 
   const table = diffView.getByTestId('git-diff-table')

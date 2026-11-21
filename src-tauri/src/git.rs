@@ -411,13 +411,10 @@ pub async fn read_blob(
     // ballooning memory.
     const MAX_BLOB_BYTES: usize = 32 * 1024 * 1024;
 
-    if !is_repo_root(canonical_root).await? {
-        return Ok(None);
-    }
     validate_rel_segments(rel_path)?;
     match rev {
-        // Index stages 0-3 exist during merges; the UI only asks for stage 0.
-        "HEAD" | ":0" | ":1" | ":2" | ":3" => {}
+        // Worktree reads are plain file access — they must work outside git
+        // repositories too (the sheet preview relies on this).
         "worktree" => {
             // resolve_safe_path canonicalizes the target, so an absent file
             // surfaces as NotFound before the read itself; both mean "no
@@ -447,6 +444,11 @@ pub async fn read_blob(
                 Err(err) => {
                     return Err(AppError::Git(format!("read {rel_path}: {err}")));
                 }
+            }
+        }
+        "HEAD" | ":0" | ":1" | ":2" | ":3" => {
+            if !is_repo_root(canonical_root).await? {
+                return Ok(None);
             }
         }
         other => return Err(AppError::Git(format!("invalid revision: '{other}'"))),
@@ -1523,6 +1525,21 @@ mod repo_tests {
             .unwrap()
             .is_empty());
         assert!(diff(&root, true, &["".into()]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn reads_worktree_blobs_outside_git_repositories() {
+        use base64::Engine as _;
+
+        // No `git init`: the sheet preview must still read plain files.
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("book.xlsx"), b"plain bytes").unwrap();
+        let blob = read_blob(&root, "worktree", "book.xlsx").await.unwrap().unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(&blob).unwrap(),
+            b"plain bytes"
+        );
     }
 
     #[tokio::test]

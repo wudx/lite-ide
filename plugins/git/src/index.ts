@@ -5,6 +5,7 @@ import GitBranch from 'lucide-solid/icons/git-branch'
 import { GitView } from './GitView'
 import { GitStatusBarItem } from './GitStatusBarItem'
 import { createGitStore, GitBackendKey, GIT_DIFF_PREVIEWER_ID, GitStoreKey } from './git-store'
+import { isSpreadsheetFile } from './xlsx-diff'
 import { GIT_EN_US, GIT_ZH_CN } from './i18n'
 
 export {
@@ -96,13 +97,27 @@ export const gitPlugin: Plugin = {
     // Diff previewer: lowest text priority so ordinary file opens keep their
     // regular previewer; the Git panel requests it explicitly via
     // preferredPreviewerId, and the pill switcher exposes it everywhere else.
+    // Spreadsheets are binary to git but compared from parsed rows, so they
+    // must stay handleable for the preferred request to reach this provider.
     ctx.contribute('previewer.provider', {
       id: GIT_DIFF_PREVIEWER_ID,
       label: 'Diff',
       labelKey: 'git.diff.label',
       priority: 5,
-      canHandle: (file) => !file.isBinary,
+      canHandle: (file) => !file.isBinary || isSpreadsheetFile(file.relPath),
       load: () => import('./GitDiffPreview'),
+    })
+
+    // Workbook sheet preview: clicking an xlsx/xlsm/xls in the explorer shows
+    // its first sheet as a read-only table, with a shortcut into the diff
+    // comparison when the file carries uncommitted changes.
+    ctx.contribute('previewer.provider', {
+      id: 'git-xlsx-table',
+      label: 'Sheet',
+      labelKey: 'git.preview.label',
+      priority: 55,
+      canHandle: (file) => file.isBinary && isSpreadsheetFile(file.relPath),
+      load: () => import('./XlsxTablePreview'),
     })
 
     ctx.contribute('statusbar.item', {
