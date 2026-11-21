@@ -2,11 +2,18 @@ import type { Plugin } from '@lite-ide/kernel'
 import { createDefaultGitBackend } from '@lite-ide/protocol'
 import { getI18n, ProjectFsEventsKey } from '@lite-ide/workbench'
 import GitBranch from 'lucide-solid/icons/git-branch'
+// Bundle-format build: the two previewer components are statically imported
+// so the CJS dist stays a single file (the diff and xlsx previewers share
+// git-store/xlsx-diff internally — multi-entry would make rollup emit shared
+// chunks the host cannot resolve). xlsx travels with the bundle.
+import GitDiffPreview from './GitDiffPreview'
+import XlsxTablePreview from './XlsxTablePreview'
 import { GitView } from './GitView'
 import { GitStatusBarItem } from './GitStatusBarItem'
 import { createGitStore, GitBackendKey, GIT_DIFF_PREVIEWER_ID, GitStoreKey } from './git-store'
 import { isSpreadsheetFile } from './xlsx-diff'
 import { GIT_EN_US, GIT_ZH_CN } from './i18n'
+import './plugin.css'
 
 export {
   createGitStore,
@@ -105,7 +112,7 @@ export const gitPlugin: Plugin = {
       labelKey: 'git.diff.label',
       priority: 5,
       canHandle: (file) => !file.isBinary || isSpreadsheetFile(file.relPath),
-      load: () => import('./GitDiffPreview'),
+      load: () => Promise.resolve({ default: GitDiffPreview }),
     })
 
     // Workbook sheet preview: clicking an xlsx/xlsm/xls in the explorer shows
@@ -117,7 +124,7 @@ export const gitPlugin: Plugin = {
       labelKey: 'git.preview.label',
       priority: 55,
       canHandle: (file) => file.isBinary && isSpreadsheetFile(file.relPath),
-      load: () => import('./XlsxTablePreview'),
+      load: () => Promise.resolve({ default: XlsxTablePreview }),
     })
 
     ctx.contribute('statusbar.item', {
@@ -128,3 +135,5 @@ export const gitPlugin: Plugin = {
     })
   },
 }
+
+export default gitPlugin

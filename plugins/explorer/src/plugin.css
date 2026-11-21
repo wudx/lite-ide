@@ -1,0 +1,8 @@
+/*
+ * Plugin stylesheet shipped as the manifest `css` asset and injected by the
+ * host while the plugin runs. Theme + utilities layers only — never preflight.
+ * App-level classes used by the tree UI (glass-surface, animate-popover-in)
+ * come from the host's global stylesheet and are not redeclared here.
+ */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";

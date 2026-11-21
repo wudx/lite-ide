@@ -7,6 +7,11 @@ import solid from 'vite-plugin-solid'
 // by the plugin loader's require table at evaluation time.
 export default defineConfig({
   plugins: [solid(), tailwindcss()],
+  // Bundle 插件的依赖（如 @tanstack/solid-virtual）会引用 process.env.NODE_ENV`
+  // 做调试开关；lib 模式不做自动替换，须显式 define 成生产值。
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     lib: {
       entry: 'src/index.ts',

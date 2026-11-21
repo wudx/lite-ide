@@ -12,8 +12,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "build:plugins": "pnpm --parallel --filter @lite-ide/plugin-theme-nord --filter @lite-ide/plugin-preview-fallback --filter @lite-ide/plugin-preview-image --filter @lite-ide/plugin-preview-audio --filter @lite-ide/plugin-preview-markdown --filter @lite-ide/sample-plugin-bundle-notes run build:plugin",
-    "watch:plugins": "pnpm --parallel --filter @lite-ide/plugin-theme-nord --filter @lite-ide/plugin-preview-fallback --filter @lite-ide/plugin-preview-image --filter @lite-ide/plugin-preview-audio --filter @lite-ide/plugin-preview-markdown --filter @lite-ide/sample-plugin-bundle-notes run watch:plugin"
+    "build:plugins": "pnpm --parallel --filter @lite-ide/plugin-theme-nord --filter @lite-ide/plugin-preview-fallback --filter @lite-ide/plugin-preview-image --filter @lite-ide/plugin-preview-audio --filter @lite-ide/plugin-preview-markdown --filter @lite-ide/plugin-explorer --filter @lite-ide/plugin-git --filter @lite-ide/sample-plugin-bundle-notes run build:plugin",
+    "watch:plugins": "pnpm --parallel --filter @lite-ide/plugin-theme-nord --filter @lite-ide/plugin-preview-fallback --filter @lite-ide/plugin-preview-image --filter @lite-ide/plugin-preview-audio --filter @lite-ide/plugin-preview-markdown --filter @lite-ide/plugin-explorer --filter @lite-ide/plugin-git --filter @lite-ide/sample-plugin-bundle-notes run watch:plugin"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

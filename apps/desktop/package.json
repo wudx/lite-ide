@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@lite-ide/kernel": "workspace:*",
-    "@lite-ide/plugin-explorer": "workspace:*",
-    "@lite-ide/plugin-git": "workspace:*",
     "@lite-ide/plugin-preview-code": "workspace:*",
     "@lite-ide/protocol": "workspace:*",
     "@lite-ide/workbench": "workspace:*",

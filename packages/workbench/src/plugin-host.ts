@@ -3,6 +3,7 @@ import type { Plugin } from '@lite-ide/kernel'
 import * as protocolApi from '@lite-ide/protocol'
 import { definePlugin } from '@lite-ide/plugin-sdk'
 import * as solid from 'solid-js'
+import * as solidStore from 'solid-js/store'
 import * as solidWeb from 'solid-js/web'
 import { AiModelKey } from './ai-model'
 import { copyTextToClipboard } from './clipboard'
@@ -57,6 +58,7 @@ export type HostRequire = (specifier: string) => unknown
 export function buildHostRequire(liteide: LiteideHostApi): HostRequire {
   const modules: Record<string, unknown> = {
     'solid-js': solid,
+    'solid-js/store': solidStore,
     'solid-js/web': solidWeb,
     '@lite-ide/kernel': kernelApi,
     '@lite-ide/protocol': protocolApi,

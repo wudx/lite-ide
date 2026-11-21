@@ -41,12 +41,6 @@ importers:
       '@lite-ide/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@lite-ide/plugin-explorer':
-        specifier: workspace:*
-        version: link:../../plugins/explorer
-      '@lite-ide/plugin-git':
-        specifier: workspace:*
-        version: link:../../plugins/git
       '@lite-ide/plugin-preview-code':
         specifier: workspace:*
         version: link:../../plugins/preview-code
@@ -151,6 +145,13 @@ importers:
       solid-js:
         specifier: ^1.9.19
         version: 1.9.19
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/git:
     dependencies:
@@ -172,6 +173,13 @@ importers:
       xlsx:
         specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
         version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.5
+        version: 4.3.5(vite@6.4.6(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0))
+      tailwindcss:
+        specifier: ^4.3.5
+        version: 4.3.5
 
   plugins/preview-audio:
     dependencies:

@@ -32,9 +32,12 @@ test('plugins section lists the catalog and installs the Hello Status plugin', a
   await expect(page.getByRole('tree')).toBeVisible()
 
   const dialog = await openPluginsSection(page)
-  // 嵌入式内置插件常驻已安装列表（可停用、不可卸载）。
+  // 嵌入式内置插件常驻已安装列表（可停用、不可卸载）：本期含 explorer/git。
+  await expect(dialog.getByTestId('plugin-embedded-builtin.explorer')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.git')).toBeVisible()
   await expect(dialog.getByTestId('plugin-embedded-builtin.preview-markdown')).toBeVisible()
-  await expect(dialog.getByTestId('plugin-uninstall-builtin.preview-markdown')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-uninstall-builtin.explorer')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-uninstall-builtin.git')).toHaveCount(0)
   await expect(dialog.getByText('可安装的插件')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('plugins-section.png'), animations: 'disabled' })
 

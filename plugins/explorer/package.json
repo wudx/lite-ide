@@ -7,7 +7,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:plugin": "vite build",
+    "watch:plugin": "vite build --watch"
   },
   "dependencies": {
     "@lite-ide/kernel": "workspace:*",
@@ -16,5 +18,9 @@
     "@tanstack/solid-virtual": "^3.13.53",
     "lucide-solid": "^1.76.0",
     "solid-js": "^1.9.19"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "tailwindcss": "^4.3.5"
   }
 }

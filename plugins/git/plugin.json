@@ -1,0 +1,13 @@
+{
+  "id": "builtin.git",
+  "name": "Git",
+  "version": "0.1.0",
+  "author": "LiteIDE built-in",
+  "main": "plugin.js",
+  "format": "bundle",
+  "css": "plugin.css",
+  "chunks": {
+    "xlsx": "xlsx.js"
+  },
+  "api": 2
+}

@@ -1,8 +1,6 @@
 import './styles/app.css'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { explorerPlugin } from '@lite-ide/plugin-explorer'
-import { gitPlugin } from '@lite-ide/plugin-git'
 import { previewCodePlugin } from '@lite-ide/plugin-preview-code'
 import { createDefaultBackend, MOCK_DEMO_PATHS, type PluginManifest } from '@lite-ide/protocol'
 import {
@@ -14,6 +12,13 @@ import { render } from 'solid-js/web'
 // 嵌入式内置插件（"一切皆插件"）：按外部插件格式构建的 dist 内联进应用包，
 // 与用户安装的外部插件走同一加载器。dist 由根脚本 `build:plugins` 产出，
 // dev 时可运行 `watch:plugins` 让改动即时生效。
+import explorerManifest from '../../../plugins/explorer/plugin.json'
+import explorerSource from '../../../plugins/explorer/dist/plugin.js?raw'
+import explorerCss from '../../../plugins/explorer/dist/plugin.css?raw'
+import gitManifest from '../../../plugins/git/plugin.json'
+import gitSource from '../../../plugins/git/dist/plugin.js?raw'
+import gitCss from '../../../plugins/git/dist/plugin.css?raw'
+import gitXlsxChunk from '../../../plugins/git/dist/xlsx.js?raw'
 import previewAudioManifest from '../../../plugins/preview-audio/plugin.json'
 import previewAudioSource from '../../../plugins/preview-audio/dist/plugin.js?raw'
 import previewAudioCss from '../../../plugins/preview-audio/dist/plugin.css?raw'
@@ -36,6 +41,16 @@ const ACTIVE_PROJECT_STORAGE_KEY = 'lite-ide.activeProject.v1'
 const asManifest = (m: unknown) => m as PluginManifest
 
 const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
+  {
+    manifest: asManifest(explorerManifest),
+    source: explorerSource,
+    assets: { 'plugin.css': explorerCss },
+  },
+  {
+    manifest: asManifest(gitManifest),
+    source: gitSource,
+    assets: { 'plugin.css': gitCss, 'xlsx.js': gitXlsxChunk },
+  },
   {
     manifest: asManifest(themeNordManifest),
     source: themeNordSource,
@@ -65,9 +80,8 @@ const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
 const backend = createDefaultBackend()
 const kernel = createWorkbenchKernel(backend, 5, { embeddedPlugins: EMBEDDED_PLUGINS })
 
-// 仍以内核 API 直接注册的重型内置插件（后续逐个迁出为外部格式）。
-kernel.registerPlugin(explorerPlugin)
-kernel.registerPlugin(gitPlugin)
+// 仍以内核 API 直接注册的内置插件（CodeMirror 体量大且 PreviewHost 存在
+// 'preview-code' 硬编码 id 耦合，暂缓迁出）。
 kernel.registerPlugin(previewCodePlugin)
 
 let restoringSession = true

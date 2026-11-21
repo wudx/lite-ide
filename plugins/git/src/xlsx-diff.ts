@@ -9,8 +9,26 @@
  * is why rows are serialized as RFC 4180 CSV records.
  */
 
-/** SheetJS has no ESM entry; the dynamic import keeps it in a lazy chunk. */
+import { loadChunk } from 'liteide'
+
+/**
+ * SheetJS has no ESM entry and ships ~500 KB of parser; in the bundle-format
+ * build the library lives in the `xlsx` chunk (see `xlsx-entry.ts`) and is
+ * evaluated on first decode via the host's chunk loader. The type stays a
+ * pure `typeof import('xlsx')` — erased at build time, so the main entry
+ * never bundles the library.
+ */
 type XLSXModule = typeof import('xlsx')
+
+let xlsxModule: XLSXModule | null = null
+
+async function ensureXlsx(): Promise<XLSXModule> {
+  if (!xlsxModule) {
+    const mod = (await loadChunk('xlsx')) as { default: XLSXModule }
+    xlsxModule = mod.default
+  }
+  return xlsxModule
+}
 
 /** Upper bound on parsed rows so giant sheets cannot stall the preview. */
 const MAX_SHEET_ROWS = 5000
@@ -33,7 +51,7 @@ export function isSpreadsheetFile(relPath: string): boolean {
  * are rows beyond `MAX_SHEET_ROWS`.
  */
 export async function decodeSheetRows(blobBase64: string): Promise<string[][]> {
-  const XLSX: XLSXModule = await import('xlsx')
+  const XLSX = await ensureXlsx()
   const workbook = XLSX.read(blobBase64, { type: 'base64' })
   const sheetName = workbook.SheetNames[0]
   if (!sheetName) return []

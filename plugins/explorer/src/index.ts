@@ -5,6 +5,7 @@ import { ExcludeSettings } from './ExcludeSettings'
 import { createExplorerExcludeService, ExplorerExcludeStateKey } from './exclude-patterns'
 import { ExplorerView } from './ExplorerView'
 import { EXPLORER_EN_US, EXPLORER_ZH_CN } from './i18n'
+import './plugin.css'
 import { createFileTreeStore, FileTreeStoreKey } from './tree-store'
 
 // 公共面仅暴露排除状态服务（供其他插件读取/联动）；glob 实现细节留在模块内部。
@@ -59,3 +60,5 @@ export const explorerPlugin: Plugin = {
     })
   },
 }
+
+export default explorerPlugin

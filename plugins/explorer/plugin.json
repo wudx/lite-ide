@@ -1,0 +1,10 @@
+{
+  "id": "builtin.explorer",
+  "name": "Explorer",
+  "version": "0.1.0",
+  "author": "LiteIDE built-in",
+  "main": "plugin.js",
+  "format": "bundle",
+  "css": "plugin.css",
+  "api": 2
+}
