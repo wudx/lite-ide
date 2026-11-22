@@ -302,6 +302,8 @@ export function createPluginRegistry(
 
       setRuntimeEntry(id, 'running', null)
     } catch (err) {
+      // 激活失败的可诊断性：设置页只展示 message，这里补一条带堆栈的日志。
+      console.error(`[plugin-registry] failed to activate plugin "${id}"`, err)
       running.delete(id)
       setRuntimeEntry(id, 'error', err instanceof Error ? err.message : String(err))
     } finally {

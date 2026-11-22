@@ -32,6 +32,8 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   // ProjectWorkspace
   'workspace.sidebarError': '侧边栏视图出错：{message}',
   'workspace.resizeSidebar': '拖动调整宽度，双击重置',
+  'workspace.panelError': '面板视图出错：{message}',
+  'workspace.resizePanel': '拖动调整高度，双击重置',
 
   // PreviewHost
   'preview.editorTabsAria': '编辑器标签页',
@@ -264,6 +266,8 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   // ProjectWorkspace
   'workspace.sidebarError': 'Sidebar view error: {message}',
   'workspace.resizeSidebar': 'Drag to resize, double-click to reset',
+  'workspace.panelError': 'Panel view error: {message}',
+  'workspace.resizePanel': 'Drag to resize height, double-click to reset',
 
   // PreviewHost
   'preview.editorTabsAria': 'Editor tabs',

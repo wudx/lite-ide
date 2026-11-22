@@ -6,6 +6,7 @@ mod jumplist;
 mod plugins;
 mod project;
 mod protocol;
+mod terminal;
 
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use crate::git::{
     GitBranchInfo, GitCommitInfo, GitCommitResult, GitDiffFile, GitStashEntry, GitStatus,
 };
 use crate::project::{FsDelta, ProjectInfo, ProjectManager};
+use crate::terminal::{TerminalEvent, TerminalManager, TerminalSpawned};
 
 #[tauri::command]
 fn project_open(
@@ -312,6 +314,49 @@ async fn git_blob(
     git::read_blob(&root, &rev, &rel_path).await
 }
 
+// ---- 交互式终端：shell 固定从项目 canonical root 启动，路径不经客户端输入 ----
+
+#[tauri::command]
+async fn terminal_spawn(
+    manager: State<'_, Arc<TerminalManager>>,
+    projects: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<TerminalEvent>,
+) -> Result<TerminalSpawned, AppError> {
+    let root = projects.get_canonical_root(&project_id)?;
+    let sink: Arc<dyn terminal::TerminalSink> = Arc::new(on_event);
+    terminal::spawn(&manager, &root, cols, rows, sink)
+}
+
+#[tauri::command]
+async fn terminal_write(
+    manager: State<'_, Arc<TerminalManager>>,
+    session_id: String,
+    data: String,
+) -> Result<(), AppError> {
+    terminal::write(&manager, &session_id, &data)
+}
+
+#[tauri::command]
+async fn terminal_resize(
+    manager: State<'_, Arc<TerminalManager>>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), AppError> {
+    terminal::resize(&manager, &session_id, cols, rows)
+}
+
+#[tauri::command]
+async fn terminal_kill(
+    manager: State<'_, Arc<TerminalManager>>,
+    session_id: String,
+) -> Result<(), AppError> {
+    terminal::kill(&manager, &session_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 任务栏跳转列表依赖 AUMID 在首个窗口创建前声明，必须最先执行。
@@ -360,6 +405,9 @@ pub fn run() {
             let plugin_manager = std::sync::Arc::new(plugins::PluginManager::new(app.handle()));
             app.manage(plugin_manager);
 
+            // 终端 PTY 会话注册表：随应用退出统一回收子进程。
+            app.manage(Arc::new(TerminalManager::default()));
+
             let launch = jumplist::LaunchRequest::default();
             // args_os：参数含无法映射 Unicode 的字符时 args() 会 panic。
             let argv: Vec<String> = std::env::args_os()
@@ -398,6 +446,10 @@ pub fn run() {
             git_log,
             git_show,
             git_blob,
+            terminal_spawn,
+            terminal_write,
+            terminal_resize,
+            terminal_kill,
             ai_chat,
             plugins::plugin_list,
             plugins::plugin_catalog,
@@ -407,6 +459,16 @@ pub fn run() {
             plugins::plugin_read_entry,
             plugins::plugin_read_asset
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running LiteIDE");
+        .build(tauri::generate_context!())
+        .expect("error while building LiteIDE")
+        .run(|app_handle, event| {
+            // 应用退出前回收全部终端子进程（ConPTY 客户端随宿主结束）。
+            if let tauri::RunEvent::Exit = event {
+                if let Some(terminal_manager) =
+                    app_handle.try_state::<Arc<TerminalManager>>()
+                {
+                    terminal_manager.kill_all();
+                }
+            }
+        });
 }

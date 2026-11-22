@@ -1,4 +1,5 @@
 import { BUILTIN_PLUGIN_SAMPLES, builtinPluginCatalog } from './plugin-samples'
+import { createMockShellSession, type MockShellSession } from './mock-terminal'
 import type {
   CatalogPlugin,
   DirEntry,
@@ -8,6 +9,7 @@ import type {
   PluginListResult,
   PluginManifest,
   ProjectInfo,
+  TerminalSessionHandle,
   TextPayload,
   WorkspaceBackend,
   WriteTextResult,
@@ -583,6 +585,9 @@ export function createMockBackend(): WorkspaceBackend {
   const repoPool = new Map<string, MockRepo>()
   const openSessions = new Map<string, MockRepo>()
   const fsListeners = new Map<string, (delta: FsDelta) => void>()
+  // Browser demo fake shell sessions, keyed per open project (see mock-terminal.ts).
+  const terminalSessions = new Map<string, Map<string, MockShellSession>>()
+  let terminalSessionSeq = 0
   let pickCursor = 0
 
   for (const tpl of MOCK_REPO_TEMPLATES) {
@@ -699,6 +704,13 @@ export function createMockBackend(): WorkspaceBackend {
     },
 
     async closeProject(projectId: string): Promise<void> {
+      const sessions = terminalSessions.get(projectId)
+      if (sessions) {
+        for (const session of sessions.values()) {
+          session.kill()
+        }
+        terminalSessions.delete(projectId)
+      }
       openSessions.delete(projectId)
       fsListeners.delete(projectId)
     },
@@ -1026,6 +1038,51 @@ export function createMockBackend(): WorkspaceBackend {
         throw new Error(`Plugin asset not found: ${pluginId}/${fileName}`)
       }
       return asset
+    },
+
+    // 浏览器演示伪 shell（见 mock-terminal.ts）：与桌面 PTY 同一事件契约，
+    // 终端面板在 mock 模式下可真实交互（help/ls/cd/cat/echo/…）。
+    async terminalSpawn(projectId, options): Promise<TerminalSessionHandle> {
+      const repo = getRepo(projectId)
+      const session = createMockShellSession(repo, repo.name, options.onEvent)
+      const sessionId = `term-${terminalSessionSeq++}`
+      session.handle.sessionId = sessionId
+      let sessions = terminalSessions.get(projectId)
+      if (!sessions) {
+        sessions = new Map()
+        terminalSessions.set(projectId, sessions)
+      }
+      sessions.set(sessionId, session)
+      return session.handle
+    },
+
+    async terminalWrite(sessionId: string, data: string): Promise<void> {
+      for (const sessions of terminalSessions.values()) {
+        const session = sessions.get(sessionId)
+        if (session) {
+          session.write(data)
+          return
+        }
+      }
+      throw new Error(`Terminal session not found: ${sessionId}`)
+    },
+
+    async terminalResize(sessionId: string, cols: number, rows: number): Promise<void> {
+      for (const sessions of terminalSessions.values()) {
+        sessions.get(sessionId)?.resize(cols, rows)
+      }
+    },
+
+    async terminalKill(sessionId: string): Promise<void> {
+      for (const sessions of terminalSessions.values()) {
+        const session = sessions.get(sessionId)
+        if (session) {
+          sessions.delete(sessionId)
+          session.kill()
+          return
+        }
+      }
+      // Idempotent for unknown ids, mirroring the desktop backend.
     },
 
     resolveFileUrl(projectId: string, relPath: string): string {

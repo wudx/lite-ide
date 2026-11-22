@@ -25,6 +25,18 @@ export interface ContributionMap {
     icon?: Component
     component: Component<{ scope: ProjectScope }>
   }
+  /**
+   * Bottom panel view (e.g. terminal, output): rendered below the editor area
+   * of each project, toggled through the workbench PanelState service.
+   */
+  'panel.view': {
+    id: string
+    title: string
+    titleKey?: string
+    order: number
+    icon?: Component
+    component: Component<{ scope: ProjectScope }>
+  }
   'previewer.provider': {
     id: string
     label: string

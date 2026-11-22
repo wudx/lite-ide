@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from
 import { Dynamic } from 'solid-js/web'
 import { getI18n } from '../i18n'
 import { LayoutStateKey } from '../services'
+import { PanelHost } from './PanelHost'
 import { PreviewHost } from './PreviewHost'
 
 export interface ProjectWorkspaceProps {
@@ -72,6 +73,7 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
     <section
       class="flex-1 min-h-0 min-w-0 flex"
       style={{ display: props.active ? 'flex' : 'none' }}
+      data-active={props.active ? 'true' : 'false'}
     >
       {/* Left sidebar floating card */}
       <Show when={layout.sidebarVisible() && sortedViews().length > 0}>
@@ -161,8 +163,11 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
         </div>
       </Show>
 
-      {/* Right preview / editor floating card */}
-      <PreviewHost kernel={props.kernel} scope={props.scope} />
+      {/* Right preview / editor floating card, with the bottom panel below */}
+      <div class="flex-1 min-w-0 min-h-0 flex flex-col">
+        <PreviewHost kernel={props.kernel} scope={props.scope} />
+        <PanelHost kernel={props.kernel} scope={props.scope} />
+      </div>
     </section>
   )
 }

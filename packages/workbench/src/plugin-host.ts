@@ -18,6 +18,7 @@ import { joinNativePath } from './paths'
 import { QuickOpenKey } from './quick-open'
 import {
   LayoutStateKey,
+  PanelStateKey,
   ProjectFsEventsKey,
   ProjectSelectionKey,
   ThemeStateKey,
@@ -70,6 +71,7 @@ export function buildHostRequire(liteide: LiteideHostApi): HostRequire {
       ProjectSelectionKey,
       ProjectFsEventsKey,
       LayoutStateKey,
+      PanelStateKey,
       ThemeStateKey,
       I18nStateKey,
       EditorBufferKey,

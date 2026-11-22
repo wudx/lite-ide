@@ -33,6 +33,9 @@ import previewMarkdownCss from '../../../plugins/preview-markdown/dist/plugin.cs
 import previewCodeManifest from '../../../plugins/preview-code/plugin.json'
 import previewCodeSource from '../../../plugins/preview-code/dist/plugin.js?raw'
 import previewCodeCss from '../../../plugins/preview-code/dist/plugin.css?raw'
+import terminalManifest from '../../../plugins/terminal/plugin.json'
+import terminalSource from '../../../plugins/terminal/dist/plugin.js?raw'
+import terminalCss from '../../../plugins/terminal/dist/plugin.css?raw'
 import themeNordManifest from '../../../plugins/theme-nord/plugin.json'
 import themeNordSource from '../../../plugins/theme-nord/dist/plugin.js?raw'
 
@@ -81,6 +84,11 @@ const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
     manifest: asManifest(previewCodeManifest),
     source: previewCodeSource,
     assets: { 'plugin.css': previewCodeCss },
+  },
+  {
+    manifest: asManifest(terminalManifest),
+    source: terminalSource,
+    assets: { 'plugin.css': terminalCss },
   },
 ]
 

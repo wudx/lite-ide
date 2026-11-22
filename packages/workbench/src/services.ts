@@ -75,6 +75,24 @@ export interface LayoutStateService {
   setSidebarWidth(width: number): void
 }
 
+/**
+ * Bottom panel area state (kernel-level: one shared visibility/height across
+ * projects; each project renders its own panel content, kept alive while warm).
+ */
+export interface PanelStateService {
+  readonly visible: Accessor<boolean>
+  readonly height: Accessor<number>
+  readonly activePanelId: Accessor<string | null>
+  toggle(): void
+  setVisible(visible: boolean): void
+  setActivePanelId(id: string): void
+  setHeight(height: number): void
+}
+
+export const PANEL_DEFAULT_HEIGHT = 260
+export const PANEL_MIN_HEIGHT = 120
+export const PANEL_MAX_HEIGHT = 640
+
 /** 主题 id：内置主题 + 插件注册主题的开放集合。 */
 export type ThemeMode = string
 
@@ -125,6 +143,7 @@ export const ProjectFsEventsKey = createServiceKey<EventBus<{ delta: FsDelta }>>
   'workbench.projectFsEvents',
 )
 export const LayoutStateKey = createServiceKey<LayoutStateService>('workbench.layoutState')
+export const PanelStateKey = createServiceKey<PanelStateService>('workbench.panelState')
 export const ThemeStateKey = createServiceKey<ThemeStateService>('workbench.themeState')
 
 function baseNameOf(relPath: string): string {
@@ -454,6 +473,30 @@ export function createLayoutState(): LayoutStateService {
   }
 }
 
+export function createPanelState(): PanelStateService {
+  const [visible, setVisibleState] = createSignal(false)
+  const [height, setHeightState] = createSignal(PANEL_DEFAULT_HEIGHT)
+  const [activePanelId, setActivePanelIdState] = createSignal<string | null>(null)
+
+  return {
+    visible,
+    height,
+    activePanelId,
+    toggle() {
+      setVisibleState((v) => !v)
+    },
+    setVisible(visible: boolean) {
+      setVisibleState(visible)
+    },
+    setActivePanelId(id: string) {
+      setActivePanelIdState(id)
+    },
+    setHeight(height: number) {
+      setHeightState(Math.max(PANEL_MIN_HEIGHT, Math.min(PANEL_MAX_HEIGHT, Math.round(height))))
+    },
+  }
+}
+
 export const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
 
 const THEME_ID_PATTERN = /^[\w-]+$/
@@ -606,6 +649,7 @@ export function createWorkbenchKernel(
   })
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
+  kernel.provide(PanelStateKey, createPanelState())
   // 传入 kernel：ThemeState / I18nState 需要响应式读取插件贡献点。
   kernel.provide(ThemeStateKey, createThemeState(kernel))
   kernel.provide(I18nStateKey, createI18nState(kernel))

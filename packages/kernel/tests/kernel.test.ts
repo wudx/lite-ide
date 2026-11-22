@@ -85,6 +85,35 @@ describe('AppKernel & ProjectScope', () => {
     kernel.dispose()
   })
 
+  it('supports panel.view contributions with registration/disposal lifecycle', () => {
+    const kernel = createAppKernel({ host: createMemoryHost() })
+    const panels = kernel.contributions('panel.view')
+    expect(panels().length).toBe(0)
+
+    const plugin: Plugin = {
+      id: 'panelist',
+      name: 'Panelist',
+      activate(ctx) {
+        ctx.contribute('panel.view', {
+          id: 'demo-panel',
+          title: 'Demo Panel',
+          titleKey: 'demo.panel.title',
+          order: 10,
+          component: () => null,
+        })
+      },
+    }
+    const dispose = kernel.registerPlugin(plugin)
+    const contributed = panels()
+    expect(contributed.length).toBe(1)
+    expect(contributed[0].id).toBe('demo-panel')
+    expect(contributed[0].titleKey).toBe('demo.panel.title')
+
+    dispose.dispose()
+    expect(panels().length).toBe(0)
+    kernel.dispose()
+  })
+
   it('disposes Solid reactive effects and host watcher when project tab closes', async () => {
     const closedIds: string[] = []
     const kernel = createAppKernel({ host: createMemoryHost((id) => closedIds.push(id)) })

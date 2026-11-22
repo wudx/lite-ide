@@ -11,6 +11,8 @@ import type {
   PickSavePathOptions,
   PluginListResult,
   ProjectInfo,
+  TerminalEvent,
+  TerminalSessionHandle,
   TextPayload,
   WorkspaceBackend,
   WriteTextResult,
@@ -173,6 +175,32 @@ export function createTauriBackend(): WorkspaceBackend {
 
     async pluginCatalog(): Promise<CatalogPlugin[]> {
       return invoke<CatalogPlugin[]>('plugin_catalog')
+    },
+
+    // 交互式终端：输出经 IPC Channel 流式回传（base64 分帧，见 TerminalEvent）。
+    async terminalSpawn(projectId, options): Promise<TerminalSessionHandle> {
+      const channel = new Channel<TerminalEvent>()
+      channel.onmessage = (event) => {
+        options.onEvent(event)
+      }
+      return invoke<TerminalSessionHandle>('terminal_spawn', {
+        projectId,
+        cols: options.cols,
+        rows: options.rows,
+        onEvent: channel,
+      })
+    },
+
+    terminalWrite(sessionId: string, data: string): Promise<void> {
+      return invoke<void>('terminal_write', { sessionId, data })
+    },
+
+    terminalResize(sessionId: string, cols: number, rows: number): Promise<void> {
+      return invoke<void>('terminal_resize', { sessionId, cols, rows })
+    },
+
+    terminalKill(sessionId: string): Promise<void> {
+      return invoke<void>('terminal_kill', { sessionId })
     },
   }
 }

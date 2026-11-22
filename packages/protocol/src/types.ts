@@ -110,6 +110,53 @@ export interface PickSavePathOptions {
   outsideProjectMessage?: string
 }
 
+/** One streamed output frame of a terminal session. */
+export type TerminalEvent =
+  | {
+      type: 'data'
+      /** Base64-encoded PTY bytes (UTF-8 boundaries are never split). */
+      base64: string
+    }
+  | {
+      type: 'exit'
+      /** Process exit code; -1 when unknown (e.g. killed by the host). */
+      code: number
+    }
+
+export interface TerminalSpawnOptions {
+  /** Initial terminal size in character cells. */
+  cols: number
+  rows: number
+  /**
+   * Receives streamed output and the exit notification. Invoked from backend
+   * threads — keep the handler cheap and route into the UI through the
+   * subscriber instead of touching DOM synchronously.
+   */
+  onEvent(event: TerminalEvent): void
+}
+
+export interface TerminalSessionHandle {
+  sessionId: string
+  /** Human-readable shell name reported by the backend (e.g. "pwsh"). */
+  shellLabel: string
+}
+
+/**
+ * Interactive terminal (PTY) operations for one opened project, optional like
+ * `pickSavePath`. The session shell always starts in the project root; the
+ * backend resolves the real path from the project id, never from client input.
+ */
+export interface TerminalCapabilities {
+  /** Spawns the project's shell session and starts streaming output. */
+  terminalSpawn(projectId: string, options: TerminalSpawnOptions): Promise<TerminalSessionHandle>
+  /** Writes typed input bytes (UTF-8) to the session. */
+  terminalWrite(sessionId: string, data: string): Promise<void>
+  /** Resizes the PTY to the given character cell size. */
+  terminalResize(sessionId: string, cols: number, rows: number): Promise<void>
+  /** Kills the session; idempotent for unknown ids. */
+  terminalKill(sessionId: string): Promise<void>
+}
+
 /** One changed path from `git status --porcelain`. Letters follow git's XY alphabet. */
 export interface GitFileStatus {
   /** Index (staged) status letter: ' ', 'M', 'A', 'D', 'R', 'C', 'U' or '?'. */
@@ -251,7 +298,11 @@ export interface GitBackend {
   stashDrop(projectId: string, index: number): Promise<void>
 }
 
-export interface WorkspaceBackend {
+/**
+ * The frontend↔backend workspace contract. Terminal operations are composed
+ * in as optional capability members (see {@link TerminalCapabilities}).
+ */
+export interface WorkspaceBackend extends Partial<TerminalCapabilities> {
   readonly kind: 'tauri' | 'mock'
   openProject(path: string, onFsEvent: (delta: FsDelta) => void): Promise<ProjectInfo>
   closeProject(projectId: string): Promise<void>
