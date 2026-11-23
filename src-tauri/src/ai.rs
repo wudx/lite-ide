@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::error::AppError;
 
-const REQUEST_TIMEOUT_SECS: u64 = 60;
+const REQUEST_TIMEOUT_SECS: u64 = 120;
 const CHAT_COMPLETIONS_SUFFIX: &str = "/chat/completions";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,7 +78,7 @@ pub fn build_chat_body(request: &AiChatRequest) -> Value {
         "messages": messages,
         "temperature": 0.2,
         "stream": false,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
     })
 }
 
@@ -103,6 +103,30 @@ pub fn provider_error_message(payload: &Value) -> Option<String> {
     None
 }
 
+fn extract_message_text(raw: Option<&Value>) -> Option<String> {
+    match raw? {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(parts) => {
+            let mut texts = Vec::new();
+            for p in parts {
+                let Some(text) = p.get("text").and_then(Value::as_str) else {
+                    continue;
+                };
+                let ty = p.get("type").and_then(Value::as_str);
+                if matches!(ty, None | Some("text") | Some("output_text")) {
+                    texts.push(text);
+                }
+            }
+            if texts.is_empty() {
+                None
+            } else {
+                Some(texts.concat())
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Extracts `choices[0].message.content` from a successful completion payload.
 pub fn extract_content(payload: &Value) -> Result<String, AppError> {
     let detail = provider_error_message(payload);
@@ -116,12 +140,18 @@ pub fn extract_content(payload: &Value) -> Result<String, AppError> {
     let first = choices
         .first()
         .ok_or_else(|| missing("completion response has no choices"))?;
-    let content = first
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Ai("completion response has no message content".into()))?;
-    Ok(content.to_string())
+    let finish_reason = first.get("finish_reason").and_then(Value::as_str);
+    let content = extract_message_text(first.get("message").and_then(|m| m.get("content")));
+    match content {
+        Some(text) if !text.trim().is_empty() || finish_reason != Some("length") => Ok(text),
+        _ if finish_reason == Some("length") => Err(AppError::Ai(
+            "completion truncated at max_tokens before producing content (finish_reason=length)"
+                .into(),
+        )),
+        _ => Err(AppError::Ai(
+            "completion response has no message content".into(),
+        )),
+    }
 }
 
 pub async fn chat(request: AiChatRequest) -> Result<AiChatResult, AppError> {
@@ -204,6 +234,7 @@ mod tests {
         let body = build_chat_body(&request);
         assert_eq!(body["model"], "deepseek-chat");
         assert_eq!(body["stream"], false);
+        assert_eq!(body["max_tokens"], 4096);
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["role"], "user");
 
@@ -231,5 +262,44 @@ mod tests {
         assert!(extract_content(&empty).is_err());
         let no_content = json!({ "choices": [{ "message": {} }] });
         assert!(extract_content(&no_content).is_err());
+
+        let truncated = json!({
+            "choices": [{
+                "finish_reason": "length",
+                "message": { "role": "assistant", "content": "" }
+            }]
+        });
+        assert!(extract_content(&truncated)
+            .unwrap_err()
+            .to_string()
+            .contains("finish_reason=length"));
+
+        let parts = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        { "type": "thinking", "text": "secret" },
+                        { "type": "output_text", "text": "fix: " },
+                        { "type": "text", "text": "ok" }
+                    ]
+                }
+            }]
+        });
+        assert_eq!(extract_content(&parts).unwrap(), "fix: ok");
+
+        let empty_parts = json!({ "choices": [{ "message": { "content": [] } }] });
+        assert!(extract_content(&empty_parts).is_err());
+
+        let blank_parts_truncated = json!({
+            "choices": [{
+                "finish_reason": "length",
+                "message": { "content": [{ "type": "text", "text": "  " }] }
+            }]
+        });
+        assert!(extract_content(&blank_parts_truncated)
+            .unwrap_err()
+            .to_string()
+            .contains("finish_reason=length"));
     }
 }

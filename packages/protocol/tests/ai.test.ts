@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
 import {
   buildChatEndpoint,
   buildChatRequestBody,
   chatCompletionViaFetch,
+  chatCompletionViaTauri,
   extractProviderErrorMessage,
+  formatErrorMessage,
   parseChatCompletionResponse,
   validateChatBaseUrl,
   type AiChatRequest,
-} from '../src/ai'
+} from '../src/index'
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
 
 const baseRequest: AiChatRequest = {
   baseUrl: 'https://api.deepseek.com',
@@ -61,6 +68,7 @@ describe('buildChatRequestBody', () => {
     ])
     expect(withSystem.model).toBe('deepseek-chat')
     expect(withSystem.stream).toBe(false)
+    expect(withSystem.max_tokens).toBe(4096)
 
     const withoutSystem = buildChatRequestBody({ ...baseRequest, system: '   ' })
     expect(withoutSystem.messages).toEqual([{ role: 'user', content: 'hello' }])
@@ -85,6 +93,70 @@ describe('parseChatCompletionResponse', () => {
     expect(() =>
       parseChatCompletionResponse({ choices: [{ message: { content: null } }] }),
     ).toThrow('no message content')
+    expect(() =>
+      parseChatCompletionResponse({ choices: [{ finish_reason: 'length', message: { content: '' } }] }),
+    ).toThrow('finish_reason=length')
+    expect(() =>
+      parseChatCompletionResponse({ choices: [{ finish_reason: 'length', message: { content: null } }] }),
+    ).toThrow('finish_reason=length')
+    expect(
+      parseChatCompletionResponse({
+        choices: [{ message: { content: [{ type: 'text', text: 'feat: ' }, { type: 'text', text: 'parts' }] } }],
+      }),
+    ).toBe('feat: parts')
+    expect(
+      parseChatCompletionResponse({
+        choices: [
+          {
+            message: {
+              content: [
+                { type: 'thinking', text: 'internal thoughts' },
+                { type: 'output_text', text: 'fix: ok' },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toBe('fix: ok')
+    expect(() => parseChatCompletionResponse({ choices: [{ message: { content: [] } }] })).toThrow(
+      'no message content',
+    )
+    expect(() =>
+      parseChatCompletionResponse({
+        choices: [{ message: { content: [{ type: 'image_url', url: 'x' }] } }],
+      }),
+    ).toThrow('no message content')
+    expect(() =>
+      parseChatCompletionResponse({
+        choices: [{ finish_reason: 'length', message: { content: [{ type: 'text', text: '   ' }] } }],
+      }),
+    ).toThrow('finish_reason=length')
+  })
+})
+
+describe('chatCompletionViaTauri', () => {
+  it('unwraps serialized Tauri AppError rejections into readable Error messages', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce({ code: 'AI_ERROR', message: 'ai error: HTTP 429' })
+    await expect(chatCompletionViaTauri(baseRequest)).rejects.toThrow('ai error: HTTP 429')
+  })
+
+  it('preserves existing Error instances thrown by invoke', async () => {
+    const original = new Error('ipc channel closed')
+    vi.mocked(invoke).mockRejectedValueOnce(original)
+    await expect(chatCompletionViaTauri(baseRequest)).rejects.toBe(original)
+  })
+})
+
+describe('formatErrorMessage', () => {
+  it('unwraps Error instances, strings, and serialized Tauri AppError payloads', () => {
+    expect(formatErrorMessage(new Error('boom'))).toBe('boom')
+    expect(formatErrorMessage('plain error')).toBe('plain error')
+    expect(formatErrorMessage({ code: 'AI_ERROR', message: 'ai error: HTTP 401' })).toBe(
+      'ai error: HTTP 401',
+    )
+    expect(formatErrorMessage({ detail: 'fallback detail' })).toBe('fallback detail')
+    expect(formatErrorMessage({ code: 'UNKNOWN' })).toBe('{"code":"UNKNOWN"}')
+    expect(formatErrorMessage({ toJSON: () => undefined })).toBe('[object Object]')
   })
 })
 

@@ -1,4 +1,5 @@
 import type { AppKernel } from '@lite-ide/kernel'
+import { formatErrorMessage } from '@lite-ide/protocol'
 import Check from 'lucide-solid/icons/check'
 import Eye from 'lucide-solid/icons/eye'
 import EyeOff from 'lucide-solid/icons/eye-off'
@@ -79,7 +80,7 @@ export function ModelSettings(props: ModelSettingsProps) {
     } catch (err) {
       setTestState({
         status: 'fail',
-        message: err instanceof Error ? err.message : String(err),
+        message: formatErrorMessage(err),
       })
     }
   }

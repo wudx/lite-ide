@@ -34,6 +34,8 @@ describe('fileImportanceScore', () => {
     expect(fileImportanceScore('apps/web/dist/index.js')).toBe(-100)
     expect(fileImportanceScore('lib/parser.min.js')).toBe(-100)
     expect(fileImportanceScore('packages/a/bundle.js.map')).toBe(-100)
+    expect(fileImportanceScore('assets/bundles/sound/hit.mp3.meta')).toBe(-100)
+    expect(fileImportanceScore('assets\\bundles\\sound\\hit.mp3.meta')).toBe(-100)
   })
 })
 
@@ -74,6 +76,51 @@ describe('selectKeyDiffs', () => {
     })
     expect(selected[0].truncated).toBe(false)
     expect(selected[0].patch).toHaveLength(120)
+  })
+
+  it('excludes binary diff stubs and .meta files, and redistributes unused total budget to key code', () => {
+    const diffs = [
+      diff('assets/scripts/SoundPath.ts', 'a'.repeat(5000)),
+      diff('assets/scripts/Tracker.ts', 'b'.repeat(5000)),
+      diff('assets/sound/hit.mp3.meta', 'c'.repeat(500)),
+      diff(
+        'assets/sound/hit.mp3',
+        'diff --git a/assets/sound/hit.mp3 b/assets/sound/hit.mp3\ndeleted file mode 100644\nBinary files a/assets/sound/hit.mp3 and /dev/null differ',
+      ),
+    ]
+    const { selected, overflowPaths } = selectKeyDiffs(diffs)
+    expect(selected.map((s) => s.relPath)).toEqual([
+      'assets/scripts/SoundPath.ts',
+      'assets/scripts/Tracker.ts',
+    ])
+    // Neither key file should be clamped at 4000 when the 16000 global budget fits both in full.
+    expect(selected[0].truncated).toBe(false)
+    expect(selected[0].patch).toHaveLength(5000)
+    expect(selected[1].truncated).toBe(false)
+    expect(selected[1].patch).toHaveLength(5000)
+    expect(overflowPaths).toEqual(['assets/sound/hit.mp3', 'assets/sound/hit.mp3.meta'])
+  })
+
+  it('redistributes leftover budget fairly across still-truncated files and keeps textual hunks', () => {
+    const patchA = 'a'.repeat(12000)
+    const patchB = 'b'.repeat(5000)
+    const patchC = 'diff --git a/c.ts b/c.ts\n@@ -1 +1 @@\n+const msg = "Binary files a/x and b/x differ"\n'
+    const patchBin = 'diff --git a/d.bin b/d.bin\nGIT binary patch\nliteral 4\nLcmZQzU|<0R00031\n'
+    const { selected, overflowPaths } = selectKeyDiffs([
+      diff('a.ts', patchA),
+      diff('b.ts', patchB),
+      diff('c.ts', patchC),
+      diff('d.bin', patchBin),
+    ])
+    // c.ts (small textual hunk mentioning "Binary files") stays intact; b.ts fits (5000);
+    // a.ts takes the remaining global budget (16000 - 5000 - patchC.length).
+    expect(selected.map((s) => s.relPath)).toEqual(['a.ts', 'b.ts', 'c.ts'])
+    expect(selected[0].truncated).toBe(true)
+    expect(selected[0].patch.length).toBe(16000 - 5000 - patchC.length)
+    expect(selected[1].truncated).toBe(false)
+    expect(selected[1].patch).toHaveLength(5000)
+    expect(selected[2].truncated).toBe(false)
+    expect(overflowPaths).toEqual(['d.bin'])
   })
 })
 

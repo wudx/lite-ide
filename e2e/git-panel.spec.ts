@@ -629,3 +629,34 @@ test('AI generate uses the custom commit prompt as the system instruction', asyn
 
   expect(consoleErrors).toEqual([])
 })
+
+test('AI generate surfaces readable error detail when completion is truncated before output', async ({
+  page,
+}, testInfo) => {
+  seedAiModelConfig({ apiKey: 'sk-e2e-test' })(page)
+  const consoleErrors = trackErrors(page)
+
+  await page.route('https://api.deepseek.com/chat/completions', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '' } }],
+      }),
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  await page.getByTestId('git-ai-generate').click()
+  await expect(page.getByText(/AI 生成失败：.*finish_reason=length/)).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('git-ai-truncated-error.png'),
+    animations: 'disabled',
+  })
+
+  expect(consoleErrors).toEqual([])
+})

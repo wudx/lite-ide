@@ -1,5 +1,5 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import type { GitFileStatus } from '@lite-ide/protocol'
+import { formatErrorMessage, type GitFileStatus } from '@lite-ide/protocol'
 import {
   AiModelKey,
   ConfirmDialogKey,
@@ -1007,8 +1007,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
       }
       store.setCommitMessage(message)
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err)
-      store.setError(`${i18n.t('git.ai.failed')}${detail}`)
+      store.setError(`${i18n.t('git.ai.failed')}${formatErrorMessage(err)}`)
     } finally {
       setAiGenerating(false)
     }

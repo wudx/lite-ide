@@ -57,12 +57,22 @@ const CONFIG_EXTENSIONS = new Set([
 
 const STYLE_EXTENSIONS = new Set(['css', 'scss', 'less', 'sass', 'html', 'htm'])
 
-/** Lockfiles, bundles and build output never carry useful commit context. */
+/** Lockfiles, asset metadata, bundles and build output never carry useful commit context. */
 const NOISE_PATTERNS: RegExp[] = [
   /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|poetry\.lock|composer\.lock|Gemfile\.lock|packages\.lock\.json)$/i,
   /(^|\/)(node_modules|dist|build|out|coverage|\.vite|\.turbo|\.next)\//,
-  /\.(min\.js|min\.css|map|snap|lock)$/i,
+  /\.(meta|min\.js|min\.css|map|snap|lock)$/i,
 ]
+
+const DEFAULT_MAX_FILES = 12
+const DEFAULT_MAX_TOTAL_CHARS = 16000
+const DEFAULT_MAX_FILE_CHARS = 4000
+
+/** True when git emitted a binary diff placeholder without textual hunks. */
+function isBinaryPatch(patch: string): boolean {
+  if (/^@@ /m.test(patch)) return false
+  return /^(?:Binary files .+ differ|GIT binary patch)/m.test(patch)
+}
 
 function extensionOf(relPath: string): string {
   const normalized = relPath.replace(/\\/g, '/')
@@ -95,16 +105,18 @@ export interface KeyDiffSelection {
 
 /**
  * Picks the most informative diffs within the given budgets: key code files
- * first (ties broken by patch size), each patch clamped to `maxFileChars`,
- * stopping once `maxFiles` or `maxTotalChars` is reached.
+ * first (ties broken by patch size), excluding noise and binary diff stubs.
+ * When `options.maxFileChars` is omitted, any remaining total budget after the
+ * initial fair-share pass is redistributed to truncated key files.
  */
 export function selectKeyDiffs(
   diffs: GitDiffFile[],
   options: CommitMessageOptions = {},
 ): KeyDiffSelection {
-  const maxFiles = options.maxFiles ?? 12
-  const maxTotalChars = options.maxTotalChars ?? 12000
-  const maxFileChars = options.maxFileChars ?? 2400
+  const maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES
+  const maxTotalChars = options.maxTotalChars ?? DEFAULT_MAX_TOTAL_CHARS
+  const hasExplicitFileCap = options.maxFileChars !== undefined
+  const perFileCap = options.maxFileChars ?? DEFAULT_MAX_FILE_CHARS
 
   const ranked = diffs
     .map((diff) => ({
@@ -114,20 +126,56 @@ export function selectKeyDiffs(
     }))
     .sort((a, b) => b.score - a.score || b.size - a.size)
 
-  const selected: SelectedDiff[] = []
+  interface SelectionEntry {
+    relPath: string
+    fullPatch: string
+    length: number
+  }
+
+  const chosen: SelectionEntry[] = []
   const overflowPaths: string[] = []
   let total = 0
   for (const item of ranked) {
-    if (item.score < 0 || selected.length >= maxFiles || total >= maxTotalChars) {
+    if (
+      item.score < 0 ||
+      isBinaryPatch(item.diff.patch) ||
+      chosen.length >= maxFiles ||
+      total >= maxTotalChars
+    ) {
       overflowPaths.push(item.diff.relPath)
       continue
     }
-    const budget = Math.min(maxFileChars, maxTotalChars - total)
-    const truncated = item.diff.patch.length > budget
-    const patch = truncated ? item.diff.patch.slice(0, budget) : item.diff.patch
-    selected.push({ relPath: item.diff.relPath, patch, truncated })
-    total += patch.length
+    const budget = Math.min(perFileCap, maxTotalChars - total)
+    const length = Math.min(item.diff.patch.length, budget)
+    chosen.push({ relPath: item.diff.relPath, fullPatch: item.diff.patch, length })
+    total += length
   }
+
+  // Redistribute leftover global budget across truncated files so core code
+  // changes aren't needlessly cut off when total budget has headroom.
+  if (!hasExplicitFileCap && total < maxTotalChars) {
+    let remaining = maxTotalChars - total
+    while (remaining > 0) {
+      const pending = chosen.filter((entry) => entry.length < entry.fullPatch.length)
+      if (pending.length === 0) break
+      const share = Math.max(1, Math.floor(remaining / pending.length))
+      for (const entry of pending) {
+        if (remaining <= 0) break
+        const extra = Math.min(entry.fullPatch.length - entry.length, share, remaining)
+        entry.length += extra
+        remaining -= extra
+      }
+    }
+  }
+
+  const selected: SelectedDiff[] = chosen.map((entry) => {
+    const truncated = entry.length < entry.fullPatch.length
+    return {
+      relPath: entry.relPath,
+      patch: truncated ? entry.fullPatch.slice(0, entry.length) : entry.fullPatch,
+      truncated,
+    }
+  })
   return { selected, overflowPaths }
 }
 

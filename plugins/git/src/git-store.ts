@@ -1,11 +1,12 @@
 import { createServiceKey } from '@lite-ide/kernel'
-import type {
-  GitBackend,
-  GitBranchInfo,
-  GitCommitInfo,
-  GitFileStatus,
-  GitStashEntry,
-  GitStatus,
+import {
+  formatErrorMessage,
+  type GitBackend,
+  type GitBranchInfo,
+  type GitCommitInfo,
+  type GitFileStatus,
+  type GitStashEntry,
+  type GitStatus,
 } from '@lite-ide/protocol'
 import type { TranslateFn } from '@lite-ide/workbench'
 import { batch, createSignal, type Accessor } from 'solid-js'
@@ -286,7 +287,7 @@ export function createGitStore(
         lastStatusResult = null
         return null
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = formatErrorMessage(err)
         if (seq !== requestSeq) return null
         if (syncError) setError(message)
         lastStatusResult = message
@@ -334,7 +335,7 @@ export function createGitStore(
       })
       return null
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = formatErrorMessage(err)
       if (seq !== branchRequestSeq) return null
       if (syncError) setError(message)
       return message
@@ -361,7 +362,7 @@ export function createGitStore(
       })
       return null
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = formatErrorMessage(err)
       if (seq !== stashRequestSeq) return null
       if (syncError) setError(message)
       return message
@@ -400,7 +401,7 @@ export function createGitStore(
       commitsLoaded = true
     } catch (err) {
       if (seq !== commitsRequestSeq) return
-      setCommitsError(err instanceof Error ? err.message : String(err))
+      setCommitsError(formatErrorMessage(err))
       // A failed first load must not leave a dangling "load more" button.
       if (!next) setHasMoreCommits(false)
     } finally {
@@ -421,7 +422,7 @@ export function createGitStore(
       try {
         await action()
       } catch (err) {
-        actionError = err instanceof Error ? err.message : String(err)
+        actionError = formatErrorMessage(err)
       }
       // Refresh even after failures: operations may partially apply. The action
       // error is applied afterwards so the follow-up refresh cannot wipe it.
@@ -442,7 +443,7 @@ export function createGitStore(
       try {
         await action()
       } catch (err) {
-        actionError = err instanceof Error ? err.message : String(err)
+        actionError = formatErrorMessage(err)
       }
       const [statusError, stashError] = await Promise.all([
         fetchStatus(true),
@@ -469,7 +470,7 @@ export function createGitStore(
           await action()
           ok = true
         } catch (err) {
-          actionError = err instanceof Error ? err.message : String(err)
+          actionError = formatErrorMessage(err)
         }
         const [statusError, branchError] = await Promise.all([
           fetchStatus(false),
@@ -556,7 +557,7 @@ export function createGitStore(
           await backend.checkoutBranch(projectId, trimmed, create)
           ok = true
         } catch (err) {
-          checkoutError = err instanceof Error ? err.message : String(err)
+          checkoutError = formatErrorMessage(err)
         }
         const [statusError, branchError] = await Promise.all([
           fetchStatus(false),
@@ -580,7 +581,7 @@ export function createGitStore(
           await backend.resetMixed(projectId, sha)
           ok = true
         } catch (err) {
-          resetError = err instanceof Error ? err.message : String(err)
+          resetError = formatErrorMessage(err)
         }
         const statusError = await fetchStatus(false)
         setError(resetError ?? statusError)
@@ -606,7 +607,7 @@ export function createGitStore(
           await backend.createBranchAt(projectId, trimmed, sha)
           ok = true
         } catch (err) {
-          createError = err instanceof Error ? err.message : String(err)
+          createError = formatErrorMessage(err)
         }
         // Only the branch list changes; status and history are untouched.
         const branchError = await fetchBranches(false)
@@ -624,7 +625,7 @@ export function createGitStore(
           await backend.cherryPick(projectId, sha)
           ok = true
         } catch (err) {
-          pickError = err instanceof Error ? err.message : String(err)
+          pickError = formatErrorMessage(err)
         }
         // A picked commit lands on top of the current branch: status refreshes
         // (cherry-pick conflicts surface here) and history gains a head row.
@@ -741,7 +742,7 @@ export function createGitStore(
             }
             return true
           } catch (err) {
-            setError(err instanceof Error ? err.message : String(err))
+            setError(formatErrorMessage(err))
             return false
           }
         })

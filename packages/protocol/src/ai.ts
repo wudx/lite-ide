@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { formatErrorMessage } from './error'
 
 /**
  * OpenAI-compatible chat-completion contract shared by the desktop IPC path
@@ -64,7 +65,7 @@ export function buildChatRequestBody(request: AiChatRequest): Record<string, unk
     messages,
     temperature: 0.2,
     stream: false,
-    max_tokens: 1024,
+    max_tokens: 4096,
   }
 }
 
@@ -83,6 +84,25 @@ export function extractProviderErrorMessage(payload: unknown): string | null {
   return null
 }
 
+function extractMessageText(rawContent: unknown): string | null {
+  if (typeof rawContent === 'string') return rawContent
+  if (Array.isArray(rawContent)) {
+    const parts: string[] = []
+    for (const item of rawContent) {
+      if (typeof item !== 'object' || item === null) continue
+      const part = item as Record<string, unknown>
+      if (typeof part.text !== 'string') continue
+      // Only assemble output text parts; skip thinking/reasoning/refusal blocks.
+      if (part.type !== undefined && part.type !== 'text' && part.type !== 'output_text') {
+        continue
+      }
+      parts.push(part.text)
+    }
+    return parts.length > 0 ? parts.join('') : null
+  }
+  return null
+}
+
 /** Extracts `choices[0].message.content`; throws a descriptive error otherwise. */
 export function parseChatCompletionResponse(payload: unknown): string {
   if (typeof payload !== 'object' || payload === null) {
@@ -93,10 +113,18 @@ export function parseChatCompletionResponse(payload: unknown): string {
     const detail = extractProviderErrorMessage(payload)
     throw new Error(detail ? `provider error: ${detail}` : 'chat completion response has no choices')
   }
-  const message = (choices[0] as Record<string, unknown>).message
-  const content = (message as Record<string, unknown> | undefined)?.content
-  if (typeof content !== 'string') {
+  const first = choices[0] as Record<string, unknown>
+  const finishReason = typeof first.finish_reason === 'string' ? first.finish_reason : null
+  const message = first.message
+  const content = extractMessageText((message as Record<string, unknown> | undefined)?.content)
+  if (content === null) {
+    if (finishReason === 'length') {
+      throw new Error('completion truncated at max_tokens before producing content (finish_reason=length)')
+    }
     throw new Error('chat completion response has no message content')
+  }
+  if (!content.trim() && finishReason === 'length') {
+    throw new Error('completion truncated at max_tokens before producing content (finish_reason=length)')
   }
   return content
 }
@@ -122,7 +150,7 @@ export async function chatCompletionViaFetch(
       body: JSON.stringify(buildChatRequestBody(request)),
     })
   } catch (err) {
-    throw new Error(`network request failed: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(`network request failed: ${formatErrorMessage(err)}`)
   }
   const text = await response.text()
   let payload: unknown = null
@@ -140,5 +168,9 @@ export async function chatCompletionViaFetch(
 
 /** Desktop transport: routed through the Rust `ai_chat` command (no CORS). */
 export async function chatCompletionViaTauri(request: AiChatRequest): Promise<AiChatResult> {
-  return invoke<AiChatResult>('ai_chat', { request })
+  try {
+    return await invoke<AiChatResult>('ai_chat', { request })
+  } catch (err) {
+    throw err instanceof Error ? err : new Error(formatErrorMessage(err))
+  }
 }

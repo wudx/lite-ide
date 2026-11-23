@@ -1,4 +1,5 @@
 import type { PreviewProps } from '@lite-ide/kernel'
+import { formatErrorMessage } from '@lite-ide/protocol'
 import { getI18n, WorkspaceBackendKey } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
@@ -288,7 +289,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       } catch (err) {
         if (seq !== fetchSeq) return
         setRawDiff(null)
-        setError(err instanceof Error ? err.message : String(err))
+        setError(formatErrorMessage(err))
       } finally {
         if (seq === fetchSeq) {
           setLoading(false)

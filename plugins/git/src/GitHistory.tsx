@@ -1,5 +1,5 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import type { GitCommitInfo, GitDiffFile } from '@lite-ide/protocol'
+import { formatErrorMessage, type GitCommitInfo, type GitDiffFile } from '@lite-ide/protocol'
 import {
   ConfirmDialogKey,
   FileIcon,
@@ -313,7 +313,7 @@ export const GitHistory: Component<{ scope: ProjectScope }> = (props) => {
         [commit.sha]: {
           loading: false,
           files: null,
-          error: err instanceof Error ? err.message : String(err),
+          error: formatErrorMessage(err),
         },
       }))
     }

@@ -1,4 +1,5 @@
 import type { PreviewProps } from '@lite-ide/kernel'
+import { formatErrorMessage } from '@lite-ide/protocol'
 import { getI18n, ProjectSelectionKey } from '@lite-ide/workbench'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
 import Loader2 from 'lucide-solid/icons/loader-circle'
@@ -73,7 +74,7 @@ export const XlsxTablePreview: Component<PreviewProps> = (props) => {
       } catch (err) {
         if (seq !== fetchSeq) return
         setRows(null)
-        setError(err instanceof Error ? err.message : String(err))
+        setError(formatErrorMessage(err))
       } finally {
         if (seq === fetchSeq) {
           setLoading(false)
