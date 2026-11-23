@@ -113,7 +113,6 @@ interface ChangeRowProps {
   section: 'staged' | 'unstaged'
   disabled: boolean
   depth?: number
-  showFolder?: boolean
   onOpenDiff: (entry: GitFileStatus, section: GitDiffSection) => void
   onStage: (entry: GitFileStatus) => void
   onUnstage: (entry: GitFileStatus) => void
@@ -125,18 +124,6 @@ function ChangeRow(props: ChangeRowProps) {
   const i18n = getI18n(props.scope)
   const letter = () => statusLetter(props.entry, props.section)
   const unmerged = () => isUnmergedEntry(props.entry)
-  const dir = () => {
-    if (props.showFolder === false) {
-      return props.entry.origPath ? `← ${props.entry.origPath}` : ''
-    }
-    const relPath = props.entry.relPath
-    const idx = relPath.lastIndexOf('/')
-    const folder = idx === -1 ? '' : relPath.slice(0, idx + 1)
-    // Renamed entries surface the original path here (visible on hover).
-    return props.entry.origPath
-      ? `${folder ? `${folder} ` : ''}← ${props.entry.origPath}`
-      : folder
-  }
   const titleText = () =>
     props.entry.origPath
       ? `${props.entry.relPath} ← ${props.entry.origPath}`
@@ -160,11 +147,6 @@ function ChangeRow(props: ChangeRowProps) {
     >
       <FileIcon name={name()} isDir={false} />
       <span class="truncate flex-1 leading-normal min-w-0">{name()}</span>
-      <Show when={dir()}>
-        <span class="truncate text-[10px] text-[var(--text-muted)] shrink-0 max-w-[45%] hidden group-hover/row:inline leading-normal">
-          {dir()}
-        </span>
-      </Show>
       <span
         class={`shrink-0 w-4 h-4 rounded-md flex items-center justify-center text-[10px] font-semibold font-mono ${statusTone(letter())}`}
         title={
@@ -338,7 +320,6 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               section={props.section}
               disabled={props.disabled}
               depth={props.depth + 1}
-              showFolder={false}
               onOpenDiff={props.onOpenDiff}
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
@@ -421,7 +402,6 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 section={props.section}
                 disabled={props.disabled}
                 depth={0}
-                showFolder={false}
                 onOpenDiff={props.onOpenDiff}
                 onStage={(item) => props.onStageEntries([item])}
                 onUnstage={(item) => props.onUnstageEntries([item])}
