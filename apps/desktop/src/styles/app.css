@@ -187,41 +187,42 @@
 :root[data-theme="solarized-light"] {
   color-scheme: light;
 
-  /* Layered Solarized parchment surfaces — base3 #FDF6E3, base2 #EEE8D5.
-     Canvas kept light (near #EEE8D5) so the frame doesn't yellow the scene. */
-  --bg-app: #ede7d6;
+  /* VSCode Solarized Light palette — base3 #FDF6E3, base2 #EEE8D5,
+     chrome #D9D2C2, recessed/input #DDD6C1. */
+  --bg-app: #eee8d5;
   --bg-titlebar: transparent;
-  --bg-sidebar: #f2edde;
+  --bg-sidebar: #eee8d5;
   --bg-editor: #fdf6e3;
-  --bg-editor-chrome: #ebe3ce;
+  --bg-editor-chrome: #d9d2c2;
   --bg-surface: #fdf6e3;
-  --bg-subtle: rgba(7, 54, 66, 0.045);
-  --bg-inset: rgba(7, 54, 66, 0.06);
-  --bg-inset-focus: rgba(253, 246, 227, 0.96);
-  --bg-popover: #fdf6e3;
+  --bg-subtle: rgba(88, 110, 117, 0.08);
+  --bg-inset: #ddd6c1;
+  --bg-inset-focus: #fdf6e3;
+  --bg-popover: #eee8d5;
   --bg-pill: #eee8d5;
   --bg-backdrop: rgba(7, 54, 66, 0.30);
-  --bg-dialog-footer: rgba(7, 54, 66, 0.03);
+  --bg-dialog-footer: rgba(88, 110, 117, 0.05);
 
   /* Interactive fills & borders — hover/selection follow VSCode Solarized:
      list.hoverBackground #DFCA8844, list.activeSelectionBackground #DFCA88. */
   --bg-hover: rgba(223, 202, 136, 0.32);
-  --bg-hover-strong: rgba(223, 202, 136, 0.52);
-  --bg-active: rgba(223, 202, 136, 0.55);
-  --bg-active-strong: rgba(223, 202, 136, 0.72);
-  --border-subtle: rgba(7, 54, 66, 0.10);
-  --border-panel: rgba(7, 54, 66, 0.12);
-  --border-strong: rgba(7, 54, 66, 0.18);
-  --divider: rgba(7, 54, 66, 0.16);
+  --bg-hover-strong: rgba(223, 202, 136, 0.55);
+  --bg-active: rgba(223, 202, 136, 0.78);
+  --bg-active-strong: #dfca88;
+  --border-subtle: rgba(88, 110, 117, 0.16);
+  --border-panel: #d3cbb7;
+  --border-strong: rgba(88, 110, 117, 0.28);
+  --divider: rgba(88, 110, 117, 0.24);
   /* VSCode editorIndentGuide #586E7580 — keep tree guides visible */
-  --guide-line: rgba(88, 110, 117, 0.38);
+  --guide-line: rgba(88, 110, 117, 0.36);
   /* VSCode focusBorder #b49471 */
-  --ring-focus: rgba(180, 148, 113, 0.55);
+  --ring-focus: rgba(180, 148, 113, 0.65);
 
-  /* Text & accent — darkened one step from base01/base1 for small sizes */
-  --text-primary: #073642;
-  --text-secondary: #51646b;
-  --text-muted: #839496;
+  /* Text & accent — Solarized slate-teal calibrated for >=4.5:1 AA contrast across
+     #FDF6E3 / #EEE8D5 / #DDD6C1 / #D9D2C2 / #DFCA88 surfaces */
+  --text-primary: #425860;
+  --text-secondary: #586e75;
+  --text-muted: #657b83;
   --accent: #268bd2;
   --accent-hover: #1f7bbd;
   --accent-soft: rgba(38, 139, 210, 0.12);
@@ -405,14 +406,20 @@ button:not(:disabled),
   background: rgba(255, 255, 255, 0.22);
 }
 
-:root[data-theme="light"] ::-webkit-scrollbar-thumb,
-:root[data-theme="solarized-light"] ::-webkit-scrollbar-thumb {
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: rgba(15, 23, 42, 0.15);
 }
 
-:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover,
-:root[data-theme="solarized-light"] ::-webkit-scrollbar-thumb:hover {
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(15, 23, 42, 0.28);
+}
+
+:root[data-theme="solarized-light"] ::-webkit-scrollbar-thumb {
+  background: rgba(88, 110, 117, 0.22);
+}
+
+:root[data-theme="solarized-light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 110, 117, 0.36);
 }
 
 .no-scrollbar::-webkit-scrollbar {

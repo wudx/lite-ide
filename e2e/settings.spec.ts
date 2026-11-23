@@ -6,6 +6,10 @@ const LOCALE_STORAGE_KEY = 'lite-ide.locale.v1'
 const EXCLUDE_STORAGE_KEY = 'lite-ide.explorer.exclude.v1'
 const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
 const SOLARIZED_EDITOR_BG = 'rgb(253, 246, 227)' // --bg-editor #FDF6E3
+const SOLARIZED_BASE2_BG = 'rgb(238, 232, 213)' // --bg-app / --bg-sidebar #EEE8D5
+const SOLARIZED_CHROME_BG = 'rgb(217, 210, 194)' // --bg-editor-chrome #D9D2C2
+const SOLARIZED_UI_FG = 'rgb(66, 88, 96)' // --text-primary #425860
+const SOLARIZED_EDITOR_FG = 'rgb(101, 123, 131)' // editor.foreground #657B83
 
 function trackConsoleErrors(page: Page): string[] {
   const errors: string[] = []
@@ -223,7 +227,15 @@ test('code editor renders CodeMirror with the Solarized palette under solarized-
 
   const editor = page.locator('.cm-editor')
   await expect(editor).toBeVisible()
+  await expect(page.locator('body')).toHaveCSS('background-color', SOLARIZED_BASE2_BG)
+  await expect(page.locator('aside').first()).toHaveCSS('background-color', SOLARIZED_BASE2_BG)
+  await expect(page.getByRole('tablist').locator('..')).toHaveCSS(
+    'background-color',
+    SOLARIZED_CHROME_BG,
+  )
+  await expect(page.locator('body')).toHaveCSS('color', SOLARIZED_UI_FG)
   await expect(editor).toHaveCSS('background-color', SOLARIZED_EDITOR_BG)
+  await expect(editor).toHaveCSS('color', SOLARIZED_EDITOR_FG)
   await page.screenshot({
     path: testInfo.outputPath('solarized-code-preview.png'),
     animations: 'disabled',

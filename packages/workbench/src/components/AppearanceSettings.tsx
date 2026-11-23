@@ -24,7 +24,7 @@ interface ThemeSwatch {
 const THEME_SWATCHES: Record<string, ThemeSwatch> = {
   dark: { app: '#12141a', editor: '#16181f', accent: '#7aa2ff', text: '#eceef2' },
   light: { app: '#eaedf2', editor: '#ffffff', accent: '#3b6ff6', text: '#181c25' },
-  'solarized-light': { app: '#ede7d6', editor: '#fdf6e3', accent: '#268bd2', text: '#073642' },
+  'solarized-light': { app: '#eee8d5', editor: '#fdf6e3', accent: '#268bd2', text: '#425860' },
 }
 
 function swatchOf(theme: ThemeDefinition): ThemeSwatch {

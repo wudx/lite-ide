@@ -46,22 +46,50 @@ const LIGHT_ANSI = {
   brightWhite: '#1f1f1f',
 }
 
+// Solarized Light ANSI palette; white/brightWhite are calibrated to dark Solarized
+// base01/base02 so ANSI white output stays legible against the #eee8d5 panel.
+const SOLARIZED_LIGHT_ANSI = {
+  black: '#073642',
+  red: '#dc322f',
+  green: '#859900',
+  yellow: '#b58900',
+  blue: '#268bd2',
+  magenta: '#d33682',
+  cyan: '#2aa198',
+  white: '#586e75',
+  brightBlack: '#002b36',
+  brightRed: '#cb4b16',
+  brightGreen: '#425860',
+  brightYellow: '#657b83',
+  brightBlue: '#268bd2',
+  brightMagenta: '#6c71c4',
+  brightCyan: '#2aa198',
+  brightWhite: '#073642',
+}
+
 function cssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return value || fallback
 }
 
-function buildTerminalTheme(appearance: 'dark' | 'light') {
-  const palette = appearance === 'dark' ? DARK_ANSI : LIGHT_ANSI
+function buildTerminalTheme(themeId: string, appearance: 'dark' | 'light') {
+  const isSolarized = themeId === 'solarized-light'
+  const palette = isSolarized ? SOLARIZED_LIGHT_ANSI : appearance === 'dark' ? DARK_ANSI : LIGHT_ANSI
+  const fallbackBg = isSolarized ? '#eee8d5' : appearance === 'dark' ? '#1e2229' : '#f5f6f9'
+  const fallbackFg = isSolarized ? '#425860' : appearance === 'dark' ? '#d4d4d4' : '#333333'
   return {
-    foreground: cssVar('--text-primary', appearance === 'dark' ? '#d4d4d4' : '#333333'),
+    foreground: cssVar('--text-primary', fallbackFg),
     // xterm viewport paints an opaque background, so mirror the panel card
     // color directly instead of relying on 'transparent'.
-    background: cssVar('--bg-sidebar', appearance === 'dark' ? '#1e2229' : '#fdf6e3'),
+    background: cssVar('--bg-sidebar', fallbackBg),
     cursor: cssVar('--accent', appearance === 'dark' ? '#61afef' : '#2e5f9e'),
-    cursorAccent: cssVar('--bg-sidebar', '#1e2229'),
-    selectionBackground: appearance === 'dark' ? 'rgba(148, 163, 184, 0.30)' : 'rgba(100, 116, 139, 0.28)',
+    cursorAccent: cssVar('--bg-sidebar', fallbackBg),
+    selectionBackground: isSolarized
+      ? 'rgba(223, 202, 136, 0.55)'
+      : appearance === 'dark'
+        ? 'rgba(148, 163, 184, 0.30)'
+        : 'rgba(100, 116, 139, 0.28)',
     ...palette,
   }
 }
@@ -77,6 +105,7 @@ export function TerminalView(props: { scope: ProjectScope }) {
   const panelState = props.scope.get(PanelStateKey)
   const themeState = props.scope.tryGet(ThemeStateKey)
 
+  const themeId = () => themeState?.theme() ?? 'dark'
   const appearance = () => themeState?.appearance() ?? 'dark'
 
   let hostRef: HTMLDivElement | undefined
@@ -109,7 +138,7 @@ export function TerminalView(props: { scope: ProjectScope }) {
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 2000,
-      theme: buildTerminalTheme(appearance()),
+      theme: buildTerminalTheme(themeId(), appearance()),
     })
     term = created
     fitAddon = new FitAddon()
@@ -156,11 +185,12 @@ export function TerminalView(props: { scope: ProjectScope }) {
     onCleanup(() => cancelAnimationFrame(rafId))
   })
 
-  // Track theme appearance so terminal colors follow theme switches.
+  // Track theme id & appearance so terminal colors follow every theme switch.
   createEffect(() => {
+    const nextThemeId = themeId()
     const nextAppearance = appearance()
     if (!termReady() || !term) return
-    term.options.theme = buildTerminalTheme(nextAppearance)
+    term.options.theme = buildTerminalTheme(nextThemeId, nextAppearance)
   })
 
   function restart() {

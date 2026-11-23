@@ -128,25 +128,28 @@ const ideLightHighlightStyle = HighlightStyle.define([
   { tag: [tags.invalid], color: '#dc2626' },
 ])
 
-// Canonical Solarized Light syntax palette: green keywords, cyan strings,
-// blue functions, yellow types, base01/base00 plain text on base3 parchment.
+// Canonical VSCode Solarized Light syntax palette: green keywords, cyan strings,
+// blue functions/properties, orange types, yellow constants, base00 plain text on base3 parchment.
 const ideSolarizedHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.operatorKeyword], color: '#859900' },
-  { tag: [tags.modifier, tags.self], color: '#b58900' },
-  { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#073642' },
+  { tag: [tags.modifier], color: '#586e75', fontWeight: '600' },
+  { tag: [tags.self], color: '#268bd2' },
+  { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: '#657b83' },
   { tag: [tags.variableName], color: '#586e75' },
   { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#268bd2' },
   { tag: [tags.propertyName, tags.attributeName], color: '#268bd2' },
-  { tag: [tags.typeName, tags.className, tags.namespace], color: '#b58900' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#cb4b16' },
   { tag: [tags.tagName], color: '#268bd2' },
-  { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit], color: '#d33682' },
+  { tag: [tags.bool, tags.null, tags.atom], color: '#b58900' },
+  { tag: [tags.number, tags.integer, tags.float, tags.unit], color: '#d33682' },
   { tag: [tags.string, tags.docString, tags.attributeValue], color: '#2aa198' },
-  { tag: [tags.regexp, tags.escape, tags.special(tags.string)], color: '#cb4b16' },
+  { tag: [tags.regexp], color: '#dc322f' },
+  { tag: [tags.escape, tags.special(tags.string)], color: '#cb4b16' },
   { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: '#657b83' },
   { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], color: '#93a1a1', fontStyle: 'italic' },
   { tag: [tags.meta, tags.annotation, tags.processingInstruction], color: '#6c71c4' },
   { tag: [tags.heading], color: '#268bd2', fontWeight: '600' },
-  { tag: [tags.strong], fontWeight: '600', color: '#073642' },
+  { tag: [tags.strong], fontWeight: '600', color: '#586e75' },
   { tag: [tags.emphasis], fontStyle: 'italic' },
   { tag: [tags.link, tags.url], color: '#268bd2', textDecoration: 'underline' },
   { tag: [tags.invalid], color: '#dc322f' },
@@ -313,23 +316,36 @@ const ideLightTheme = EditorView.theme(
 const ideSolarizedTheme = EditorView.theme(
   {
     ...baseThemeStyles,
+    '&': {
+      ...baseThemeStyles['&'],
+      color: '#657b83',
+    },
+    '.cm-content': {
+      ...baseThemeStyles['.cm-content'],
+      caretColor: '#657b83',
+    },
+    '&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
+      borderLeftColor: '#657b83',
+      borderLeftWidth: '1.5px',
+    },
     '.cm-gutters': {
       ...baseThemeStyles['.cm-gutters'],
       color: '#93a1a1',
     },
     '.cm-activeLineGutter': {
       ...baseThemeStyles['.cm-activeLineGutter'],
-      color: '#073642',
+      color: '#567983',
     },
     '.cm-activeLine': {
-      backgroundColor: 'rgba(7, 54, 66, 0.055)',
+      // Translucent base2 #EEE8D5 so the underlying .cm-selectionLayer stays visible.
+      backgroundColor: 'rgba(238, 232, 213, 0.72)',
     },
-    // VSCode editor.selectionBackground in Solarized Light is solid base2 #EEE8D5.
     '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: 'rgba(238, 232, 213, 0.9)',
+      backgroundColor: 'rgba(211, 203, 183, 0.78)',
     },
     '.cm-selectionMatch': {
-      backgroundColor: 'rgba(238, 232, 213, 0.9)',
+      backgroundColor: 'rgba(181, 137, 0, 0.16)',
+      outline: '1px solid rgba(181, 137, 0, 0.28)',
       borderRadius: '3px',
     },
     '&.cm-focused .cm-matchingBracket': {
@@ -347,18 +363,18 @@ const ideSolarizedTheme = EditorView.theme(
       outline: '1px solid rgba(38, 139, 210, 0.52)',
     },
     '.cm-foldPlaceholder': {
-      backgroundColor: 'rgba(7, 54, 66, 0.06)',
-      border: '1px solid rgba(7, 54, 66, 0.14)',
+      backgroundColor: 'rgba(88, 110, 117, 0.08)',
+      border: '1px solid rgba(88, 110, 117, 0.18)',
       color: 'var(--text-secondary)',
       borderRadius: '5px',
       padding: '0 6px',
       margin: '0 4px',
     },
     '.cm-tooltip': {
-      backgroundColor: '#fdf6e3',
+      backgroundColor: '#eee8d5',
       border: '1px solid var(--border-strong)',
       borderRadius: '8px',
-      boxShadow: '0 10px 28px rgba(7, 54, 66, 0.14)',
+      boxShadow: '0 10px 28px rgba(88, 110, 117, 0.18)',
     },
   },
   { dark: false },
