@@ -259,6 +259,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
         title={props.node.relPath}
         class="group/row mx-1.5 rounded-lg flex items-center gap-1 pr-1.5 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors duration-100"
         style={{ 'padding-left': `${8 + props.depth * 14}px` }}
+        onContextMenu={(e) => e.preventDefault()}
       >
         <button
           type="button"
