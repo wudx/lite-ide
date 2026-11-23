@@ -332,6 +332,13 @@ export interface WorkspaceBackend extends Partial<TerminalCapabilities> {
     options?: PickSavePathOptions,
   ): Promise<string | null>
   resolveFileUrl?(projectId: string, relPath: string): string
+  /**
+   * Desktop-only: reveals the given project entry in the OS file manager —
+   * files are selected inside their parent folder; directories open in place
+   * (Windows/Linux) or are revealed in their parent (macOS).
+   * Browser/demo backends may resolve as a no-op.
+   */
+  revealInFileManager?(projectId: string, relPath: string): Promise<void>
 
   // ---- External plugin management (app-level, optional like pickSavePath) ----
 

@@ -974,6 +974,10 @@ export function createMockBackend(): WorkspaceBackend {
       return candidate.rootPath
     },
 
+    // 浏览器演示模式没有系统文件管理器：保持能力存在但为空操作，
+    // 让“在文件管理器中打开”菜单项在 mock 下可安全点击（e2e 亦依赖此行为）。
+    async revealInFileManager(): Promise<void> {},
+
     // 浏览器演示后端的插件管理：目录安装不可用，已装插件存 localStorage。
     async pluginList(): Promise<PluginListResult> {
       const store = loadMockPluginStore()

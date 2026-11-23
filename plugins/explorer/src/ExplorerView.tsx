@@ -8,6 +8,7 @@ import {
   getI18n,
   joinNativePath,
   ProjectSelectionKey,
+  WorkspaceBackendKey,
 } from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
@@ -17,6 +18,7 @@ import Eye from 'lucide-solid/icons/eye'
 import EyeOff from 'lucide-solid/icons/eye-off'
 import FilePlus from 'lucide-solid/icons/file-plus'
 import FileStack from 'lucide-solid/icons/file-stack'
+import FolderOpen from 'lucide-solid/icons/folder-open'
 import FolderPlus from 'lucide-solid/icons/folder-plus'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Pencil from 'lucide-solid/icons/pencil'
@@ -139,6 +141,7 @@ export function ExplorerView(props: ExplorerViewProps) {
   const selection = props.scope.get(ProjectSelectionKey)
   const buffers = props.scope.tryGet(EditorBufferKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
+  const backend = props.scope.get(WorkspaceBackendKey)
   const i18n = getI18n(props.scope)
 
   const [contextMenu, setContextMenu] = createSignal<{
@@ -288,6 +291,15 @@ export function ExplorerView(props: ExplorerViewProps) {
   async function copyEntryPath(entry: DirEntry, relative: boolean) {
     const text = relative ? entry.relPath : joinNativePath(props.scope.rootPath, entry.relPath)
     await copyTextToClipboard(text)
+  }
+
+  // 在系统文件管理器中显示条目。
+  async function revealEntry(entry: DirEntry) {
+    try {
+      await backend.revealInFileManager?.(props.scope.id, entry.relPath)
+    } catch (err) {
+      console.error('[explorer] reveal in file manager failed', err)
+    }
   }
 
   function openMenuAt(x: number, y: number, entry: DirEntry | null) {
@@ -700,6 +712,21 @@ export function ExplorerView(props: ExplorerViewProps) {
                   }}
                 >
                   <span>{i18n.t('explorer.menu.open')}</span>
+                </button>
+              </Show>
+
+              <Show when={entry()}>
+                <button
+                  type="button"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    const target = entry()!
+                    setContextMenu(null)
+                    void revealEntry(target)
+                  }}
+                >
+                  <FolderOpen class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <span>{i18n.t('explorer.menu.revealInFileManager')}</span>
                 </button>
               </Show>
 

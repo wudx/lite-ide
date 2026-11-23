@@ -132,6 +132,18 @@ fn fs_delete_path(
     fs::delete_path(&root, &rel_path)
 }
 
+/// 在系统文件管理器中显示项目条目：文件在其父目录中选中；目录在 Windows/Linux
+/// 下直接打开，在 macOS 于父目录中显示。
+#[tauri::command]
+fn fs_reveal_in_file_manager(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    rel_path: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    fs::reveal_in_file_manager(&root, &rel_path)
+}
+
 /// 从启动参数中找到项目文件夹，供冷启动与二次启动共用。
 fn folder_from_args(argv: &[String]) -> Option<String> {
     jumplist::parse_folder_arg(argv)
@@ -429,6 +441,7 @@ pub fn run() {
             fs_create_dir,
             fs_rename_path,
             fs_delete_path,
+            fs_reveal_in_file_manager,
             git_status,
             git_stage,
             git_unstage,

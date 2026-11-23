@@ -108,6 +108,10 @@ export function createTauriBackend(): WorkspaceBackend {
       await invoke<void>('fs_delete_path', { projectId, relPath })
     },
 
+    async revealInFileManager(projectId: string, relPath: string): Promise<void> {
+      await invoke<void>('fs_reveal_in_file_manager', { projectId, relPath })
+    },
+
     async pickFolder(options?: PickFolderOptions): Promise<string | null> {
       const selected = await open({
         directory: true,

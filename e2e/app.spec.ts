@@ -44,6 +44,27 @@ test('explorer and editor-tab context menus copy absolute and relative paths', a
   await page.getByRole('menu').getByText('复制路径', { exact: true }).click()
   expect(await readClipboard(page)).toBe(ABS_PATH)
 
+  // --- Reveal in file manager: file rows -------------------------------------
+  // Mock 模式下该动作为安全空操作，只验证菜单项渲染与点击后菜单关闭。
+  await openExplorerContextMenu(page)
+  const revealMenu = page.getByRole('menu')
+  await expect(revealMenu.getByText('在文件管理器中打开')).toBeVisible()
+  await revealMenu.getByText('在文件管理器中打开').click()
+  await expect(page.getByRole('menu')).toBeHidden()
+
+  // --- Reveal in file manager: directory rows --------------------------------
+  const dirRow = page.getByRole('treeitem', { name: 'src' })
+  await expect(dirRow).toBeVisible()
+  await dirRow.click({ button: 'right' })
+  const dirMenu = page.getByRole('menu')
+  await expect(dirMenu.getByText('在文件管理器中打开')).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('explorer-dir-menu.png'),
+    animations: 'disabled',
+  })
+  await dirMenu.getByText('在文件管理器中打开').click()
+  await expect(page.getByRole('menu')).toBeHidden()
+
   // --- Editor tab context menu ----------------------------------------------
   await page.getByRole('treeitem', { name: FILE_NAME }).click()
   const tab = page.getByRole('tab', { name: FILE_NAME })

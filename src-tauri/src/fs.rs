@@ -347,6 +347,85 @@ pub fn delete_path(canonical_root: &Path, rel_path: &str) -> Result<(), AppError
     Ok(())
 }
 
+/// Returns `(program, args)` for revealing `path` in the OS file manager:
+/// files are selected inside their parent folder; directories open in place
+/// (Windows/Linux) or are revealed in their parent (macOS).
+fn file_manager_spawn_args(path: &Path, is_dir: bool) -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        if is_dir {
+            // raw_arg 不做任何转义，含空格路径须自带引号，否则 explorer 按空格拆参。
+            ("explorer".into(), vec![format!("\"{}\"", path.display())])
+        } else {
+            // explorer 的 `/select,` 语法要求路径内嵌引号（`/select,"路径"`），
+            // 由调用方经 raw_arg 传入，绕开 std 的自动引号转义。
+            (
+                "explorer".into(),
+                vec![format!("/select,\"{}\"", path.display())],
+            )
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // open -R 对目录同样是在父目录中显示（选中）该目录。
+        let _ = is_dir;
+        let mut args = vec!["-R".to_string()];
+        args.push(path.display().to_string());
+        ("open".into(), args)
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Linux 等平台没有统一的“选中并显示”接口：目录直接打开，
+        // 文件退而打开其父目录。
+        let target = if is_dir {
+            path.to_path_buf()
+        } else {
+            path.parent().unwrap_or(path).to_path_buf()
+        };
+        ("xdg-open".into(), vec![target.display().to_string()])
+    }
+}
+
+/// Reveals a project entry in the system file manager (desktop only).
+pub fn reveal_in_file_manager(canonical_root: &Path, rel_path: &str) -> Result<(), AppError> {
+    let target = resolve_safe_path(canonical_root, rel_path)?;
+    // canonicalize 在 Windows 上产生 `\\?\` 前缀，交给 shell 前剥掉以获得常规路径。
+    let plain = crate::project::strip_verbatim_prefix(&target);
+    let is_dir = target.is_dir();
+    let (program, args) = file_manager_spawn_args(Path::new(&plain), is_dir);
+
+    let mut cmd = std::process::Command::new(&program);
+    // 与 spawn_git 一致：隔离子进程 stdio，避免文件管理器的输出串入应用终端。
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        for arg in &args {
+            cmd.raw_arg(arg);
+        }
+        // explorer 常把请求转交给已运行的实例后以非零码退出，
+        // 成功与否不可从退出码判断，spawn 成功即视为已打开。
+        cmd.spawn()?;
+    }
+    #[cfg(not(windows))]
+    {
+        cmd.args(&args);
+        // 同步等待：xdg-open / open 很快返回，同时避免留下僵尸子进程。
+        let status = cmd.status()?;
+        if !status.success() {
+            return Err(AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("{program} exited with failure"),
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn build_dir_entry(canonical_root: &Path, path: &Path) -> Result<DirEntry, AppError> {
     let link_meta = std::fs::symlink_metadata(path)?;
     let is_dir = if link_meta.file_type().is_symlink() {
@@ -823,5 +902,42 @@ mod tests {
         assert!(!root.join("packages").exists());
 
         assert!(matches!(delete_path(&root, ""), Err(AppError::InvalidPath(_))));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn file_manager_args_select_files_and_open_dirs_on_windows() {
+        let (program, args) =
+            file_manager_spawn_args(Path::new(r"C:\demo dir\a b.txt"), false);
+        assert_eq!(program, "explorer");
+        // /select, 语法须整体为一个带内嵌引号的原始参数。
+        assert_eq!(args, vec![r#"/select,"C:\demo dir\a b.txt""#]);
+
+        // raw_arg 不做转义：目录参数同样自带引号，防止含空格路径被拆参。
+        let (program, args) = file_manager_spawn_args(Path::new(r"C:\demo dir\sub"), true);
+        assert_eq!(program, "explorer");
+        assert_eq!(args, vec![r#""C:\demo dir\sub""#]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn file_manager_args_reveal_via_open_dash_r_on_macos() {
+        let (program, args) =
+            file_manager_spawn_args(Path::new("/tmp/demo dir/a b.txt"), false);
+        assert_eq!(program, "open");
+        assert_eq!(args, vec!["-R", "/tmp/demo dir/a b.txt"]);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn file_manager_args_fall_back_to_parent_dir_on_linux() {
+        let (program, args) =
+            file_manager_spawn_args(Path::new("/tmp/demo dir/a b.txt"), false);
+        assert_eq!(program, "xdg-open");
+        assert_eq!(args, vec!["/tmp/demo dir"]);
+
+        let (program, args) = file_manager_spawn_args(Path::new("/tmp/demo dir"), true);
+        assert_eq!(program, "xdg-open");
+        assert_eq!(args, vec!["/tmp/demo dir"]);
     }
 }
