@@ -1,5 +1,5 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import type { GitFileStatus, GitStashEntry } from '@lite-ide/protocol'
+import type { GitFileStatus } from '@lite-ide/protocol'
 import {
   AiModelKey,
   ConfirmDialogKey,
@@ -8,7 +8,6 @@ import {
   ProjectSelectionKey,
 } from '@lite-ide/workbench'
 import Archive from 'lucide-solid/icons/archive'
-import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import Check from 'lucide-solid/icons/check'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
@@ -23,7 +22,6 @@ import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
 import RefreshCw from 'lucide-solid/icons/refresh-cw'
 import Sparkles from 'lucide-solid/icons/sparkles'
-import Trash from 'lucide-solid/icons/trash'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
 import {
@@ -98,6 +96,11 @@ function writeStoredPanelMode(mode: GitPanelMode): void {
   }
 }
 
+/** Selection key for a change row: `<section>:<relPath>`. */
+function rowKey(section: GitDiffSection, relPath: string): string {
+  return `${section}:${relPath}`
+}
+
 const STATUS_TITLE_KEYS: Record<string, string> = {
   M: 'git.status.modified',
   A: 'git.status.added',
@@ -113,11 +116,13 @@ interface ChangeRowProps {
   section: 'staged' | 'unstaged'
   disabled: boolean
   depth?: number
+  selected?: boolean
   onOpenDiff: (entry: GitFileStatus, section: GitDiffSection) => void
   onStage: (entry: GitFileStatus) => void
   onUnstage: (entry: GitFileStatus) => void
   onDiscard: (entry: GitFileStatus) => void
-  onStash?: (entry: GitFileStatus) => void
+  onRowClick?: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
+  onRowContextMenu?: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
 }
 
 function ChangeRow(props: ChangeRowProps) {
@@ -138,12 +143,21 @@ function ChangeRow(props: ChangeRowProps) {
     <div
       data-git-path={props.entry.relPath}
       data-git-section={props.section}
+      data-git-selected={props.selected ? 'true' : undefined}
       title={titleText()}
-      class="group/row mx-1.5 rounded-lg flex items-center gap-1.5 pr-1.5 pl-2 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors duration-100 cursor-pointer"
+      class={`group/row mx-1.5 rounded-lg flex items-center gap-1.5 pr-1.5 pl-2 h-[26px] text-xs transition-colors duration-100 cursor-pointer ${
+        props.selected
+          ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
+          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+      }`}
       style={
         props.depth ? { 'padding-left': `${8 + props.depth * 14}px` } : undefined
       }
-      onClick={() => props.onOpenDiff(props.entry, props.section)}
+      onClick={(e) => {
+        if (props.onRowClick) props.onRowClick(props.entry, props.section, e)
+        else props.onOpenDiff(props.entry, props.section)
+      }}
+      onContextMenu={(e) => props.onRowContextMenu?.(props.entry, props.section, e)}
     >
       <FileIcon name={name()} isDir={false} />
       <span class="truncate flex-1 leading-normal min-w-0">{name()}</span>
@@ -189,21 +203,6 @@ function ChangeRow(props: ChangeRowProps) {
             <Minus class="w-3.5 h-3.5" />
           </button>
         </Show>
-        <Show when={!unmerged() && props.section === 'unstaged' && props.onStash}>
-          <button
-            type="button"
-            aria-label={i18n.t('git.action.stashPath', { path: props.entry.relPath })}
-            title={i18n.t('git.action.stash')}
-            disabled={props.disabled}
-            class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
-            onClick={(e) => {
-              e.stopPropagation()
-              props.onStash?.(props.entry)
-            }}
-          >
-            <Archive class="w-3.5 h-3.5" />
-          </button>
-        </Show>
         <Show when={!unmerged() && props.section === 'unstaged'}>
           <button
             type="button"
@@ -236,7 +235,9 @@ interface TreeDirBranchProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
-  onStashEntry?: (entry: GitFileStatus) => void
+  selectedKeys: ReadonlySet<string>
+  onRowClick: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
+  onRowContextMenu: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
 }
 
 function TreeDirBranch(props: TreeDirBranchProps) {
@@ -308,7 +309,9 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               onStageEntries={props.onStageEntries}
               onUnstageEntries={props.onUnstageEntries}
               onDiscardEntry={props.onDiscardEntry}
-              onStashEntry={props.onStashEntry}
+              selectedKeys={props.selectedKeys}
+              onRowClick={props.onRowClick}
+              onRowContextMenu={props.onRowContextMenu}
             />
           )}
         </For>
@@ -320,11 +323,13 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               section={props.section}
               disabled={props.disabled}
               depth={props.depth + 1}
+              selected={props.selectedKeys.has(rowKey(props.section, entry.relPath))}
               onOpenDiff={props.onOpenDiff}
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
-              onStash={props.onStashEntry}
+              onRowClick={props.onRowClick}
+              onRowContextMenu={props.onRowContextMenu}
             />
           )}
         </For>
@@ -345,7 +350,9 @@ interface ChangeSectionContentProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
-  onStashEntry?: (entry: GitFileStatus) => void
+  selectedKeys: ReadonlySet<string>
+  onRowClick: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
+  onRowContextMenu: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
 }
 
 function ChangeSectionContent(props: ChangeSectionContentProps) {
@@ -364,11 +371,13 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
               entry={entry}
               section={props.section}
               disabled={props.disabled}
+              selected={props.selectedKeys.has(rowKey(props.section, entry.relPath))}
               onOpenDiff={props.onOpenDiff}
               onStage={(item) => props.onStageEntries([item])}
               onUnstage={(item) => props.onUnstageEntries([item])}
               onDiscard={props.onDiscardEntry}
-              onStash={props.onStashEntry}
+              onRowClick={props.onRowClick}
+              onRowContextMenu={props.onRowContextMenu}
             />
           )}
         </For>
@@ -390,7 +399,9 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 onStageEntries={props.onStageEntries}
                 onUnstageEntries={props.onUnstageEntries}
                 onDiscardEntry={props.onDiscardEntry}
-                onStashEntry={props.onStashEntry}
+                selectedKeys={props.selectedKeys}
+                onRowClick={props.onRowClick}
+                onRowContextMenu={props.onRowContextMenu}
               />
             )}
           </For>
@@ -402,11 +413,13 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 section={props.section}
                 disabled={props.disabled}
                 depth={0}
+                selected={props.selectedKeys.has(rowKey(props.section, entry.relPath))}
                 onOpenDiff={props.onOpenDiff}
                 onStage={(item) => props.onStageEntries([item])}
                 onUnstage={(item) => props.onUnstageEntries([item])}
                 onDiscard={props.onDiscardEntry}
-                onStash={props.onStashEntry}
+                onRowClick={props.onRowClick}
+                onRowContextMenu={props.onRowContextMenu}
               />
             )}
           </For>
@@ -483,82 +496,6 @@ function SectionHeader(props: SectionHeaderProps) {
   )
 }
 
-interface StashSectionProps {
-  scope: ProjectScope
-  stashes: GitStashEntry[]
-  disabled: boolean
-  onRestore: (entry: GitStashEntry) => void
-  onDrop: (entry: GitStashEntry) => void
-}
-
-/** The project's stash stack with per-entry restore (pop) and drop actions. */
-function StashSection(props: StashSectionProps) {
-  const i18n = getI18n(props.scope)
-  const [collapsed, setCollapsed] = createSignal(false)
-
-  return (
-    <div class="mt-2">
-      <SectionHeader
-        title={i18n.t('git.stash.section')}
-        count={props.stashes.length}
-        collapsed={collapsed()}
-        onToggle={() => setCollapsed((prev) => !prev)}
-        class="pt-1"
-      />
-      <Show when={!collapsed()}>
-        <Show
-          when={props.stashes.length > 0}
-          fallback={
-            <div class="mx-1.5 px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">
-              {i18n.t('git.stash.empty')}
-            </div>
-          }
-        >
-          <For each={props.stashes}>
-            {(stash) => (
-              <div
-                data-git-stash={stash.refName}
-                title={stash.message}
-                class="group/row mx-1.5 rounded-lg flex items-center gap-1.5 pr-1.5 pl-2 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors duration-100"
-              >
-                <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-                <span class="truncate flex-1 leading-normal min-w-0">{stash.message}</span>
-                <span class="shrink-0 text-[10px] text-[var(--text-muted)] leading-normal">
-                  {stash.date}
-                </span>
-                <span class="shrink-0 hidden group-hover/row:flex group-focus-within/row:flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    data-testid={`git-stash-restore-${stash.index}`}
-                    aria-label={i18n.t('git.stash.restorePath', { ref: stash.refName })}
-                    title={i18n.t('git.stash.restore')}
-                    disabled={props.disabled}
-                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                    onClick={() => props.onRestore(stash)}
-                  >
-                    <RotateCcw class="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`git-stash-drop-${stash.index}`}
-                    aria-label={i18n.t('git.stash.dropPath', { ref: stash.refName })}
-                    title={i18n.t('git.stash.drop')}
-                    disabled={props.disabled}
-                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                    onClick={() => props.onDrop(stash)}
-                  >
-                    <Trash class="w-3.5 h-3.5" />
-                  </button>
-                </span>
-              </div>
-            )}
-          </For>
-        </Show>
-      </Show>
-    </div>
-  )
-}
-
 export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
@@ -574,6 +511,11 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [branchQuery, setBranchQuery] = createSignal('')
   const [branchActiveIdx, setBranchActiveIdx] = createSignal(0)
   const [moreMenuOpen, setMoreMenuOpen] = createSignal(false)
+  // Multi-selection over change rows (Ctrl/Shift click); keys are `rowKey(section, relPath)`.
+  const [selectedKeys, setSelectedKeys] = createSignal<ReadonlySet<string>>(new Set())
+  const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null)
+  // Right-click context menu position (viewport coordinates); null = closed.
+  const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number } | null>(null)
   let spinTimer: ReturnType<typeof setTimeout> | null = null
   let branchBtnRef: HTMLButtonElement | undefined
   let branchPopoverRef: HTMLDivElement | undefined
@@ -581,6 +523,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   let branchInputRef: HTMLInputElement | undefined
   let moreMenuBtnRef: HTMLButtonElement | undefined
   let moreMenuPopoverRef: HTMLDivElement | undefined
+  let ctxMenuRef: HTMLDivElement | undefined
 
   const BRANCH_LISTBOX_ID = 'git-branch-listbox'
   const branchOptionId = (index: number) => `git-branch-option-${index}`
@@ -660,24 +603,14 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     setBranchActiveIdx(0)
   })
 
-  // Fetch the stash stack when the repository becomes available (panel opened
-  // or project switched); stash writes refresh it themselves afterwards. Guard
-  // with a flag so status-only refreshes don't re-run `git stash list`.
-  let stashesLoadedForRepo = false
+  // Leave popover menus behind when the repository disappears (project switch).
   createEffect(() => {
-    if (!repo()) {
-      if (branchMenuOpen()) {
-        setBranchMenuOpen(false)
-      }
-      if (moreMenuOpen()) {
-        setMoreMenuOpen(false)
-      }
-      stashesLoadedForRepo = false
-      return
+    if (repo()) return
+    if (branchMenuOpen()) {
+      setBranchMenuOpen(false)
     }
-    if (!stashesLoadedForRepo) {
-      stashesLoadedForRepo = true
-      void store.loadStashes()
+    if (moreMenuOpen()) {
+      setMoreMenuOpen(false)
     }
   })
 
@@ -873,31 +806,144 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     void store.discard(untracked, tracked)
   }
 
-  /** Stashes a single entry's changes (rename source included). */
-  function stashEntry(entry: GitFileStatus) {
-    const paths = entry.origPath ? [entry.relPath, entry.origPath] : [entry.relPath]
-    void store.stashPaths(paths)
-  }
+  // --- Multi-selection (Ctrl/Shift click) and the row context menu ---
 
-  async function restoreStash(entry: GitStashEntry) {
-    await store.stashRestore(entry.index)
-  }
-
-  async function dropStash(entry: GitStashEntry) {
-    // Fail closed: dropping a stash entry is irreversible.
-    if (!dialogs) return
-    const choice = await dialogs.confirm({
-      title: i18n.t('git.stash.dropTitle'),
-      message: i18n.t('git.stash.dropMessage', { ref: entry.refName }),
-      details: [entry.message],
-      actions: [
-        { id: 'drop', label: i18n.t('git.stash.dropConfirm'), variant: 'danger' },
-        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
-      ],
-      cancelId: 'cancel',
+  /** Prune selection keys whose entries disappeared after a status refresh. */
+  createEffect(() => {
+    const valid = new Set<string>()
+    for (const entry of stagedEntries()) valid.add(rowKey('staged', entry.relPath))
+    for (const entry of unstagedEntries()) valid.add(rowKey('unstaged', entry.relPath))
+    setSelectedKeys((prev) => {
+      let changed = false
+      for (const key of prev) {
+        if (!valid.has(key)) {
+          changed = true
+          break
+        }
+      }
+      if (!changed) return prev
+      const next = new Set<string>()
+      for (const key of prev) if (valid.has(key)) next.add(key)
+      return next
     })
-    if (choice !== 'drop') return
-    void store.stashDrop(entry.index)
+  })
+
+  const selectedStaged = createMemo(() =>
+    stagedEntries().filter((entry) => selectedKeys().has(rowKey('staged', entry.relPath))),
+  )
+  const selectedUnstaged = createMemo(() =>
+    unstagedEntries().filter((entry) => selectedKeys().has(rowKey('unstaged', entry.relPath))),
+  )
+  const selectedStageable = createMemo(() => selectedUnstaged().filter(isStageableEntry))
+  /** Unmerged conflicts block `git stash push -- <path>` the same as stash-all. */
+  const selectedStashable = createMemo(() =>
+    selectedUnstaged().filter((entry) => !isUnmergedEntry(entry)),
+  )
+
+  function clearSelection() {
+    setSelectedKeys(new Set<string>())
+    setSelectionAnchor(null)
+  }
+
+  function handleRowClick(entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) {
+    const key = rowKey(section, entry.relPath)
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      const list = section === 'staged' ? stagedEntries() : unstagedEntries()
+      if (e.shiftKey) {
+        // Range select within the same section, anchored at the last non-shift click.
+        const keys = list.map((item) => rowKey(section, item.relPath))
+        const endIdx = Math.max(0, keys.indexOf(key))
+        const anchor = selectionAnchor()
+        const startIdx =
+          anchor && anchor.startsWith(`${section}:`) ? keys.indexOf(anchor) : endIdx
+        const [from, to] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+        setSelectedKeys((prev) => new Set([...prev, ...keys.slice(from, to + 1)]))
+      } else {
+        setSelectedKeys((prev) => {
+          const next = new Set(prev)
+          if (next.has(key)) next.delete(key)
+          else next.add(key)
+          return next
+        })
+        setSelectionAnchor(key)
+      }
+      return
+    }
+    // Plain click behaves as before: reset selection, open the diff.
+    if (selectedKeys().size > 0) clearSelection()
+    setSelectionAnchor(null)
+    openDiff(entry, section)
+  }
+
+  function handleRowContextMenu(
+    entry: GitFileStatus,
+    section: GitDiffSection,
+    e: MouseEvent,
+  ) {
+    e.preventDefault()
+    const key = rowKey(section, entry.relPath)
+    if (!selectedKeys().has(key)) {
+      setSelectedKeys(new Set([key]))
+      setSelectionAnchor(key)
+    }
+    // Keep the menu inside the viewport.
+    const MENU_WIDTH = 210
+    const MENU_HEIGHT = 110
+    setCtxMenu({
+      x: Math.max(4, Math.min(e.clientX, window.innerWidth - MENU_WIDTH - 4)),
+      y: Math.max(4, Math.min(e.clientY, window.innerHeight - MENU_HEIGHT - 4)),
+    })
+  }
+
+  function closeCtxMenu() {
+    setCtxMenu(null)
+  }
+
+  createEffect(() => {
+    if (!ctxMenu()) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (ctxMenuRef?.contains(e.target as Node)) return
+      setCtxMenu(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null)
+    }
+    const onScroll = () => setCtxMenu(null)
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onScroll, true)
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onScroll, true)
+    })
+  })
+
+  function stageSelectedFiles() {
+    const entries = selectedStageable()
+    if (entries.length > 0) void store.stage(entries.map((entry) => entry.relPath))
+    closeCtxMenu()
+    clearSelection()
+  }
+
+  function unstageSelectedFiles() {
+    if (selectedStaged().length > 0) unstageEntries(selectedStaged())
+    closeCtxMenu()
+    clearSelection()
+  }
+
+  /** Stashes the selected unstaged entries (rename source paths included). */
+  function stashSelectedFiles() {
+    const paths = [
+      ...new Set(
+        selectedStashable().flatMap((entry) =>
+          entry.origPath ? [entry.relPath, entry.origPath] : [entry.relPath],
+        ),
+      ),
+    ]
+    if (paths.length > 0) void store.stashPaths(paths)
+    closeCtxMenu()
+    clearSelection()
   }
 
   async function commitFromBox() {
@@ -1357,7 +1403,13 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
           </div>
 
           {/* Change sections */}
-          <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1.5">
+          <div
+            class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1.5"
+            onClick={(e) => {
+              // Clicking empty list space clears the multi-selection.
+              if (!(e.target as HTMLElement).closest('[data-git-path]')) clearSelection()
+            }}
+          >
             <Show
               when={stagedEntries().length > 0 || unstagedEntries().length > 0}
               fallback={
@@ -1390,6 +1442,9 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                     onStageEntries={stageEntries}
                     onUnstageEntries={unstageEntries}
                     onDiscardEntry={discardEntry}
+                    selectedKeys={selectedKeys()}
+                    onRowClick={handleRowClick}
+                    onRowContextMenu={handleRowContextMenu}
                   />
                 </Show>
               </Show>
@@ -1425,22 +1480,76 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                     onStageEntries={stageEntries}
                     onUnstageEntries={unstageEntries}
                     onDiscardEntry={discardEntry}
-                    onStashEntry={stashEntry}
+                    selectedKeys={selectedKeys()}
+                    onRowClick={handleRowClick}
+                    onRowContextMenu={handleRowContextMenu}
                   />
                 </Show>
               </Show>
             </Show>
-
-            {/* Stash stack stays visible even when the working tree is clean. */}
-            <StashSection
-              scope={props.scope}
-              stashes={store.stashes()}
-              disabled={store.committing() || store.mutating()}
-              onRestore={(entry) => void restoreStash(entry)}
-              onDrop={(entry) => void dropStash(entry)}
-            />
           </div>
         </Show>
+      </Show>
+
+      {/* Row context menu: act on the current multi-selection. */}
+      <Show when={ctxMenu()}>
+        {(pos) => (
+          <div
+            ref={ctxMenuRef}
+            role="menu"
+            aria-label={i18n.t('git.menu.more')}
+            data-testid="git-context-menu"
+            class="fixed z-50 min-w-[190px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-1 flex flex-col"
+            style={{ left: `${pos().x}px`, top: `${pos().y}px` }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <Show when={selectedStageable().length > 0}>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="git-context-stage-selected"
+                disabled={store.committing() || store.mutating()}
+                class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                onClick={stageSelectedFiles}
+              >
+                <Plus class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span class="truncate leading-normal min-w-0">
+                  {i18n.t('git.selection.stage', { count: selectedStageable().length })}
+                </span>
+              </button>
+            </Show>
+            <Show when={selectedStaged().length > 0}>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="git-context-unstage-selected"
+                disabled={store.committing() || store.mutating()}
+                class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                onClick={unstageSelectedFiles}
+              >
+                <Minus class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span class="truncate leading-normal min-w-0">
+                  {i18n.t('git.selection.unstage', { count: selectedStaged().length })}
+                </span>
+              </button>
+            </Show>
+            <Show when={selectedStashable().length > 0}>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="git-context-stash-selected"
+                disabled={store.committing() || store.mutating()}
+                class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                onClick={stashSelectedFiles}
+              >
+                <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span class="truncate leading-normal min-w-0">
+                  {i18n.t('git.selection.stash', { count: selectedStashable().length })}
+                </span>
+              </button>
+            </Show>
+          </div>
+        )}
       </Show>
     </div>
   )
