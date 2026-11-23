@@ -653,7 +653,7 @@ export function PreviewHost(props: PreviewHostProps) {
       </Show>
 
       {/* Main preview / editor area */}
-      <div class="flex-1 min-h-0 relative flex flex-col">
+      <div class="flex-1 min-h-0 relative isolate flex flex-col">
         <Show
           when={selection.selectedPath()}
           fallback={
