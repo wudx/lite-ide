@@ -234,6 +234,8 @@ interface TreeDirBranchProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
+  /** Unstaged only: discards every discardable change inside the folder. */
+  onDiscardEntries?: (dirPath: string, entries: GitFileStatus[]) => void
   selectedKeys: ReadonlySet<string>
   onRowClick: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
   onRowContextMenu: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
@@ -244,6 +246,10 @@ function TreeDirBranch(props: TreeDirBranchProps) {
   const dirKey = () => `${props.section}:${props.node.relPath}`
   const collapsed = () => Boolean(props.collapsedDirs[dirKey()])
   const stageable = createMemo(() => props.node.allEntries.filter(isStageableEntry))
+  /** Folder discard sweeps everything except unmerged conflicts. */
+  const discardable = createMemo(() =>
+    props.node.allEntries.filter((entry) => !isUnmergedEntry(entry)),
+  )
 
   return (
     <>
@@ -267,6 +273,24 @@ function TreeDirBranch(props: TreeDirBranchProps) {
           <span class="truncate flex-1 leading-normal min-w-0">{props.node.label}</span>
         </button>
         <span class="shrink-0 hidden group-hover/row:flex group-focus-within/row:flex items-center gap-0.5">
+          <Show
+            when={
+              props.section === 'unstaged' &&
+              props.onDiscardEntries &&
+              discardable().length > 0
+            }
+          >
+            <button
+              type="button"
+              aria-label={i18n.t('git.action.discardFolderPath', { path: props.node.relPath })}
+              title={i18n.t('git.action.discardFolder')}
+              disabled={props.disabled}
+              class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={() => props.onDiscardEntries?.(props.node.relPath, discardable())}
+            >
+              <Undo2 class="w-3.5 h-3.5" />
+            </button>
+          </Show>
           <Show when={props.section === 'unstaged' && stageable().length > 0}>
             <button
               type="button"
@@ -308,6 +332,7 @@ function TreeDirBranch(props: TreeDirBranchProps) {
               onStageEntries={props.onStageEntries}
               onUnstageEntries={props.onUnstageEntries}
               onDiscardEntry={props.onDiscardEntry}
+              onDiscardEntries={props.onDiscardEntries}
               selectedKeys={props.selectedKeys}
               onRowClick={props.onRowClick}
               onRowContextMenu={props.onRowContextMenu}
@@ -349,6 +374,8 @@ interface ChangeSectionContentProps {
   onStageEntries: (entries: GitFileStatus[]) => void
   onUnstageEntries: (entries: GitFileStatus[]) => void
   onDiscardEntry: (entry: GitFileStatus) => void
+  /** Unstaged only: discards every discardable change inside a tree folder. */
+  onDiscardEntries?: (dirPath: string, entries: GitFileStatus[]) => void
   selectedKeys: ReadonlySet<string>
   onRowClick: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
   onRowContextMenu: (entry: GitFileStatus, section: GitDiffSection, e: MouseEvent) => void
@@ -398,6 +425,7 @@ function ChangeSectionContent(props: ChangeSectionContentProps) {
                 onStageEntries={props.onStageEntries}
                 onUnstageEntries={props.onUnstageEntries}
                 onDiscardEntry={props.onDiscardEntry}
+                onDiscardEntries={props.onDiscardEntries}
                 selectedKeys={props.selectedKeys}
                 onRowClick={props.onRowClick}
                 onRowContextMenu={props.onRowContextMenu}
@@ -748,6 +776,37 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     })
     if (choice !== 'discard') return
     void store.discard(untracked ? [entry.relPath] : [], untracked ? [] : [entry.relPath])
+  }
+
+  /**
+   * Discards every unstaged change inside a tree-view folder (hover folder
+   * action): tracked entries are restored, untracked entries are deleted.
+   * Unmerged conflicts are skipped — per-row and discard-all exclude them
+   * for the same reason (`checkout -- <unmerged>` fails).
+   */
+  async function discardDirEntries(dirPath: string, entries: GitFileStatus[]) {
+    if (!dialogs) return
+    const discardable = entries.filter((entry) => !isUnmergedEntry(entry))
+    if (discardable.length === 0) return
+    const untracked = discardable.filter(isUntrackedEntry).map((entry) => entry.relPath)
+    const tracked = discardable
+      .filter((entry) => !isUntrackedEntry(entry))
+      .map((entry) => entry.relPath)
+    const choice = await dialogs.confirm({
+      title: i18n.t('git.discardFolder.title'),
+      message: i18n.t('git.discardFolder.message', {
+        path: dirPath,
+        count: discardable.length,
+      }),
+      details: [...untracked, ...tracked].slice(0, 8),
+      actions: [
+        { id: 'discard', label: i18n.t('git.discardAll.confirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+      ],
+      cancelId: 'cancel',
+    })
+    if (choice !== 'discard') return
+    void store.discard(untracked, tracked)
   }
 
   /**
@@ -1385,6 +1444,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                     onStageEntries={stageEntries}
                     onUnstageEntries={unstageEntries}
                     onDiscardEntry={discardEntry}
+                    onDiscardEntries={discardDirEntries}
                     selectedKeys={selectedKeys()}
                     onRowClick={handleRowClick}
                     onRowContextMenu={handleRowContextMenu}

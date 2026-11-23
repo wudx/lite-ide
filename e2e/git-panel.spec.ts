@@ -223,6 +223,60 @@ test('git panel toggles between list and tree views, collapses folders, and pers
   expect(consoleErrors).toEqual([])
 })
 
+test('git panel tree view discards all changes inside a folder after confirmation', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  // Switch to tree mode; the unstaged `data` folder holds the csv+xlsx changes.
+  await page.getByTestId('git-view-mode-toggle').click()
+  const dataDirRow = page.locator('[data-git-section="unstaged"][data-git-dir="data"]')
+  await expect(dataDirRow).toBeVisible()
+
+  // Folder hover shows 撤销 to the LEFT of 暂存.
+  await dataDirRow.hover()
+  const discardBtn = dataDirRow.getByRole('button', { name: '撤销 data 下的更改' })
+  const stageBtn = dataDirRow.getByRole('button', { name: '暂存 data', exact: true })
+  await expect(discardBtn).toBeVisible()
+  await expect(stageBtn).toBeVisible()
+  const discardBox = await discardBtn.boundingBox()
+  const stageBox = await stageBtn.boundingBox()
+  expect(discardBox).not.toBeNull()
+  expect(stageBox).not.toBeNull()
+  expect(discardBox!.x + discardBox!.width).toBeLessThanOrEqual(stageBox!.x)
+
+  // Confirming the folder discard clears only that folder's changes.
+  await discardBtn.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('“data”下的 2 项未暂存更改')
+  await page.screenshot({
+    path: testInfo.outputPath('git-dir-discard-confirm.png'),
+    animations: 'disabled',
+  })
+  await page.getByRole('dialog').getByText('全部撤销', { exact: true }).click()
+
+  await expect(page.locator('[data-git-section="unstaged"][data-git-dir="data"]')).toHaveCount(0)
+  await expect(page.locator('[data-git-section="unstaged"][data-git-path="data/metrics.csv"]')).toHaveCount(0)
+  await expect(page.locator('[data-git-section="unstaged"][data-git-path="data/metrics.xlsx"]')).toHaveCount(0)
+  await expect(page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)).toBeVisible()
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('git-dir-discard-done.png'),
+    animations: 'disabled',
+  })
+
+  expect(consoleErrors).toEqual([])
+})
+
 test('git panel switches branches and creates a new branch in mock mode', async ({
   page,
 }, testInfo) => {

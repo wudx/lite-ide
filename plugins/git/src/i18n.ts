@@ -39,6 +39,8 @@ export const GIT_ZH_CN: Record<string, string> = {
   'git.action.discardPath': '放弃 {path}',
   'git.action.stageFolder': '暂存文件夹更改',
   'git.action.unstageFolder': '取消暂存文件夹更改',
+  'git.action.discardFolderPath': '撤销 {path} 下的更改',
+  'git.action.discardFolder': '撤销文件夹更改',
   'git.action.stash': '存储更改',
   'git.action.stashPath': '存储 {path}',
   'git.selection.menu': '更改操作',
@@ -49,6 +51,9 @@ export const GIT_ZH_CN: Record<string, string> = {
   'git.discardAll.message':
     '确定撤销全部 {count} 项未暂存更改吗？未跟踪文件将被删除，此操作无法撤销。',
   'git.discardAll.confirm': '全部撤销',
+  'git.discardFolder.title': '撤销文件夹更改',
+  'git.discardFolder.message':
+    '确定撤销“{path}”下的 {count} 项未暂存更改吗？未跟踪文件将被删除，此操作无法撤销。',
   'git.stash.section': '存储',
   'git.stash.empty': '没有存储的更改',
   'git.stash.restore': '还原存储（应用更改，保留条目）',
@@ -157,6 +162,8 @@ export const GIT_EN_US: Record<string, string> = {
   'git.action.discardPath': 'Discard {path}',
   'git.action.stageFolder': 'Stage Folder Changes',
   'git.action.unstageFolder': 'Unstage Folder Changes',
+  'git.action.discardFolderPath': 'Discard changes under {path}',
+  'git.action.discardFolder': 'Discard Folder Changes',
   'git.action.stash': 'Stash Changes',
   'git.action.stashPath': 'Stash {path}',
   'git.selection.menu': 'Change Actions',
@@ -167,6 +174,9 @@ export const GIT_EN_US: Record<string, string> = {
   'git.discardAll.message':
     'Discard all {count} unstaged changes? Untracked files will be deleted. This cannot be undone.',
   'git.discardAll.confirm': 'Discard All',
+  'git.discardFolder.title': 'Discard Folder Changes',
+  'git.discardFolder.message':
+    'Discard {count} unstaged change(s) under "{path}"? Untracked files will be deleted. This cannot be undone.',
   'git.stash.section': 'Stashes',
   'git.stash.empty': 'No stashes',
   'git.stash.restore': 'Restore Stash (apply, keep entry)',
