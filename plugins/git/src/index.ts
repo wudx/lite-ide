@@ -11,6 +11,7 @@ import XlsxTablePreview from './XlsxTablePreview'
 import { GitView } from './GitView'
 import { GitStatusBarItem } from './GitStatusBarItem'
 import { createGitStore, GitBackendKey, GIT_DIFF_PREVIEWER_ID, GitStoreKey } from './git-store'
+import { isImageFile } from './image-diff'
 import { isSpreadsheetFile } from './xlsx-diff'
 import { GIT_EN_US, GIT_ZH_CN } from './i18n'
 import './plugin.css'
@@ -104,14 +105,15 @@ export const gitPlugin: Plugin = {
     // Diff previewer: lowest text priority so ordinary file opens keep their
     // regular previewer; the Git panel requests it explicitly via
     // preferredPreviewerId, and the pill switcher exposes it everywhere else.
-    // Spreadsheets are binary to git but compared from parsed rows, so they
-    // must stay handleable for the preferred request to reach this provider.
+    // Spreadsheets and images are binary to git but compared from parsed rows
+    // or decoded image snapshots, so they must stay handleable.
     ctx.contribute('previewer.provider', {
       id: GIT_DIFF_PREVIEWER_ID,
       label: 'Diff',
       labelKey: 'git.diff.label',
       priority: 5,
-      canHandle: (file) => !file.isBinary || isSpreadsheetFile(file.relPath),
+      canHandle: (file) =>
+        !file.isBinary || isSpreadsheetFile(file.relPath) || isImageFile(file.relPath),
       load: () => Promise.resolve({ default: GitDiffPreview }),
     })
 

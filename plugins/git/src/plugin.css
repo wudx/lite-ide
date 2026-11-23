@@ -6,3 +6,33 @@
  */
 @import "tailwindcss/theme.css";
 @import "tailwindcss/utilities.css";
+
+/* Transparent image diff checkerboard */
+.git-diff-checkerboard {
+  background-color: #12141a;
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 22px 22px;
+  background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+}
+
+:root[data-theme="light"] .git-diff-checkerboard {
+  background-color: #f4f6f9;
+  background-image:
+    linear-gradient(45deg, rgba(15, 23, 42, 0.045) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(15, 23, 42, 0.045) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(15, 23, 42, 0.045) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(15, 23, 42, 0.045) 75%);
+}
+
+:root[data-theme="solarized-light"] .git-diff-checkerboard {
+  background-color: #eee8d5;
+  background-image:
+    linear-gradient(45deg, rgba(88, 110, 117, 0.065) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(88, 110, 117, 0.065) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(88, 110, 117, 0.065) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(88, 110, 117, 0.065) 75%);
+}

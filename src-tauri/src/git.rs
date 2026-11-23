@@ -452,7 +452,13 @@ pub async fn read_blob(
                 return Ok(None);
             }
         }
-        other => return Err(AppError::Git(format!("invalid revision: '{other}'"))),
+        other => {
+            let base = other.strip_suffix('^').unwrap_or(other);
+            validate_sha(base)?;
+            if !is_repo_root(canonical_root).await? {
+                return Ok(None);
+            }
+        }
     }
 
     // `cat-file blob <rev>:<path>` streams the object bytes verbatim (no diff
@@ -2011,5 +2017,52 @@ mod repo_tests {
         assert_eq!(commits[0].subject, "second");
         assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two");
         assert_eq!(status_letters(&root).await, Vec::<(char, char, String)>::new());
+    }
+
+    #[tokio::test]
+    async fn read_blob_supports_commit_sha_and_parent() {
+        use base64::Engine as _;
+
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+
+        std::fs::write(root.join("img.png"), b"v1-bytes").unwrap();
+        git_ok(&root, &["add", "--", "img.png"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "first"]).await;
+        let first_sha = log(&root, 10, 0).await.unwrap().remove(0).sha;
+
+        std::fs::write(root.join("img.png"), b"v2-bytes").unwrap();
+        git_ok(&root, &["add", "--", "img.png"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "second"]).await;
+        let second_sha = log(&root, 10, 0).await.unwrap().remove(0).sha;
+
+        let b1 = read_blob(&root, &format!("{second_sha}^"), "img.png")
+            .await
+            .unwrap()
+            .unwrap();
+        let b2 = read_blob(&root, &second_sha, "img.png")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(b1).unwrap(),
+            b"v1-bytes"
+        );
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.decode(b2).unwrap(),
+            b"v2-bytes"
+        );
+        // Root commit's parent does not exist -> resolves cleanly to None.
+        assert_eq!(
+            read_blob(&root, &format!("{first_sha}^"), "img.png")
+                .await
+                .unwrap(),
+            None
+        );
+        // Invalid revisions remain rejected.
+        assert!(read_blob(&root, "--all", "img.png").await.is_err());
     }
 }

@@ -1,6 +1,6 @@
 import type { PreviewProps } from '@lite-ide/kernel'
 import { formatErrorMessage } from '@lite-ide/protocol'
-import { getI18n, WorkspaceBackendKey } from '@lite-ide/workbench'
+import { formatBytes, getI18n, WorkspaceBackendKey } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
 import {
@@ -20,7 +20,16 @@ import {
   synthesizeAddedDiff,
   type DiffRow,
 } from './diff-parse'
+import GitDiffImage from './GitDiffImage'
 import GitDiffTable from './GitDiffTable'
+import {
+  estimateBase64ByteLength,
+  isImageFile,
+  isSvgFile,
+  readStoredImageDiffMode,
+  writeStoredImageDiffMode,
+  type ImageDiffMode,
+} from './image-diff'
 import { buildTableDiff, isTabularFile } from './table-diff'
 import { decodeSheetRows, isSpreadsheetFile, synthesizeTableDiff } from './xlsx-diff'
 import {
@@ -47,6 +56,7 @@ const MARKER_TONE: Record<string, string> = {
 }
 
 type DiffViewMode = 'unified' | 'split' | 'table'
+type AnyDiffViewMode = DiffViewMode | ImageDiffMode
 
 const DIFF_VIEW_MODE_STORAGE_KEY = 'lite-ide:git:diff-view-mode'
 
@@ -155,29 +165,68 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   const tabular = createMemo(
     () => isTabularFile(props.file.relPath) || isSpreadsheetFile(props.file.relPath),
   )
-  const effectiveMode = createMemo<DiffViewMode>(() => {
+  const imageFile = createMemo(() => isImageFile(props.file.relPath))
+  const svgFile = createMemo(() => isSvgFile(props.file.relPath))
+  const [imageMode, setImageMode] = createSignal<ImageDiffMode>(readStoredImageDiffMode())
+  const [svgUseText, setSvgUseText] = createSignal(false)
+  const isImageView = createMemo(() => imageFile() && (!svgFile() || !svgUseText()))
+
+  const effectiveMode = createMemo<AnyDiffViewMode>(() => {
+    if (isImageView()) return imageMode()
     const mode = viewMode()
     return mode === 'table' && !tabular() ? 'unified' : mode
   })
-  const availableModes = createMemo<DiffViewMode[]>(() =>
-    tabular() ? ['unified', 'split', 'table'] : ['unified', 'split'],
-  )
-  const viewModeLabel = (mode: DiffViewMode) =>
-    i18n.t(
-      mode === 'unified'
-        ? 'git.diff.view.unified'
-        : mode === 'split'
-          ? 'git.diff.view.split'
-          : 'git.diff.view.table',
-    )
+  const availableModes = createMemo<AnyDiffViewMode[]>(() => {
+    if (svgFile()) {
+      return ['side-by-side', 'swipe', 'onion', 'difference', 'unified', 'split']
+    }
+    if (imageFile()) {
+      return ['side-by-side', 'swipe', 'onion', 'difference']
+    }
+    return tabular() ? ['unified', 'split', 'table'] : ['unified', 'split']
+  })
+  const viewModeLabel = (mode: AnyDiffViewMode) => {
+    switch (mode) {
+      case 'unified':
+        return i18n.t('git.diff.view.unified')
+      case 'split':
+        return i18n.t('git.diff.view.split')
+      case 'table':
+        return i18n.t('git.diff.view.table')
+      case 'side-by-side':
+        return i18n.t('git.diff.view.imageSideBySide')
+      case 'swipe':
+        return i18n.t('git.diff.view.imageSwipe')
+      case 'onion':
+        return i18n.t('git.diff.view.imageOnion')
+      case 'difference':
+        return i18n.t('git.diff.view.imageDifference')
+    }
+  }
   const [rawDiff, setRawDiff] = createSignal<string | null>(null)
+  const [imageBlobs, setImageBlobs] = createSignal<{
+    oldBase64: string | null
+    newBase64: string | null
+  } | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(true)
   const [refreshTick, setRefreshTick] = createSignal(0)
   let fetchSeq = 0
   let trackedKey: string | null = null
 
-  function toggleViewMode(mode: DiffViewMode) {
+  function toggleViewMode(mode: AnyDiffViewMode) {
+    if (
+      mode === 'side-by-side' ||
+      mode === 'swipe' ||
+      mode === 'onion' ||
+      mode === 'difference'
+    ) {
+      setImageMode(mode)
+      writeStoredImageDiffMode(mode)
+      setSvgUseText(false)
+      return
+    }
+    setSvgUseText(true)
     setViewMode(mode)
     writeStoredDiffViewMode(mode)
   }
@@ -205,6 +254,8 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setSection(initialSection())
       setRev(initialRev())
       setRawDiff(null)
+      setImageBlobs(null)
+      setSvgUseText(false)
       setError(null)
       // The instance is reused across tabs; without a stored preference the
       // per-file-type default (table for spreadsheets) must follow the new file.
@@ -231,8 +282,49 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setLoading(true)
       setError(null)
       try {
-        let text: string
-        if (commitSha) {
+        let text = ''
+        let nextImageBlobs: { oldBase64: string | null; newBase64: string | null } | null = null
+
+        if (imageFile()) {
+          if (!commitSha && current && isUnmergedEntry(current)) {
+            text = `diff --cc ${props.file.relPath}`
+          } else {
+            const untracked = !commitSha && !staged && current !== undefined && isUntrackedEntry(current)
+            const deleted = !commitSha && !staged && current?.y === 'D'
+            const oldRev = commitSha ? `${commitSha}^` : staged ? 'HEAD' : ':0'
+            const newRev = commitSha ? commitSha : staged ? ':0' : 'worktree'
+            const oldPath =
+              !commitSha && staged && current?.origPath ? current.origPath : props.file.relPath
+
+            const readTextForSvg = async (): Promise<string> => {
+              if (!svgFile()) return ''
+              if (commitSha) {
+                const files = await backendRef.show(props.file.projectId, commitSha, [
+                  props.file.relPath,
+                ])
+                return files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
+              }
+              if (fsRef && untracked) {
+                const payload = await fsRef.readText(props.file.projectId, props.file.relPath)
+                return synthesizeAddedDiff(props.file.relPath, payload.content)
+              }
+              const files = await backendRef.diff(props.file.projectId, {
+                staged,
+                relPaths: [props.file.relPath],
+              })
+              return files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
+            }
+
+            const [oldBlob, newBlob, svgPatch] = await Promise.all([
+              untracked ? null : backendRef.readBlob(props.file.projectId, oldRev, oldPath),
+              deleted ? null : backendRef.readBlob(props.file.projectId, newRev, props.file.relPath),
+              readTextForSvg(),
+            ])
+            if (seq !== fetchSeq) return
+            nextImageBlobs = { oldBase64: oldBlob, newBase64: newBlob }
+            text = svgPatch
+          }
+        } else if (commitSha) {
           const files = await backendRef.show(props.file.projectId, commitSha, [
             props.file.relPath,
           ])
@@ -285,9 +377,11 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
           text = files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
         }
         if (seq !== fetchSeq) return
+        setImageBlobs(nextImageBlobs)
         setRawDiff(text)
       } catch (err) {
         if (seq !== fetchSeq) return
+        setImageBlobs(null)
         setRawDiff(null)
         setError(formatErrorMessage(err))
       } finally {
@@ -310,12 +404,37 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     return current ? diffStats(current) : { additions: 0, deletions: 0 }
   })
 
-  type DiffBodyState = 'empty' | 'binary' | 'combined' | 'rows'
+  type DiffBodyState = 'empty' | 'binary' | 'combined' | 'image' | 'rows'
+
+  const hasImageChanges = createMemo(() => {
+    const blobs = imageBlobs()
+    if (!blobs) return false
+    const { oldBase64, newBase64 } = blobs
+    if (oldBase64 === null && newBase64 === null) return false
+    return oldBase64 !== newBase64
+  })
+
+  const imageOldLabel = createMemo(() => {
+    const commitSha = rev()
+    if (commitSha) return `${commitSha.slice(0, 7)}^`
+    return section() === 'staged' ? 'HEAD' : i18n.t('git.diff.section.staged')
+  })
+
+  const imageNewLabel = createMemo(() => {
+    const commitSha = rev()
+    if (commitSha) return commitSha.slice(0, 7)
+    return section() === 'staged'
+      ? i18n.t('git.diff.section.staged')
+      : i18n.t('git.diff.image.worktree')
+  })
 
   const bodyState = createMemo<DiffBodyState>(() => {
     const current = parsed()
+    if (current?.isCombined) return 'combined'
+    if (isImageView()) {
+      return hasImageChanges() ? 'image' : 'empty'
+    }
     if (!current) return 'empty'
-    if (current.isCombined) return 'combined'
     if (current.isBinary) return 'binary'
     return current.hunks.length > 0 ? 'rows' : 'empty'
   })
@@ -388,13 +507,43 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
           </span>
         </Show>
 
-        <span
-          data-testid="git-diff-stats"
-          class="shrink-0 text-[11px] font-mono tabular-nums leading-normal flex items-center gap-1.5"
+        <Show
+          when={imageFile() && !svgFile()}
+          fallback={
+            <span
+              data-testid="git-diff-stats"
+              class="shrink-0 text-[11px] font-mono tabular-nums leading-normal flex items-center gap-1.5"
+            >
+              <span class="text-[var(--diff-add-text)]">+{stats().additions}</span>
+              <span class="text-[var(--diff-del-text)]">−{stats().deletions}</span>
+            </span>
+          }
         >
-          <span class="text-[var(--diff-add-text)]">+{stats().additions}</span>
-          <span class="text-[var(--diff-del-text)]">−{stats().deletions}</span>
-        </span>
+          <Show when={hasImageChanges() && imageBlobs()}>
+            {(blobs) => {
+              const oldSize = () =>
+                blobs().oldBase64 !== null ? estimateBase64ByteLength(blobs().oldBase64!) : null
+              const newSize = () =>
+                blobs().newBase64 !== null ? estimateBase64ByteLength(blobs().newBase64!) : null
+              return (
+                <span
+                  data-testid="git-diff-stats"
+                  class="shrink-0 text-[11px] font-mono tabular-nums leading-normal flex items-center gap-1 text-[var(--text-secondary)]"
+                >
+                  <Show when={oldSize() !== null && newSize() !== null}>
+                    <span>{`${formatBytes(oldSize()!)} → ${formatBytes(newSize()!)}`}</span>
+                  </Show>
+                  <Show when={oldSize() === null && newSize() !== null}>
+                    <span class="text-[var(--diff-add-text)]">{`+${formatBytes(newSize()!)}`}</span>
+                  </Show>
+                  <Show when={oldSize() !== null && newSize() === null}>
+                    <span class="text-[var(--diff-del-text)]">{`−${formatBytes(oldSize()!)}`}</span>
+                  </Show>
+                </span>
+              )
+            }}
+          </Show>
+        </Show>
 
         <div class="ml-auto min-w-0 truncate text-[10.5px] text-[var(--text-muted)] leading-normal hidden md:block">
           <Show
@@ -459,7 +608,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
         }
       >
         <Show
-          when={!loading() || rawDiff() !== null}
+          when={!loading() || rawDiff() !== null || imageBlobs() !== null}
           fallback={
             <div class="flex-1 flex items-center justify-center gap-2 text-xs text-[var(--text-secondary)]">
               <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]" />
@@ -485,6 +634,19 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                 <div class="flex-1 flex items-center justify-center px-6 text-center text-xs text-[var(--text-muted)]">
                   {i18n.t('git.diff.binary')}
                 </div>
+              </Match>
+              <Match when={bodyState() === 'image' && imageBlobs()}>
+                {(blobs) => (
+                  <GitDiffImage
+                    scope={props.scope}
+                    relPath={props.file.relPath}
+                    mode={imageMode()}
+                    oldBase64={blobs().oldBase64}
+                    newBase64={blobs().newBase64}
+                    oldLabel={imageOldLabel()}
+                    newLabel={imageNewLabel()}
+                  />
+                )}
               </Match>
               <Match when={bodyState() === 'empty'}>
                 <div

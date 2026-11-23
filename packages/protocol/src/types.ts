@@ -198,9 +198,10 @@ export interface GitDiffOptions {
 
 /**
  * Which snapshot a blob read targets: the HEAD commit, the index (stage 0,
- * the "staged" content), or the worktree file on disk.
+ * the "staged" content), the worktree file on disk, or a commit SHA (optionally
+ * suffixed with `^` for its first parent).
  */
-export type GitBlobRev = 'HEAD' | ':0' | 'worktree'
+export type GitBlobRev = 'HEAD' | ':0' | 'worktree' | (string & {})
 
 export interface GitBranchInfo {
   name: string

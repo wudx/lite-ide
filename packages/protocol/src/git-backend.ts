@@ -742,12 +742,32 @@ export function createMockGitBackend(): GitBackend {
     async readBlob(projectId: string, rev: GitBlobRev, relPath: string): Promise<string | null> {
       const state = getState(projectId)
       if (!state.repo) throw new Error('not a git repository')
-      // The demo spreadsheet is the mock's only binary comparison target;
-      // every other path has no versioned snapshot in mock mode.
       if (relPath === METRICS_XLSX_PATH) {
         const blobs = await getMetricsXlsxBlobs()
         if (rev === 'worktree') return blobs.worktree
         if (rev === 'HEAD' || rev === ':0') return blobs.index
+      }
+      if (relPath === 'assets/architecture.svg') {
+        const oldSvg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220">' +
+          '<rect width="360" height="220" rx="16" fill="#0f172a"/>' +
+          '<rect x="28" y="34" width="120" height="60" rx="10" fill="#1e293b" stroke="#64748b"/>' +
+          '<text x="88" y="69" fill="#e2e8f0" font-size="13" text-anchor="middle">Kernel</text>' +
+          '<rect x="212" y="34" width="120" height="60" rx="10" fill="#1e293b" stroke="#64748b"/>' +
+          '<text x="272" y="69" fill="#e2e8f0" font-size="13" text-anchor="middle">Plugins</text>' +
+          '</svg>'
+        const newSvg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220">' +
+          '<rect width="360" height="220" rx="16" fill="#0f172a"/>' +
+          '<rect x="28" y="34" width="120" height="60" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>' +
+          '<text x="88" y="69" fill="#f8fafc" font-size="13" text-anchor="middle">Kernel v2</text>' +
+          '<rect x="212" y="34" width="120" height="60" rx="10" fill="#1e293b" stroke="#34d399" stroke-width="2"/>' +
+          '<text x="272" y="69" fill="#f8fafc" font-size="13" text-anchor="middle">Plugins</text>' +
+          '<rect x="120" y="130" width="120" height="52" rx="10" fill="#172554" stroke="#60a5fa"/>' +
+          '<text x="180" y="160" fill="#bfdbfe" font-size="12" text-anchor="middle">Image Diff</text>' +
+          '</svg>'
+        if (rev === 'worktree') return btoa(newSvg)
+        if (rev === 'HEAD' || rev === ':0') return btoa(oldSvg)
       }
       return null
     },
