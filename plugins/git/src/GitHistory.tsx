@@ -1,13 +1,24 @@
 import type { ProjectScope } from '@lite-ide/kernel'
 import type { GitCommitInfo, GitDiffFile } from '@lite-ide/protocol'
-import { FileIcon, getI18n, ProjectSelectionKey, type TranslateFn } from '@lite-ide/workbench'
+import {
+  ConfirmDialogKey,
+  FileIcon,
+  getI18n,
+  ProjectSelectionKey,
+  type TranslateFn,
+} from '@lite-ide/workbench'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
+import GitBranch from 'lucide-solid/icons/git-branch'
 import GitCommitHorizontal from 'lucide-solid/icons/git-commit-horizontal'
+import GitMerge from 'lucide-solid/icons/git-merge'
 import Loader2 from 'lucide-solid/icons/loader-circle'
+import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
 import {
+  createEffect,
   createSignal,
   For,
+  onCleanup,
   onMount,
   Show,
   type Component,
@@ -54,6 +65,7 @@ interface CommitRowProps {
   files: CommitFilesState | undefined
   onToggle: (commit: GitCommitInfo) => void
   onOpenFile: (commit: GitCommitInfo, relPath: string) => void
+  onContextMenu: (commit: GitCommitInfo, e: MouseEvent) => void
 }
 
 function CommitRow(props: CommitRowProps) {
@@ -72,6 +84,7 @@ function CommitRow(props: CommitRowProps) {
         title={titleText()}
         class="group/commit w-full mx-0 px-1.5 py-1.5 rounded-lg flex flex-col items-stretch gap-0.5 text-left hover:bg-[var(--bg-hover)] transition-colors duration-100 cursor-pointer"
         onClick={() => props.onToggle(props.commit)}
+        onContextMenu={(e) => props.onContextMenu(props.commit, e)}
       >
         <span class="w-full flex items-center gap-1.5 min-w-0">
           <ChevronRight
@@ -170,14 +183,115 @@ export const GitHistory: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const backend = props.scope.get(GitBackendKey)
   const selection = props.scope.get(ProjectSelectionKey)
+  const dialogs = props.scope.tryGet(ConfirmDialogKey)
   const i18n = getI18n(props.scope)
 
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
   const [filesBySha, setFilesBySha] = createSignal<Record<string, CommitFilesState>>({})
+  const [ctxMenu, setCtxMenu] = createSignal<{
+    sha: string
+    shortSha: string
+    subject: string
+    x: number
+    y: number
+  } | null>(null)
+  const [branchDialog, setBranchDialog] = createSignal<{
+    sha: string
+    shortSha: string
+    subject: string
+  } | null>(null)
+  const [branchName, setBranchName] = createSignal('')
+  let ctxMenuRef: HTMLDivElement | undefined
+  let branchInputRef: HTMLInputElement | undefined
 
   onMount(() => {
     void store.ensureCommitsLoaded()
   })
+
+  createEffect(() => {
+    if (!ctxMenu()) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (ctxMenuRef?.contains(e.target as Node)) return
+      setCtxMenu(null)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null)
+    }
+    const onScroll = () => setCtxMenu(null)
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onScroll, true)
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onScroll, true)
+    })
+  })
+
+  createEffect(() => {
+    if (!branchDialog()) return
+    branchInputRef?.focus()
+  })
+
+  function handleCommitContextMenu(commit: GitCommitInfo, e: MouseEvent) {
+    e.preventDefault()
+    if (store.committing() || store.mutating()) return
+    // Keep the menu inside the viewport.
+    const MENU_WIDTH = 200
+    const MENU_HEIGHT = 100
+    setCtxMenu({
+      sha: commit.sha,
+      shortSha: commit.shortSha,
+      subject: commit.subject,
+      x: Math.max(4, Math.min(e.clientX, window.innerWidth - MENU_WIDTH - 4)),
+      y: Math.max(4, Math.min(e.clientY, window.innerHeight - MENU_HEIGHT - 4)),
+    })
+  }
+
+  async function resetToCommitFromMenu() {
+    const menu = ctxMenu()
+    if (!menu) return
+    setCtxMenu(null)
+    // Fail closed: without the dialog service there is no way to confirm a
+    // destructive action, so do nothing rather than resetting silently.
+    if (!dialogs) return
+    const choice = await dialogs.confirm({
+      title: i18n.t('git.history.reset.title'),
+      message: i18n.t('git.history.reset.message', {
+        sha: menu.shortSha,
+        subject: menu.subject,
+      }),
+      actions: [
+        { id: 'reset', label: i18n.t('git.history.reset.confirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+      ],
+      cancelId: 'cancel',
+    })
+    if (choice !== 'reset') return
+    await store.resetToCommit(menu.sha)
+  }
+
+  function createBranchFromMenu() {
+    const menu = ctxMenu()
+    if (!menu) return
+    setCtxMenu(null)
+    setBranchName('')
+    setBranchDialog({ sha: menu.sha, shortSha: menu.shortSha, subject: menu.subject })
+  }
+
+  function cherryPickFromMenu() {
+    const menu = ctxMenu()
+    if (!menu) return
+    setCtxMenu(null)
+    void store.cherryPick(menu.sha)
+  }
+
+  async function confirmCreateBranch() {
+    const dialog = branchDialog()
+    if (!dialog) return
+    const ok = await store.createBranchAt(branchName(), dialog.sha)
+    if (ok) setBranchDialog(null)
+  }
 
   async function toggleCommit(commit: GitCommitInfo) {
     const wasOpen = Boolean(expanded()[commit.sha])
@@ -214,10 +328,12 @@ export const GitHistory: Component<{ scope: ProjectScope }> = (props) => {
   }
 
   return (
-    <div
-      data-testid="git-history-list"
-      class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
-    >
+    <>
+      <div
+        data-testid="git-history-list"
+        class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+        onContextMenu={(e) => e.preventDefault()}
+      >
       <Show
         when={!store.commitsLoading()}
         fallback={
@@ -278,6 +394,7 @@ export const GitHistory: Component<{ scope: ProjectScope }> = (props) => {
                     files={filesBySha()[commit.sha]}
                     onToggle={(c) => void toggleCommit(c)}
                     onOpenFile={openCommitFile}
+                    onContextMenu={handleCommitContextMenu}
                   />
                 )}
               </For>
@@ -304,6 +421,122 @@ export const GitHistory: Component<{ scope: ProjectScope }> = (props) => {
           </Show>
         </Show>
       </Show>
-    </div>
+      </div>
+
+      {/* Commit context menu: reset / branch / cherry-pick shortcuts. */}
+      <Show when={ctxMenu()}>
+        {(menu) => (
+          <div
+            ref={ctxMenuRef}
+            role="menu"
+            aria-label={i18n.t('git.history.menu.label')}
+            data-testid="git-history-context-menu"
+            class="fixed z-50 min-w-[190px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-1 flex flex-col"
+            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="git-history-reset"
+              disabled={store.committing() || store.mutating()}
+              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={resetToCommitFromMenu}
+            >
+              <RotateCcw class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+              <span class="truncate leading-normal min-w-0">
+                {i18n.t('git.history.menu.reset')}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="git-history-create-branch"
+              disabled={store.committing() || store.mutating()}
+              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={createBranchFromMenu}
+            >
+              <GitBranch class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+              <span class="truncate leading-normal min-w-0">
+                {i18n.t('git.history.menu.createBranch')}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="git-history-cherry-pick"
+              disabled={store.committing() || store.mutating()}
+              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              onClick={cherryPickFromMenu}
+            >
+              <GitMerge class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+              <span class="truncate leading-normal min-w-0">
+                {i18n.t('git.history.menu.cherryPick')}
+              </span>
+            </button>
+          </div>
+        )}
+      </Show>
+
+      {/* Create-branch-at-commit dialog: the shared confirm dialog service has
+          no text input, so this keeps a small solid dialog inside the plugin. */}
+      <Show when={branchDialog()}>
+        {(dialog) => (
+          <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <div
+              role="dialog"
+              aria-label={i18n.t('git.history.branch.title')}
+              data-testid="git-branch-dialog"
+              class="w-[320px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-4 flex flex-col gap-3"
+            >
+              <div class="text-xs font-medium text-[var(--text-primary)] leading-normal">
+                {i18n.t('git.history.branch.title')}
+              </div>
+              <div class="text-[11px] text-[var(--text-secondary)] leading-normal break-words">
+                {i18n.t('git.history.branch.message', {
+                  sha: dialog().shortSha,
+                  subject: dialog().subject,
+                })}
+              </div>
+              <input
+                ref={branchInputRef}
+                data-testid="git-branch-dialog-input"
+                type="text"
+                value={branchName()}
+                placeholder={i18n.t('git.history.branch.placeholder')}
+                class="h-[28px] px-2 rounded-lg border border-[var(--border-panel)] bg-[var(--bg-subtle)] text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                onInput={(e) => setBranchName(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void confirmCreateBranch()
+                  if (e.key === 'Escape') setBranchDialog(null)
+                }}
+              />
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  data-testid="git-branch-dialog-cancel"
+                  class="px-2.5 h-[26px] rounded-lg border border-[var(--border-panel)] bg-[var(--bg-subtle)] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+                  onClick={() => setBranchDialog(null)}
+                >
+                  {i18n.t('git.discard.cancel')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="git-branch-dialog-confirm"
+                  disabled={!branchName().trim() || store.mutating()}
+                  class="px-2.5 h-[26px] rounded-lg bg-[var(--accent)] text-[11px] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                  onClick={() => void confirmCreateBranch()}
+                >
+                  {i18n.t('git.history.branch.confirm')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
+    </>
   )
 }

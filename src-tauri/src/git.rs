@@ -757,6 +757,48 @@ pub async fn checkout_branch(
     Err(AppError::Git(format!("branch '{name}' does not exist")))
 }
 
+/// `git reset --mixed <sha>`: moves the current branch (and the index) to the
+/// target commit while keeping every difference in the worktree as unstaged
+/// changes. Commits after the target leave the branch but stay recoverable
+/// via the reflog.
+pub async fn reset_mixed(canonical_root: &Path, sha: &str) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let sha = validate_sha(sha)?;
+    run_git(canonical_root, &["reset", "--mixed", sha]).await?;
+    Ok(())
+}
+
+/// `git branch <name> <sha>`: creates a local branch pointing at the commit
+/// without switching to it.
+pub async fn create_branch_at(
+    canonical_root: &Path,
+    name: &str,
+    sha: &str,
+) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let name = validate_branch_name(name)?;
+    let sha = validate_sha(sha)?;
+    run_git(canonical_root, &["check-ref-format", "--branch", name]).await?;
+    run_git(canonical_root, &["branch", name, sha]).await?;
+    Ok(())
+}
+
+/// `git cherry-pick <sha>`: applies the commit as a new commit on top of the
+/// current branch. Conflicts surface git's stderr and leave the repo in its
+/// standard conflicted cherry-pick state for the user to resolve.
+pub async fn cherry_pick(canonical_root: &Path, sha: &str) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let sha = validate_sha(sha)?;
+    run_git(canonical_root, &["cherry-pick", sha]).await?;
+    Ok(())
+}
+
 /// Validates an explicit stash message before handing it to `git stash push -m`.
 fn sanitize_stash_message(message: &str) -> Result<&str, AppError> {
     let trimmed = message.trim();
@@ -1858,5 +1900,62 @@ mod repo_tests {
         git_ok(&root, &["init", "-q"]).await;
         std::fs::write(root.join("a.txt"), "hello").unwrap();
         assert!(log(&root, 50, 0).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn reset_mixed_create_branch_at_and_cherry_pick_in_real_repo() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+        let base = log(&root, 50, 0).await.unwrap().remove(0).sha;
+
+        // A second commit that the mixed reset will lift off the branch.
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "second"]).await;
+        let second = log(&root, 50, 0).await.unwrap().remove(0).sha;
+
+        // Mixed reset to the base commit: HEAD and the index move back while
+        // the difference stays in the worktree as an unstaged modification.
+        reset_mixed(&root, &base).await.unwrap();
+        let commits = log(&root, 50, 0).await.unwrap();
+        assert_eq!(commits.len(), 1);
+        let st = status(&root).await.unwrap();
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        assert_eq!(st.entries.len(), 1);
+        assert_eq!(st.entries[0].x, ' ');
+        assert_eq!(st.entries[0].y, 'M');
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two");
+
+        // Restore a clean worktree so the cherry-pick below can re-apply the
+        // lifted commit.
+        git_ok(&root, &["checkout", "--", "a.txt"]).await;
+        assert_eq!(status_letters(&root).await, Vec::<(char, char, String)>::new());
+
+        // Branch creation at an arbitrary commit does not switch to it.
+        create_branch_at(&root, "feat/at-second", &second).await.unwrap();
+        let st = status(&root).await.unwrap();
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        let list = branches(&root).await.unwrap();
+        assert!(list.iter().any(|b| b.name == "feat/at-second" && !b.current));
+
+        // The command boundary rejects option-shaped revisions and names.
+        assert!(reset_mixed(&root, "--hard").await.is_err());
+        assert!(create_branch_at(&root, "-b", &base).await.is_err());
+        assert!(cherry_pick(&root, "HEAD").await.is_err());
+
+        // Cherry-pick re-applies the lifted commit as a fresh head commit and
+        // leaves the worktree clean.
+        cherry_pick(&root, &second).await.unwrap();
+        let commits = log(&root, 50, 0).await.unwrap();
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].subject, "second");
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two");
+        assert_eq!(status_letters(&root).await, Vec::<(char, char, String)>::new());
     }
 }

@@ -93,6 +93,16 @@ export interface GitStore {
   /** Fetches the next history page and appends it. */
   loadMoreCommits(): Promise<void>
   checkoutBranch(name: string, create?: boolean): Promise<boolean>
+  /**
+   * Resets the current branch to `sha` (mixed): the index follows the target
+   * commit and every difference stays in the worktree as unstaged changes.
+   * Resolves false (with `error` set) when the reset failed.
+   */
+  resetToCommit(sha: string): Promise<boolean>
+  /** Creates a local branch pointing at `sha` without switching to it. */
+  createBranchAt(name: string, sha: string): Promise<boolean>
+  /** Applies commit `sha` as a new commit on the current branch. */
+  cherryPick(sha: string): Promise<boolean>
   handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }): void
   stage(relPaths: string[]): Promise<void>
   unstage(relPaths: string[]): Promise<void>
@@ -522,6 +532,72 @@ export function createGitStore(
         ])
         setError(checkoutError ?? statusError ?? branchError)
         // A branch switch points HEAD at different history.
+        if (ok && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
+        return ok
+      })
+    },
+
+    async resetToCommit(sha: string): Promise<boolean> {
+      if (committing() || mutating()) return false
+      return enqueueWrite(async () => {
+        let resetError: string | null = null
+        let ok = false
+        try {
+          await backend.resetMixed(projectId, sha)
+          ok = true
+        } catch (err) {
+          resetError = err instanceof Error ? err.message : String(err)
+        }
+        const statusError = await fetchStatus(false)
+        setError(resetError ?? statusError)
+        // The branch pointer moved: history restarts from the target commit.
+        if (ok && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
+        return ok
+      })
+    },
+
+    async createBranchAt(name: string, sha: string): Promise<boolean> {
+      const trimmed = name.trim()
+      if (!trimmed) {
+        setError(t('git.error.emptyBranch', undefined, 'Branch name is empty.'))
+        return false
+      }
+      if (committing() || mutating()) return false
+      return enqueueWrite(async () => {
+        let createError: string | null = null
+        let ok = false
+        try {
+          await backend.createBranchAt(projectId, trimmed, sha)
+          ok = true
+        } catch (err) {
+          createError = err instanceof Error ? err.message : String(err)
+        }
+        // Only the branch list changes; status and history are untouched.
+        const branchError = await fetchBranches(false)
+        setError(createError ?? branchError)
+        return ok
+      })
+    },
+
+    async cherryPick(sha: string): Promise<boolean> {
+      if (committing() || mutating()) return false
+      return enqueueWrite(async () => {
+        let pickError: string | null = null
+        let ok = false
+        try {
+          await backend.cherryPick(projectId, sha)
+          ok = true
+        } catch (err) {
+          pickError = err instanceof Error ? err.message : String(err)
+        }
+        // A picked commit lands on top of the current branch: status refreshes
+        // (cherry-pick conflicts surface here) and history gains a head row.
+        const statusError = await fetchStatus(false)
+        setError(pickError ?? statusError)
         if (ok && commitsLoaded) {
           await loadCommitsPage(false)
         }

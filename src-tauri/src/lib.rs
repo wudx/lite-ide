@@ -245,6 +245,37 @@ async fn git_checkout_branch(
 }
 
 #[tauri::command]
+async fn git_reset_mixed(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    sha: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::reset_mixed(&root, &sha).await
+}
+
+#[tauri::command]
+async fn git_create_branch_at(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    name: String,
+    sha: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::create_branch_at(&root, &name, &sha).await
+}
+
+#[tauri::command]
+async fn git_cherry_pick(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    sha: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::cherry_pick(&root, &sha).await
+}
+
+#[tauri::command]
 async fn git_stash_all(
     manager: State<'_, Arc<ProjectManager>>,
     project_id: String,
@@ -451,6 +482,9 @@ pub fn run() {
             git_diff,
             git_branches,
             git_checkout_branch,
+            git_reset_mixed,
+            git_create_branch_at,
+            git_cherry_pick,
             git_stash_all,
             git_stash_paths,
             git_stash_list,

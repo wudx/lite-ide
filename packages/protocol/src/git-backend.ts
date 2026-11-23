@@ -89,6 +89,18 @@ export function createTauriGitBackend(): GitBackend {
       await invoke<void>('git_checkout_branch', { projectId, name, create })
     },
 
+    async resetMixed(projectId: string, sha: string): Promise<void> {
+      await invoke<void>('git_reset_mixed', { projectId, sha })
+    },
+
+    async createBranchAt(projectId: string, name: string, sha: string): Promise<void> {
+      await invoke<void>('git_create_branch_at', { projectId, name, sha })
+    },
+
+    async cherryPick(projectId: string, sha: string): Promise<void> {
+      await invoke<void>('git_cherry_pick', { projectId, sha })
+    },
+
     async stashAll(projectId: string, message?: string): Promise<void> {
       await invoke<void>('git_stash_all', { projectId, message: message ?? null })
     },
@@ -825,6 +837,78 @@ export function createMockGitBackend(): GitBackend {
       }
 
       throw new Error(`error: pathspec '${name}' did not match any file(s) known to git`)
+    },
+
+    async resetMixed(projectId: string, sha: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const idx = state.log.findIndex((c) => c.sha === sha)
+      if (idx === -1) throw new Error(`fatal: bad revision '${sha}'`)
+      // Commits leaving the branch keep their content on disk: surface each
+      // touched path as an unstaged modification unless it already carries a
+      // worktree state (which mixed reset never overwrites).
+      for (const removed of state.log.slice(0, idx)) {
+        for (const file of removed.files) {
+          const known =
+            state.staged.has(file.relPath) ||
+            state.unstaged.has(file.relPath) ||
+            state.untracked.has(file.relPath)
+          if (!known) {
+            state.unstaged.set(file.relPath, 'M')
+            state.unstagedDiffs.set(file.relPath, file.patch)
+          }
+        }
+      }
+      // The index is reset to the target: staged entries fall back into the
+      // unstaged section ('A' entries lose their index identity entirely).
+      for (const [relPath, letter] of state.staged) {
+        if (letter === 'A') {
+          state.untracked.add(relPath)
+        } else {
+          state.unstaged.set(relPath, letter)
+          const diffPayload = state.stagedDiffs.get(relPath)
+          if (diffPayload !== undefined) state.unstagedDiffs.set(relPath, diffPayload)
+        }
+      }
+      state.staged.clear()
+      state.stagedDiffs.clear()
+      state.commitCount = Math.max(0, state.commitCount - idx)
+      state.log = state.log.slice(idx)
+    },
+
+    async createBranchAt(projectId: string, name: string, sha: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      if (!name || name.startsWith('-') || /\s/.test(name)) {
+        throw new Error(`fatal: '${name}' is not a valid branch name`)
+      }
+      if (!state.log.some((c) => c.sha === sha)) {
+        throw new Error(`fatal: bad revision '${sha}'`)
+      }
+      if (state.branches.some((b) => !b.remote && b.name === name)) {
+        throw new Error(`fatal: a branch named '${name}' already exists`)
+      }
+      state.branches.push({ name, current: false, remote: false, upstream: null })
+    },
+
+    async cherryPick(projectId: string, sha: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const source = state.log.find((c) => c.sha === sha)
+      if (!source) throw new Error(`fatal: bad revision '${sha}'`)
+      // A picked commit lands as a fresh commit with identical content; the
+      // pseudo-sha stays deterministic like the commit() simulation.
+      const sha16 = (0x3000000 + (state.commitCount * 31 + state.log.length) * 0x9e3779)
+        .toString(16)
+        .padStart(7, '0')
+      state.log.unshift({
+        ...source,
+        sha: sha16.padEnd(40, '0'),
+        shortSha: sha16,
+        dateMs: Date.now(),
+        files: source.files.map((f) => ({ ...f })),
+      })
+      state.commitCount += 1
     },
 
     async stashAll(projectId: string, message?: string): Promise<void> {

@@ -286,6 +286,17 @@ export interface GitBackend {
   show(projectId: string, sha: string, relPaths?: string[]): Promise<GitDiffFile[]>
   branches(projectId: string): Promise<GitBranchInfo[]>
   checkoutBranch(projectId: string, name: string, create?: boolean): Promise<void>
+  /**
+   * Moves the current branch to `sha` (git reset --mixed): the index follows
+   * the target commit while every difference stays in the worktree as
+   * unstaged changes — commits after `sha` leave the branch but keep their
+   * content on disk.
+   */
+  resetMixed(projectId: string, sha: string): Promise<void>
+  /** Creates a local branch pointing at `sha` without switching to it. */
+  createBranchAt(projectId: string, name: string, sha: string): Promise<void>
+  /** Applies commit `sha` as a new commit on top of the current branch. */
+  cherryPick(projectId: string, sha: string): Promise<void>
   /** Stashes all tracked + untracked changes; optional stash message. */
   stashAll(projectId: string, message?: string): Promise<void>
   /** Stashes only the given paths' changes (tracked and untracked). */
