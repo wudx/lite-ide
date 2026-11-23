@@ -164,10 +164,16 @@ export function evaluateExternalPlugin(source: string, options: EvaluateOptions)
   }
 }
 
+export interface PluginRegistryOptions {
+  /** Invoked once the initial plugin list & activation pass finishes. */
+  onInitialRefreshDone?: () => void
+}
+
 export function createPluginRegistry(
   kernel: AppKernel,
   backend: WorkspaceBackend,
   embeddedPlugins: readonly EmbeddedPluginSource[] = [],
+  options: PluginRegistryOptions = {},
 ): PluginRegistryService {
   const embeddedByManifest = new Map(embeddedPlugins.map((e) => [e.manifest.id, e]))
   const supported = embeddedPlugins.length > 0 || typeof backend.pluginList === 'function'
@@ -253,6 +259,72 @@ export function createPluginRegistry(
     return embeddedByManifest.get(id)?.source ?? null
   }
 
+  function readEmbeddedAssetSync(id: string, fileName: string): string {
+    const asset = embeddedByManifest.get(id)?.assets?.[fileName]
+    if (typeof asset !== 'string') {
+      throw new Error(`Plugin asset not found: ${id}/${fileName}`)
+    }
+    return asset
+  }
+
+  function activateWithAssets(entry: InstalledPlugin, source: string, css: string | null): void {
+    const id = entry.manifest.id
+    const apiRequired = entry.manifest.api
+    if (apiRequired !== undefined && apiRequired > HOST_API_VERSION) {
+      throw new Error(
+        `plugin requires LiteIDE plugin API v${apiRequired}, but this LiteIDE provides v${HOST_API_VERSION}. 请更新 LiteIDE。`,
+      )
+    }
+
+    const format: 'classic' | 'bundle' = entry.manifest.format === 'bundle' ? 'bundle' : 'classic'
+    const plugin = evaluateExternalPlugin(source, {
+      pluginId: id,
+      format,
+      loadChunk: (name) => loadChunk(id, entry.manifest, name),
+    })
+    const disposable = kernel.registerPlugin(plugin)
+    running.set(id, disposable)
+
+    // Stylesheet asset: injected while running, removed on deactivate.
+    if (css !== null) {
+      injectPluginStyles(id, css)
+    }
+
+    setRuntimeEntry(id, 'running', null)
+  }
+
+  function recordActivationError(id: string, err: unknown): void {
+    // 激活失败的可诊断性：设置页只展示 message，这里补一条带堆栈的日志。
+    console.error(`[plugin-registry] failed to activate plugin "${id}"`, err)
+    running.delete(id)
+    setRuntimeEntry(id, 'error', err instanceof Error ? err.message : String(err))
+  }
+
+  function activateEmbeddedSync(emb: EmbeddedPluginSource): void {
+    const id = emb.manifest.id
+    if (running.has(id) || activating.has(id)) return
+    if (disabledIds().has(id)) {
+      setRuntimeEntry(id, 'stopped', null)
+      return
+    }
+    activating.add(id)
+    setRuntimeEntry(id, 'loading', null)
+    try {
+      const css = emb.manifest.css ? readEmbeddedAssetSync(id, emb.manifest.css) : null
+      const entry: InstalledPlugin = {
+        manifest: emb.manifest,
+        dirName: id,
+        installedMs: 0,
+        error: null,
+      }
+      activateWithAssets(entry, emb.source, css)
+    } catch (err) {
+      recordActivationError(id, err)
+    } finally {
+      activating.delete(id)
+    }
+  }
+
   async function activate(entry: InstalledPlugin, isEmbedded: boolean): Promise<void> {
     const id = entry.manifest.id
     // 并发保护：构造期 refresh 与手动启用/重载可能同时触发同一插件。
@@ -260,14 +332,6 @@ export function createPluginRegistry(
     activating.add(id)
     setRuntimeEntry(id, 'loading', null)
     try {
-      const apiRequired = entry.manifest.api
-      if (apiRequired !== undefined && apiRequired > HOST_API_VERSION) {
-        throw new Error(
-          `plugin requires LiteIDE plugin API v${apiRequired}, but this LiteIDE provides v${HOST_API_VERSION}. 请更新 LiteIDE。`,
-        )
-      }
-
-      const format: 'classic' | 'bundle' = entry.manifest.format === 'bundle' ? 'bundle' : 'classic'
       const source = isEmbedded
         ? readEmbeddedSource(id)
         : typeof backend.pluginReadEntry === 'function'
@@ -285,28 +349,14 @@ export function createPluginRegistry(
       // （若注册后再读，失败路径需 dispose 补偿，且重激活会撞 duplicate id）。
       let css: string | null = null
       if (entry.manifest.css) {
-        css = await readPluginAsset(id, entry.manifest, entry.manifest.css)
+        css = isEmbedded
+          ? readEmbeddedAssetSync(id, entry.manifest.css)
+          : await readPluginAsset(id, entry.manifest, entry.manifest.css)
       }
 
-      const plugin = evaluateExternalPlugin(source, {
-        pluginId: id,
-        format,
-        loadChunk: (name) => loadChunk(id, entry.manifest, name),
-      })
-      const disposable = kernel.registerPlugin(plugin)
-      running.set(id, disposable)
-
-      // Stylesheet asset: injected while running, removed on deactivate.
-      if (css !== null) {
-        injectPluginStyles(id, css)
-      }
-
-      setRuntimeEntry(id, 'running', null)
+      activateWithAssets(entry, source, css)
     } catch (err) {
-      // 激活失败的可诊断性：设置页只展示 message，这里补一条带堆栈的日志。
-      console.error(`[plugin-registry] failed to activate plugin "${id}"`, err)
-      running.delete(id)
-      setRuntimeEntry(id, 'error', err instanceof Error ? err.message : String(err))
+      recordActivationError(id, err)
     } finally {
       activating.delete(id)
     }
@@ -472,13 +522,24 @@ export function createPluginRegistry(
     },
   }
 
+  // 嵌入式内置插件源码与样式已在内存中，构造期同步激活，避免首帧渲染后再跳变（如内置主题/侧栏）。
+  for (const emb of embeddedPlugins) {
+    activateEmbeddedSync(emb)
+  }
+
   if (backend.pluginCatalog) {
     void backend.pluginCatalog().then(setCatalog, () => setCatalog([]))
   }
   if (supported) {
-    void refresh().catch(() => {
-      // 列表读取失败：保持空列表，UI 由 supported/空态兜底。
-    })
+    void refresh()
+      .catch(() => {
+        // 列表读取失败：保持空列表，UI 由 supported/空态兜底。
+      })
+      .finally(() => {
+        options.onInitialRefreshDone?.()
+      })
+  } else {
+    options.onInitialRefreshDone?.()
   }
 
   return service

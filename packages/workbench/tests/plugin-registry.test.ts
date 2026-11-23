@@ -441,13 +441,17 @@ describe('createPluginRegistry', () => {
     kernel.dispose()
   })
 
-  it('activates embedded built-ins, flags them embedded and refuses uninstalling them', async () => {
+  it('activates embedded built-ins synchronously on construction, flags them embedded and refuses uninstalling them', async () => {
     const kernel = createKernel()
     const fake = createFakePluginBackend()
     const embedded: EmbeddedPluginSource[] = [
       { manifest: makeManifest('embedded-theme'), source: THEME_SOURCE },
     ]
     const registry = createPluginRegistry(kernel, fake.backend, embedded)
+    // 构造期即同步激活，无需等待异步 refresh。
+    expect(themeIds(kernel)).toContain('fake-theme')
+    expect(registry.states()[0]?.status).toBe('running')
+
     await registry.refresh()
 
     expect(registry.states()).toHaveLength(1)

@@ -7,18 +7,56 @@
     <title>LiteIDE</title>
     <script>
       ;(function () {
-        // Keep in sync with THEME_DEFINITIONS in packages/workbench/src/services.ts
-        // and resolveSystemLocale in packages/workbench/src/i18n.ts.
-        // Plugin-contributed theme ids are unknown at this stage: they boot as
-        // dark and get their inline variables once ThemeState applies the
-        // registered theme after plugin registration.
+        // Keep in sync with THEME_DEFINITIONS / THEME_SNAPSHOT_STORAGE_KEY in
+        // packages/workbench/src/services.ts and resolveSystemLocale in
+        // packages/workbench/src/i18n.ts.
         var modes = ['dark', 'light', 'solarized-light']
         try {
           var t = localStorage.getItem('lite-ide.theme.v1')
-          var mode = modes.indexOf(t) >= 0 ? t : 'dark'
-          document.documentElement.dataset.theme = mode
-          document.documentElement.classList.toggle('dark', mode === 'dark')
-          document.documentElement.classList.toggle('light', mode !== 'dark')
+          if (modes.indexOf(t) >= 0) {
+            document.documentElement.dataset.theme = t
+            document.documentElement.classList.toggle('dark', t === 'dark')
+            document.documentElement.classList.toggle('light', t !== 'dark')
+          } else {
+            // Plugin-contributed themes are restored from their last cached
+            // snapshot (id, appearance, variables) before plugins load so the
+            // first paint does not flash the default dark theme.
+            var applied = false
+            if (t) {
+              try {
+                var rawSnap = localStorage.getItem('lite-ide.theme.snapshot.v1')
+                if (rawSnap) {
+                  var snap = JSON.parse(rawSnap)
+                  if (
+                    snap &&
+                    snap.id === t &&
+                    (snap.appearance === 'dark' || snap.appearance === 'light')
+                  ) {
+                    document.documentElement.dataset.theme = snap.id
+                    document.documentElement.classList.toggle('dark', snap.appearance === 'dark')
+                    document.documentElement.classList.toggle('light', snap.appearance !== 'dark')
+                    if (snap.variables && typeof snap.variables === 'object') {
+                      var vars = snap.variables
+                      for (var k in vars) {
+                        if (
+                          Object.prototype.hasOwnProperty.call(vars, k) &&
+                          typeof vars[k] === 'string'
+                        ) {
+                          document.documentElement.style.setProperty(k, vars[k])
+                        }
+                      }
+                    }
+                    applied = true
+                  }
+                }
+              } catch (e) {}
+            }
+            if (!applied) {
+              document.documentElement.dataset.theme = 'dark'
+              document.documentElement.classList.add('dark')
+              document.documentElement.classList.remove('light')
+            }
+          }
           var locPref = localStorage.getItem('lite-ide.locale.v1')
           var nav = (
             navigator.language ||

@@ -134,19 +134,35 @@ test('plugin-contributed Nord theme appears in settings, applies inline variable
   ).toBe('nord-dark')
   await page.screenshot({ path: testInfo.outputPath('theme-nord-dark.png'), animations: 'disabled' })
 
-  // The FOUC whitelist only knows built-ins, so after reload the kernel must
-  // re-apply the stored plugin theme once the theme-nord plugin registers.
+  // Reload: cached snapshot in index.html + synchronous embedded plugin activation
+  // must apply nord-dark immediately without ever flashing the default dark theme.
   await page.keyboard.press('Escape')
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    const record = () => {
+      const val = document.documentElement?.dataset.theme
+      if (val && seen[seen.length - 1] !== val) seen.push(val)
+    }
+    record()
+    new MutationObserver(record).observe(document, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+    ;(window as unknown as { __seenThemes?: string[] }).__seenThemes = seen
+  })
   await page.reload()
   await expect(page.getByRole('tree')).toBeVisible()
   const restored = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
     dark: document.documentElement.classList.contains('dark'),
     appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+    seenThemes: (window as unknown as { __seenThemes?: string[] }).__seenThemes ?? [],
   }))
   expect(restored.theme).toBe('nord-dark')
   expect(restored.dark).toBe(true)
   expect(restored.appBg).toBe('#2e3440')
+  expect(restored.seenThemes).not.toContain('dark')
 
   // Switching back to a built-in clears the injected inline variables.
   await page.keyboard.press('Control+,')

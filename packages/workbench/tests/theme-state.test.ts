@@ -5,6 +5,7 @@ import { createSettingsDialogService } from '../src/dialogs'
 import {
   createThemeState,
   THEME_DEFINITIONS,
+  THEME_SNAPSHOT_STORAGE_KEY,
   THEME_STORAGE_KEY,
   type ThemeContribution,
 } from '../src/services'
@@ -194,6 +195,75 @@ describe('createThemeState', () => {
     expect(state.appearance()).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('nord-dark')
     expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('#2e3440')
+  })
+
+  it('uses cached snapshot while plugins are still loading and avoids dark flash', async () => {
+    const lightPluginTheme: ThemeContribution = {
+      id: 'custom-light',
+      label: 'Custom Light',
+      appearance: 'light',
+      variables: { '--bg-app': '#fafafa', '--accent': '#1155cc' },
+    }
+    const fake1 = createFakeThemeHost()
+    fake1.register(lightPluginTheme)
+    const state1 = createThemeState(fake1.host)
+    state1.setTheme('custom-light')
+    expect(localStorage.getItem(THEME_SNAPSHOT_STORAGE_KEY)).toContain('custom-light')
+
+    // 模拟冷启动：DOM 先清空，插件尚未注册且 pluginsReady 仍为 false。
+    delete document.documentElement.dataset.theme
+    document.documentElement.classList.remove('dark', 'light')
+    document.documentElement.removeAttribute('style')
+
+    const fake2 = createFakeThemeHost()
+    const [pluginsReady, setPluginsReady] = createSignal(false)
+    const state2 = createThemeState(fake2.host, { pluginsReady })
+    expect(state2.theme()).toBe('custom-light')
+    expect(state2.appearance()).toBe('light')
+    expect(document.documentElement.dataset.theme).toBe('custom-light')
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('#fafafa')
+
+    // 若插件随后顺利注册并完成首轮加载，保持该主题不断档。
+    fake2.register(lightPluginTheme)
+    setPluginsReady(true)
+    await flushEffects()
+    expect(document.documentElement.dataset.theme).toBe('custom-light')
+    expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('#fafafa')
+
+    // 切换到内置主题时清除快照。
+    state2.setTheme('light')
+    expect(localStorage.getItem(THEME_SNAPSHOT_STORAGE_KEY)).toBeNull()
+    expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('')
+  })
+
+  it('clears stale snapshot and falls back to dark if pluginsReady settles without registering the theme', async () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'removed-theme')
+    localStorage.setItem(
+      THEME_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({
+        id: 'removed-theme',
+        appearance: 'light',
+        variables: { '--bg-app': '#ffffff' },
+      }),
+    )
+
+    const fake = createFakeThemeHost()
+    const [pluginsReady, setPluginsReady] = createSignal(false)
+    const state = createThemeState(fake.host, { pluginsReady })
+    expect(document.documentElement.dataset.theme).toBe('removed-theme')
+    expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('#ffffff')
+
+    // 插件加载完成但该主题仍未注册（已卸载/停用）：清除过期快照并兜底 dark。
+    setPluginsReady(true)
+    await flushEffects()
+    expect(state.theme()).toBe('removed-theme')
+    expect(state.appearance()).toBe('dark')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('')
+    expect(localStorage.getItem(THEME_SNAPSHOT_STORAGE_KEY)).toBeNull()
   })
 })
 

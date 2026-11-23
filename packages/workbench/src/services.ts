@@ -9,7 +9,7 @@ import {
   type ProjectScope,
 } from '@lite-ide/kernel'
 import type { FileMeta, FsDelta, WorkspaceBackend } from '@lite-ide/protocol'
-import { createEffect, createMemo, createRoot, createSignal, type Accessor } from 'solid-js'
+import { batch, createEffect, createMemo, createRoot, createSignal, type Accessor } from 'solid-js'
 import { AiModelKey, createAiModelService } from './ai-model'
 import { ConfirmDialogKey, createConfirmDialogService, SettingsDialogKey, createSettingsDialogService } from './dialogs'
 import {
@@ -544,18 +544,80 @@ export function createPanelState(): PanelStateService {
 }
 
 export const THEME_STORAGE_KEY = 'lite-ide.theme.v1'
+export const THEME_SNAPSHOT_STORAGE_KEY = 'lite-ide.theme.snapshot.v1'
 
 const THEME_ID_PATTERN = /^[\w-]+$/
+
+function isBuiltinThemeId(id: string): boolean {
+  return THEME_DEFINITIONS.some((t) => t.id === id)
+}
 
 function readStoredThemeId(): ThemeMode {
   if (typeof localStorage === 'undefined') return DEFAULT_THEME_ID
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY)
     // 插件主题 id 允许通过：启动时注册表可能尚未就绪，由下方 effect 在
-    // 插件注册完成后校正；index.html 的 FOUC 脚本按内置白名单兜底首帧。
+    // 插件注册完成后校正；index.html 的 FOUC 脚本按内置白名单与快照兜底首帧。
     return stored && THEME_ID_PATTERN.test(stored) ? stored : DEFAULT_THEME_ID
   } catch {
     return DEFAULT_THEME_ID
+  }
+}
+
+function readStoredThemeSnapshot(expectedId: string): ThemeDefinition | null {
+  if (typeof localStorage === 'undefined' || !expectedId || isBuiltinThemeId(expectedId)) {
+    return null
+  }
+  try {
+    const raw = localStorage.getItem(THEME_SNAPSHOT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const candidate = parsed as { id?: unknown; appearance?: unknown; variables?: unknown }
+    if (
+      candidate.id !== expectedId ||
+      (candidate.appearance !== 'dark' && candidate.appearance !== 'light')
+    ) {
+      return null
+    }
+    let variables: Record<string, string> | undefined
+    if (candidate.variables !== undefined) {
+      if (!candidate.variables || typeof candidate.variables !== 'object' || Array.isArray(candidate.variables)) {
+        return null
+      }
+      variables = {}
+      for (const [k, v] of Object.entries(candidate.variables)) {
+        if (typeof v === 'string') variables[k] = v
+      }
+    }
+    return {
+      id: candidate.id,
+      label: candidate.id,
+      appearance: candidate.appearance,
+      variables,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredThemeSnapshot(definition: ThemeDefinition | null): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    if (!definition || isBuiltinThemeId(definition.id)) {
+      localStorage.removeItem(THEME_SNAPSHOT_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(
+      THEME_SNAPSHOT_STORAGE_KEY,
+      JSON.stringify({
+        id: definition.id,
+        appearance: definition.appearance,
+        variables: definition.variables,
+      }),
+    )
+  } catch {
+    // Ignore storage quota / privacy errors.
   }
 }
 
@@ -579,22 +641,58 @@ function applyThemeToDom(definition: ThemeDefinition) {
   }
 }
 
-export function createThemeState(kernel?: Pick<AppKernel, 'contributions'>): ThemeStateService {
+export interface ThemeStateOptions {
+  /**
+   * 外部插件是否已完成首轮加载。未就绪期间若命中与当前主题 id 一致的
+   * 本地快照，会先沿用快照而非退回默认 dark，避免首帧闪烁。
+   */
+  pluginsReady?: Accessor<boolean>
+}
+
+export function createThemeState(
+  kernel?: Pick<AppKernel, 'contributions'>,
+  options: ThemeStateOptions = {},
+): ThemeStateService {
   // 内置主题在前，插件贡献主题按注册顺序追加；贡献点变化时响应式重算。
   // 贡献项与 ThemeDefinition 结构一致，直接透传以免 <For> 按引用重挂载格子。
   const registry = createMemo<readonly ThemeDefinition[]>(() => [
     ...THEME_DEFINITIONS,
     ...(kernel?.contributions('theme')() ?? []),
   ])
-  const [theme, setThemeSignal] = createSignal<ThemeMode>(readStoredThemeId())
+  const initialThemeId = readStoredThemeId()
+  const initialSnapshot = readStoredThemeSnapshot(initialThemeId)
+  // index.html 首帧脚本可能已把快照变量写入 root.style，先登记进清除集合以免切换时残留。
+  if (initialSnapshot?.variables) {
+    for (const name of Object.keys(initialSnapshot.variables)) {
+      injectedVariableNames.add(name)
+    }
+  }
+  const [theme, setThemeSignal] = createSignal<ThemeMode>(initialThemeId)
+  const [pendingSnapshot, setPendingSnapshot] = createSignal<ThemeDefinition | null>(initialSnapshot)
+  const pluginsReady = options.pluginsReady ?? (() => true)
   const activeDefinition = createMemo(() => registry().find((t) => t.id === theme()))
+  const effectiveDefinition = createMemo<ThemeDefinition>(() => {
+    const active = activeDefinition()
+    if (active) return active
+    const snap = pendingSnapshot()
+    if (snap && snap.id === theme() && !pluginsReady()) return snap
+    return THEME_DEFINITIONS[0]
+  })
 
   function setTheme(mode: ThemeMode) {
-    setThemeSignal(mode)
+    batch(() => {
+      setPendingSnapshot(null)
+      setThemeSignal(mode)
+    })
     const definition = registry().find((t) => t.id === mode)
     // 手动 apply 与下方 effect 的 apply 刻意冗余：保证无 effect 冲刷的环境
     // （如单元测试的同步断言）下 DOM 即时生效；effect 重跑一遍幂等。
-    if (definition) applyThemeToDom(definition)
+    if (definition) {
+      applyThemeToDom(definition)
+      writeStoredThemeSnapshot(definition)
+    } else {
+      writeStoredThemeSnapshot(null)
+    }
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem(THEME_STORAGE_KEY, mode)
@@ -604,21 +702,33 @@ export function createThemeState(kernel?: Pick<AppKernel, 'contributions'>): The
     }
   }
 
-  // Solid 1.9 在 batch 外同步冲刷 effect，插件又于 main.tsx 内同步注册，
-  // 因此首帧前注册表即完整。effect 持续跟随注册表：未知 id（存储的插件
-  // 主题未注册 / 已卸载 / 存储损坏）只把 DOM 兜底为内置 dark，theme()
-  // 保留原 id 且不落盘——插件随后注册（含动态 import 迟到加载）时该主题
-  // 会被自动应用。
+  // Solid 1.9 在 batch 外同步冲刷 effect；若主题来自嵌入式/外部插件，在插件
+  // 首轮加载完成前若命中同 id 快照则保持快照渲染，避免先闪默认 dark 再跳回。
+  // 插件首轮加载结束后若仍未注册（已卸载/停用），清理过期快照并兜底 dark。
   createRoot(() => {
     createEffect(() => {
-      applyThemeToDom(activeDefinition() ?? THEME_DEFINITIONS[0])
+      const active = activeDefinition()
+      if (active) {
+        if (pendingSnapshot() !== null) setPendingSnapshot(null)
+        writeStoredThemeSnapshot(active)
+        applyThemeToDom(active)
+        return
+      }
+      const snap = pendingSnapshot()
+      if (snap && snap.id === theme() && !pluginsReady()) {
+        applyThemeToDom(snap)
+        return
+      }
+      if (snap !== null) setPendingSnapshot(null)
+      writeStoredThemeSnapshot(null)
+      applyThemeToDom(THEME_DEFINITIONS[0])
     })
   })
 
   return {
     themes: registry,
     theme,
-    appearance: createMemo<ThemeAppearance>(() => activeDefinition()?.appearance ?? 'dark'),
+    appearance: createMemo<ThemeAppearance>(() => effectiveDefinition().appearance),
     setTheme,
     toggleTheme() {
       const defs = registry()
@@ -693,20 +803,23 @@ export function createWorkbenchKernel(
     host: createKernelHostFromBackend(backend),
     maxWarmProjects,
   })
+  const [pluginsReady, setPluginsReady] = createSignal(false)
   kernel.provide(WorkspaceBackendKey, backend)
   kernel.provide(LayoutStateKey, createLayoutState())
   kernel.provide(PanelStateKey, createPanelState())
   // 传入 kernel：ThemeState / I18nState 需要响应式读取插件贡献点。
-  kernel.provide(ThemeStateKey, createThemeState(kernel))
+  kernel.provide(ThemeStateKey, createThemeState(kernel, { pluginsReady }))
   kernel.provide(I18nStateKey, createI18nState(kernel))
   kernel.provide(ConfirmDialogKey, createConfirmDialogService())
   kernel.provide(SettingsDialogKey, createSettingsDialogService())
   kernel.provide(QuickOpenKey, createQuickOpenService())
   kernel.provide(AiModelKey, createAiModelService())
-  // 外部插件注册表：构造时激活嵌入式内置插件，并自动从后端拉取已装列表。
+  // 外部插件注册表：构造时同步激活嵌入式内置插件，并自动从后端拉取已装列表。
   kernel.provide(
     PluginRegistryKey,
-    createPluginRegistry(kernel, backend, options.embeddedPlugins ?? []),
+    createPluginRegistry(kernel, backend, options.embeddedPlugins ?? [], {
+      onInitialRefreshDone: () => setPluginsReady(true),
+    }),
   )
   return kernel
 }
