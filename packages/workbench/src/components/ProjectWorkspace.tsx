@@ -22,24 +22,26 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
     [...sidebarViews()].sort((a, b) => a.order - b.order),
   )
 
-  const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
   const [dragging, setDragging] = createSignal(false)
 
   createEffect(() => {
     const views = sortedViews()
+    const projectId = props.scope.id
     if (views.length === 0) {
-      setActiveViewId(null)
+      if (layout.sidebarViewId(projectId) !== null) {
+        layout.setSidebarViewId(projectId, null)
+      }
       return
     }
-    const current = activeViewId()
+    const current = layout.sidebarViewId(projectId)
     if (!current || !views.some((v) => v.id === current)) {
-      setActiveViewId(views[0].id)
+      layout.setSidebarViewId(projectId, views[0].id)
     }
   })
 
   const currentView = createMemo(() => {
     const views = sortedViews()
-    const id = activeViewId()
+    const id = layout.sidebarViewId(props.scope.id)
     return views.find((v) => v.id === id) ?? views[0]
   })
 
@@ -107,12 +109,13 @@ export function ProjectWorkspace(props: ProjectWorkspaceProps) {
                   {(view) => (
                     <button
                       type="button"
+                      data-sidebar-view={view.id}
                       class={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-150 ${
                         currentView()?.id === view.id
                           ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-panel)] shadow-sm'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent'
                       }`}
-                      onClick={() => setActiveViewId(view.id)}
+                      onClick={() => layout.setSidebarViewId(props.scope.id, view.id)}
                     >
                       {i18n.resolveText(view.titleKey, view.title)}
                     </button>

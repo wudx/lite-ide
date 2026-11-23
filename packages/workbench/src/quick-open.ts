@@ -28,6 +28,14 @@ export interface QuickOpenFileEntry {
   relPath: string
   name: string
   modifiedMs: number
+  size?: number
+}
+
+export interface BuildFileIndexOptions {
+  /** Include gitignored entries (still skips `.git` and `node_modules`). */
+  includeIgnored?: boolean
+  /** Hard cap on collected file entries; defaults to `QUICK_OPEN_MAX_FILES`. */
+  maxFiles?: number
 }
 
 /** Hard cap so a pathological tree can never hang the indexer forever. */
@@ -57,7 +65,10 @@ export interface QuickOpenIndexResult {
 export async function buildFileIndex(
   backend: WorkspaceBackend,
   projectId: string,
+  options: BuildFileIndexOptions = {},
 ): Promise<QuickOpenIndexResult> {
+  const includeIgnored = options.includeIgnored ?? false
+  const maxFiles = options.maxFiles ?? QUICK_OPEN_MAX_FILES
   const files: QuickOpenFileEntry[] = []
   let failedDirCount = 0
   const queue: string[] = ['']
@@ -82,19 +93,24 @@ export async function buildFileIndex(
         continue
       }
       for (const entry of entries) {
-        if (entry.ignored) continue
+        if (!includeIgnored && entry.ignored) continue
         if (entry.isDir) {
           if (!SKIP_DIR_NAMES.has(entry.name)) {
             queue.push(entry.relPath)
           }
           continue
         }
-        if (files.length < QUICK_OPEN_MAX_FILES) {
-          files.push({ relPath: entry.relPath, name: entry.name, modifiedMs: entry.modifiedMs })
+        if (files.length < maxFiles) {
+          files.push({
+            relPath: entry.relPath,
+            name: entry.name,
+            modifiedMs: entry.modifiedMs,
+            size: entry.size,
+          })
         }
       }
     }
-    if (files.length >= QUICK_OPEN_MAX_FILES) {
+    if (files.length >= maxFiles) {
       queue.length = 0
     }
   }

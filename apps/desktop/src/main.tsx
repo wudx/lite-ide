@@ -14,6 +14,9 @@ import { render } from 'solid-js/web'
 import explorerManifest from '../../../plugins/explorer/plugin.json'
 import explorerSource from '../../../plugins/explorer/dist/plugin.js?raw'
 import explorerCss from '../../../plugins/explorer/dist/plugin.css?raw'
+import searchManifest from '../../../plugins/search/plugin.json'
+import searchSource from '../../../plugins/search/dist/plugin.js?raw'
+import searchCss from '../../../plugins/search/dist/plugin.css?raw'
 import gitManifest from '../../../plugins/git/plugin.json'
 import gitSource from '../../../plugins/git/dist/plugin.js?raw'
 import gitCss from '../../../plugins/git/dist/plugin.css?raw'
@@ -50,6 +53,11 @@ const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
     manifest: asManifest(explorerManifest),
     source: explorerSource,
     assets: { 'plugin.css': explorerCss },
+  },
+  {
+    manifest: asManifest(searchManifest),
+    source: searchSource,
+    assets: { 'plugin.css': searchCss },
   },
   {
     manifest: asManifest(gitManifest),

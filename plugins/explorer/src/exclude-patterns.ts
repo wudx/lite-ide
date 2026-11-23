@@ -1,5 +1,8 @@
 import { createServiceKey } from '@lite-ide/kernel'
+import { globToRegExp } from '@lite-ide/workbench'
 import { createMemo, createSignal, type Accessor } from 'solid-js'
+
+export { globToRegExp }
 
 /** 参与排除匹配的最小条目形态（DirEntry 的子集，便于单测构造）。 */
 export interface ExcludableEntry {
@@ -32,37 +35,6 @@ export const ExplorerExcludeStateKey = createServiceKey<ExplorerExcludeService>(
 )
 
 export const EXCLUDE_STORAGE_KEY = 'lite-ide.explorer.exclude.v1'
-
-/**
- * glob 模式 → 全串匹配正则：
- * - 以 `**` 开头并后接目录分隔符时，前缀可匹配零层或多层目录（`temp` 与 `a/b/temp` 均命中）
- * - `**` 跨目录段、`*` 单段内任意字符、`?` 单字符；其余字符按字面量转义
- * - 不含 `/` 的模式对文件名匹配，含 `/` 的模式对 relPath（`/` 分隔）匹配
- */
-export function globToRegExp(pattern: string): RegExp {
-  let source = ''
-  for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i]!
-    if (ch === '*') {
-      if (pattern[i + 1] === '*') {
-        if (pattern[i + 2] === '/') {
-          source += '(?:.*/)?'
-          i += 2
-        } else {
-          source += '.*'
-          i += 1
-        }
-      } else {
-        source += '[^/]*'
-      }
-    } else if (ch === '?') {
-      source += '[^/]'
-    } else {
-      source += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    }
-  }
-  return new RegExp(`^${source}$`)
-}
 
 export function compileExcludeRule(pattern: string): ExcludeRule {
   const dirOnly = pattern.endsWith('/')

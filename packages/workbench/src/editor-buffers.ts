@@ -67,6 +67,18 @@ export interface EditorBufferService {
   createUntitled(): DocumentBuffer
   reloadBuffer(relPath: string, maxBytes?: number): Promise<DocumentBuffer>
   updateContent(relPath: string, content: string, lineCount: number): void
+  /**
+   * Apply a programmatic edit (such as search-and-replace) to an open buffer
+   * and bump `diskRevision` so mounted CodeMirror editors resync immediately.
+   * When `options.save` is true, writes to disk first so a write failure never
+   * leaves the buffer unexpectedly dirty.
+   */
+  applyContent(
+    relPath: string,
+    content: string,
+    lineCount: number,
+    options?: { save?: boolean },
+  ): Promise<boolean>
   saveBuffer(relPath: string): Promise<boolean>
   overwriteConflict(relPath: string): Promise<boolean>
   dismissConflict(relPath: string): void
@@ -390,6 +402,66 @@ export function createEditorBufferService(
         dirty: prev.untitled || content !== prev.savedContent,
         saveError: null,
       }))
+    },
+
+    async applyContent(
+      relPath: string,
+      content: string,
+      lineCount: number,
+      saveOpts?: { save?: boolean },
+    ): Promise<boolean> {
+      const buf = buffers().get(relPath)
+      if (!buf || buf.readOnly || buf.saving) {
+        return false
+      }
+
+      if (saveOpts?.save && !buf.untitled) {
+        recentSelfWrites.set(relPath, Date.now())
+        patchBuffer(relPath, (prev) => ({
+          ...prev,
+          saving: true,
+          saveError: null,
+        }))
+        try {
+          const res = await backend.writeText(projectId, relPath, content, buf.encoding)
+          recentSelfWrites.set(relPath, Date.now())
+          patchBuffer(relPath, (latest) => ({
+            ...latest,
+            content,
+            savedContent: content,
+            encoding: res.meta.encoding,
+            diskModifiedMs: res.meta.modifiedMs,
+            totalBytes: res.meta.size,
+            loadedBytes: res.writtenBytes,
+            truncated: false,
+            lineCount: res.lineCount,
+            dirty: false,
+            saving: false,
+            saveError: null,
+            conflict: 'none',
+            diskRevision: latest.diskRevision + 1,
+          }))
+          options.onMetaUpdated?.(res.meta)
+          return true
+        } catch (err) {
+          patchBuffer(relPath, (latest) => ({
+            ...latest,
+            saving: false,
+            saveError: err instanceof Error ? err.message : String(err),
+          }))
+          return false
+        }
+      }
+
+      patchBuffer(relPath, (prev) => ({
+        ...prev,
+        content,
+        lineCount,
+        dirty: prev.untitled || content !== prev.savedContent,
+        saveError: null,
+        diskRevision: prev.diskRevision + 1,
+      }))
+      return true
     },
 
     async saveBuffer(relPath: string): Promise<boolean> {

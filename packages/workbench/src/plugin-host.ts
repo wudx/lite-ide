@@ -8,14 +8,14 @@ import * as solidWeb from 'solid-js/web'
 import { AiModelKey } from './ai-model'
 import { copyTextToClipboard } from './clipboard'
 import { ConfirmDialogKey, SettingsDialogKey } from './dialogs'
-import { DEFAULT_BUFFER_MAX_BYTES, EditorBufferKey } from './editor-buffers'
+import { DEFAULT_BUFFER_MAX_BYTES, EditorBufferKey, isUntitledPath } from './editor-buffers'
 import { FileIcon } from './components/FileIcon'
 import { formatBytes } from './format'
 import { getI18n, I18nStateKey } from './i18n'
 import { isAudioExtension } from './media'
 import { CodeNavigationKey } from './navigation'
-import { joinNativePath } from './paths'
-import { QuickOpenKey } from './quick-open'
+import { baseNameOf, globToRegExp, joinNativePath, parentDirOf } from './paths'
+import { buildFileIndex, QuickOpenKey, WALK_CONCURRENCY } from './quick-open'
 import {
   LayoutStateKey,
   PanelStateKey,
@@ -23,6 +23,7 @@ import {
   ProjectSelectionKey,
   ThemeStateKey,
   WorkspaceBackendKey,
+  WorkspaceSearchLauncherKey,
 } from './services'
 import { SymbolIndexKey } from './symbol-index'
 
@@ -81,11 +82,18 @@ export function buildHostRequire(liteide: LiteideHostApi): HostRequire {
       AiModelKey,
       ConfirmDialogKey,
       SettingsDialogKey,
+      WorkspaceSearchLauncherKey,
       // Helpers & shared components.
       getI18n,
       formatBytes,
       DEFAULT_BUFFER_MAX_BYTES,
+      isUntitledPath,
+      buildFileIndex,
+      WALK_CONCURRENCY,
       joinNativePath,
+      baseNameOf,
+      parentDirOf,
+      globToRegExp,
       copyTextToClipboard,
       isAudioExtension,
       FileIcon,

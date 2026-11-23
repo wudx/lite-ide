@@ -9,6 +9,7 @@ import {
   joinNativePath,
   ProjectSelectionKey,
   WorkspaceBackendKey,
+  WorkspaceSearchLauncherKey,
 } from '@lite-ide/workbench'
 import { createVirtualizer } from '@tanstack/solid-virtual'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
@@ -727,6 +728,22 @@ export function ExplorerView(props: ExplorerViewProps) {
                 >
                   <FolderOpen class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
                   <span>{i18n.t('explorer.menu.revealInFileManager')}</span>
+                </button>
+              </Show>
+
+              <Show when={entry()?.isDir && props.scope.tryGet(WorkspaceSearchLauncherKey)}>
+                <button
+                  type="button"
+                  class="w-full px-2.5 py-1.5 rounded-lg text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  onClick={() => {
+                    const target = entry()!
+                    const launcher = props.scope.tryGet(WorkspaceSearchLauncherKey)
+                    setContextMenu(null)
+                    launcher?.findInFiles({ include: `${target.relPath}/` })
+                  }}
+                >
+                  <Search class="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <span>{i18n.t('explorer.menu.findInFolder')}</span>
                 </button>
               </Show>
 

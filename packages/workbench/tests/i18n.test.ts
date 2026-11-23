@@ -19,6 +19,7 @@ import { previewCodePlugin } from '../../../plugins/preview-code/src/index'
 import { previewFallbackPlugin } from '../../../plugins/preview-fallback/src/index'
 import { previewImagePlugin } from '../../../plugins/preview-image/src/index'
 import { previewMarkdownPlugin } from '../../../plugins/preview-markdown/src/index'
+import { searchPlugin } from '../../../plugins/search/src/index'
 import { themeNordPlugin } from '../../../plugins/theme-nord/src/index'
 
 function createFakeI18nHost() {
@@ -176,6 +177,7 @@ describe('createI18nState', () => {
     try {
       for (const plugin of [
         explorerPlugin,
+        searchPlugin,
         gitPlugin,
         previewCodePlugin,
         previewMarkdownPlugin,

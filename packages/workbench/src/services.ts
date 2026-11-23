@@ -77,8 +77,22 @@ export interface ProjectSelectionService {
 export interface LayoutStateService {
   readonly sidebarVisible: Accessor<boolean>
   readonly sidebarWidth: Accessor<number>
+  sidebarViewId(projectId: string): string | null
   toggleSidebar(): void
+  setSidebarVisible(visible: boolean): void
   setSidebarWidth(width: number): void
+  setSidebarViewId(projectId: string, id: string | null): void
+  showSidebarView(projectId: string, id: string): void
+}
+
+export interface WorkspaceSearchOptions {
+  query?: string
+  include?: string
+  focusReplace?: boolean
+}
+
+export interface WorkspaceSearchLauncher {
+  findInFiles(options?: WorkspaceSearchOptions): void
 }
 
 /**
@@ -149,6 +163,9 @@ export const ProjectFsEventsKey = createServiceKey<EventBus<{ delta: FsDelta }>>
   'workbench.projectFsEvents',
 )
 export const LayoutStateKey = createServiceKey<LayoutStateService>('workbench.layoutState')
+export const WorkspaceSearchLauncherKey = createServiceKey<WorkspaceSearchLauncher>(
+  'workbench.workspaceSearchLauncher',
+)
 export const PanelStateKey = createServiceKey<PanelStateService>('workbench.panelState')
 export const ThemeStateKey = createServiceKey<ThemeStateService>('workbench.themeState')
 
@@ -468,17 +485,36 @@ export function createProjectSelection(
 }
 
 export function createLayoutState(): LayoutStateService {
-  const [sidebarVisible, setSidebarVisible] = createSignal(true)
+  const [sidebarVisible, setSidebarVisibleState] = createSignal(true)
   const [sidebarWidth, setSidebarWidthState] = createSignal(260)
+  const [sidebarViewIds, setSidebarViewIds] = createSignal<Record<string, string | null>>({})
+
+  function setSidebarViewId(projectId: string, id: string | null) {
+    setSidebarViewIds((prev) => {
+      if (prev[projectId] === id) return prev
+      return { ...prev, [projectId]: id }
+    })
+  }
 
   return {
     sidebarVisible,
     sidebarWidth,
+    sidebarViewId(projectId: string) {
+      return sidebarViewIds()[projectId] ?? null
+    },
     toggleSidebar() {
-      setSidebarVisible((v) => !v)
+      setSidebarVisibleState((v) => !v)
+    },
+    setSidebarVisible(visible: boolean) {
+      setSidebarVisibleState(visible)
     },
     setSidebarWidth(width: number) {
       setSidebarWidthState(Math.max(180, Math.min(520, Math.round(width))))
+    },
+    setSidebarViewId,
+    showSidebarView(projectId: string, id: string) {
+      setSidebarVisibleState(true)
+      setSidebarViewId(projectId, id)
     },
   }
 }
