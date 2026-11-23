@@ -282,7 +282,7 @@ test('git panel switches branches and creates a new branch in mock mode', async 
   expect(consoleErrors).toEqual([])
 })
 
-test('git panel stashes changes, restores them and manages the stash list', async ({
+test('git panel stashes selected unstaged changes via the row context menu', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = []
@@ -295,50 +295,33 @@ test('git panel stashes changes, restores them and manages the stash list', asyn
   await expect(page.getByRole('tree')).toBeVisible()
   await page.getByRole('button', { name: 'Git', exact: true }).click()
 
-  // The demo repo ships with two preset stash entries.
-  await expect(page.getByText('存储 (2)', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-git-stash="stash@{0}"]')).toBeVisible()
+  // Shift-click selects the whole unstaged range (App.tsx → metrics.xlsx).
+  const firstRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
+  await firstRow.click({ modifiers: ['Control'] })
+  const lastRow = page.locator('[data-git-section="unstaged"][data-git-path="data/metrics.xlsx"]')
+  await lastRow.click({ modifiers: ['Shift'] })
+  await expect(page.locator("[data-git-selected='true']")).toHaveCount(3)
 
-  // 选择存储: stash a single unstaged file via its row hover action.
-  const unstagedRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
-  await unstagedRow.hover()
-  await unstagedRow.getByRole('button', { name: `存储 ${UNSTAGED_FILE}` }).click()
-  // The preset csv/xlsx changes stay unstaged.
-  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(2)
+  // Right-click on a selected row opens the context menu acting on the selection.
+  await firstRow.click({ button: 'right' })
+  const ctxMenu = page.getByTestId('git-context-menu')
+  await expect(ctxMenu).toBeVisible()
+  await expect(ctxMenu.getByTestId('git-context-stash-selected')).toHaveText(/存储所选文件 \(3\)/)
+  await page.screenshot({ path: testInfo.outputPath('git-context-stash.png'), animations: 'disabled' })
+  await ctxMenu.getByTestId('git-context-stash-selected').click()
+
+  // The three unstaged changes are stashed; the staged change remains listed.
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(0)
   await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
-  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
-
-  // 全部存储: stash the remaining staged and unstaged changes via the more-actions menu.
-  await page.getByTestId('git-more-button').click()
-  const morePopover = page.getByTestId('git-more-popover')
-  await expect(morePopover).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('git-more-menu.png'), animations: 'disabled' })
-  await page.getByTestId('git-stash-all').click()
-  await expect(morePopover).toHaveCount(0)
-  await expect(page.getByText('工作区干净')).toBeVisible()
-  await expect(page.getByText('存储 (4)', { exact: true })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('git-stash-all.png'), animations: 'disabled' })
-
-  // 还原: applying the newest entry restores the staged change and keeps
-  // the stash entry in the stack.
-  const newestStashRow = page.locator('[data-git-stash="stash@{0}"]')
-  await newestStashRow.hover()
-  await page.getByTestId('git-stash-restore-0').click()
-  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
-  await expect(page.getByText('存储 (4)', { exact: true })).toBeVisible()
-
-  // 删除存储: dropping the kept entry requires confirmation.
-  await newestStashRow.hover()
-  await page.getByTestId('git-stash-drop-0').click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('git-stash-drop-confirm.png'), animations: 'disabled' })
-  await page.getByRole('dialog').getByText('删除', { exact: true }).click()
-  await expect(page.getByText('存储 (3)', { exact: true })).toBeVisible()
+  // The menu closed and the selection cleared with it.
+  await expect(ctxMenu).toHaveCount(0)
+  await expect(page.locator("[data-git-selected='true']")).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('git-stash-selected.png'), animations: 'disabled' })
 
   expect(consoleErrors).toEqual([])
 })
 
-test('git panel discards all unstaged changes after confirmation', async ({
+test('git panel stages selected changes via the row context menu', async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = []
@@ -352,21 +335,34 @@ test('git panel discards all unstaged changes after confirmation', async ({
   await page.getByRole('button', { name: 'Git', exact: true }).click()
   await expect(page.getByTestId('git-branch-name')).toHaveText('main')
 
-  // 全部撤销: discards every unstaged change (staged ones stay untouched).
-  await page.getByTestId('git-more-button').click()
-  await page.getByTestId('git-discard-all').click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('git-discard-all-confirm.png'), animations: 'disabled' })
-  await page.getByRole('dialog').getByText('全部撤销', { exact: true }).click()
+  // Ctrl-click picks two individual unstaged files.
+  const appRow = page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`)
+  const csvRow = page.locator('[data-git-section="unstaged"][data-git-path="data/metrics.csv"]')
+  await appRow.click({ modifiers: ['Control'] })
+  await csvRow.click({ modifiers: ['Control'] })
+  await expect(page.locator("[data-git-selected='true']")).toHaveCount(2)
 
-  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(0)
-  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+  // Right-click offers staging exactly the selected files.
+  await appRow.click({ button: 'right' })
+  const ctxMenu = page.getByTestId('git-context-menu')
+  await expect(ctxMenu).toBeVisible()
+  await expect(ctxMenu.getByTestId('git-context-stage-selected')).toHaveText(/暂存所选文件 \(2\)/)
+  await page.screenshot({ path: testInfo.outputPath('git-context-stage.png'), animations: 'disabled' })
+  await ctxMenu.getByTestId('git-context-stage-selected').click()
 
-  // Disabling: with no unstaged changes left the menu item is disabled.
-  await page.getByTestId('git-more-button').click()
-  await expect(page.getByTestId('git-discard-all')).toBeDisabled()
-  await page.getByTestId('git-stash-all').click()
-  await expect(page.getByText('工作区干净')).toBeVisible()
+  // Both files moved to staged; only metrics.xlsx stays unstaged.
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${UNSTAGED_FILE}"]`)).toBeVisible()
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="data/metrics.csv"]`)).toBeVisible()
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(1)
+  await expect(page.locator("[data-git-selected='true']")).toHaveCount(0)
+
+  // Escape closes a reopened menu without acting on the selection.
+  const stagedCsvRow = page.locator('[data-git-section="staged"][data-git-path="data/metrics.csv"]')
+  await stagedCsvRow.click({ button: 'right' })
+  await expect(ctxMenu).toBeVisible()
+  await expect(ctxMenu.getByTestId('git-context-unstage-selected')).toHaveText(/取消暂存所选文件 \(1\)/)
+  await page.keyboard.press('Escape')
+  await expect(ctxMenu).toHaveCount(0)
 
   expect(consoleErrors).toEqual([])
 })

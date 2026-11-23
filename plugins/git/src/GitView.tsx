@@ -11,7 +11,6 @@ import Archive from 'lucide-solid/icons/archive'
 import Check from 'lucide-solid/icons/check'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
-import EllipsisVertical from 'lucide-solid/icons/ellipsis-vertical'
 import GitBranch from 'lucide-solid/icons/git-branch'
 import GitCommitHorizontal from 'lucide-solid/icons/git-commit-horizontal'
 import Globe from 'lucide-solid/icons/globe'
@@ -510,7 +509,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [branchMenuOpen, setBranchMenuOpen] = createSignal(false)
   const [branchQuery, setBranchQuery] = createSignal('')
   const [branchActiveIdx, setBranchActiveIdx] = createSignal(0)
-  const [moreMenuOpen, setMoreMenuOpen] = createSignal(false)
   // Multi-selection over change rows (Ctrl/Shift click); keys are `rowKey(section, relPath)`.
   const [selectedKeys, setSelectedKeys] = createSignal<ReadonlySet<string>>(new Set())
   const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null)
@@ -521,8 +519,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   let branchPopoverRef: HTMLDivElement | undefined
   let branchListRef: HTMLDivElement | undefined
   let branchInputRef: HTMLInputElement | undefined
-  let moreMenuBtnRef: HTMLButtonElement | undefined
-  let moreMenuPopoverRef: HTMLDivElement | undefined
   let ctxMenuRef: HTMLDivElement | undefined
 
   const BRANCH_LISTBOX_ID = 'git-branch-listbox'
@@ -551,22 +547,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
         return
       }
       setBranchMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    onCleanup(() => document.removeEventListener('pointerdown', onPointerDown))
-  })
-
-  createEffect(() => {
-    if (!moreMenuOpen()) return
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node | null
-      if (
-        target &&
-        (moreMenuPopoverRef?.contains(target) || moreMenuBtnRef?.contains(target))
-      ) {
-        return
-      }
-      setMoreMenuOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     onCleanup(() => document.removeEventListener('pointerdown', onPointerDown))
@@ -608,9 +588,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     if (repo()) return
     if (branchMenuOpen()) {
       setBranchMenuOpen(false)
-    }
-    if (moreMenuOpen()) {
-      setMoreMenuOpen(false)
     }
   })
 
@@ -707,13 +684,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     const { untracked, tracked } = discardablePaths()
     return untracked.length + tracked.length
   })
-  /** Entries stash-all can sweep; unmerged conflicts block a real `git stash`. */
-  const stashableCount = createMemo(
-    () =>
-      (store.status()?.entries ?? []).filter(
-        (e) => hasStagedChanges(e) || (hasUnstagedChanges(e) && !isUnmergedEntry(e)),
-      ).length,
-  )
 
   function toggleSection(id: string) {
     setSectionCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -788,7 +758,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
    */
   async function discardAllChanges() {
     if (!dialogs) return
-    setMoreMenuOpen(false)
     const { untracked, tracked } = discardablePaths()
     if (untracked.length === 0 && tracked.length === 0) return
     const total = untracked.length + tracked.length
@@ -1120,72 +1089,8 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 <Upload class="w-3.5 h-3.5" />
               </Show>
             </button>
-            <button
-              type="button"
-              data-testid="git-more-button"
-              aria-label={i18n.t('git.menu.more')}
-              title={i18n.t('git.menu.more')}
-              aria-haspopup="menu"
-              aria-expanded={moreMenuOpen()}
-              disabled={!repo()}
-              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-all duration-150 active:scale-95"
-              onClick={() => setMoreMenuOpen((open) => !open)}
-            >
-              <EllipsisVertical class="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
-
-        {/* More-actions popover: bulk stash / discard */}
-        <Show when={repo() && moreMenuOpen()}>
-          <div
-            ref={moreMenuPopoverRef}
-            data-testid="git-more-popover"
-            role="menu"
-            aria-label={i18n.t('git.menu.more')}
-            class="absolute right-2 top-[calc(100%-2px)] z-30 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-1 flex flex-col min-w-[180px]"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                setMoreMenuOpen(false)
-                moreMenuBtnRef?.focus()
-              }
-            }}
-          >
-            <button
-              type="button"
-              role="menuitem"
-              data-testid="git-stash-all"
-              title={i18n.t('git.stash.allTitle')}
-              disabled={
-                stashableCount() === 0 || store.committing() || store.mutating()
-              }
-              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              onClick={() => {
-                setMoreMenuOpen(false)
-                void store.stashAll()
-              }}
-            >
-              <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-              <span class="truncate leading-normal min-w-0">
-                {i18n.t('git.stash.all')}
-              </span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              data-testid="git-discard-all"
-              disabled={discardableCount() === 0 || store.committing() || store.mutating()}
-              class="w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
-              onClick={() => void discardAllChanges()}
-            >
-              <Undo2 class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-              <span class="truncate leading-normal min-w-0">
-                {i18n.t('git.discardAll.title')}
-              </span>
-            </button>
-          </div>
-        </Show>
 
         {/* Branch switcher popover */}
         <Show when={repo() && branchMenuOpen()}>
@@ -1497,7 +1402,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
           <div
             ref={ctxMenuRef}
             role="menu"
-            aria-label={i18n.t('git.menu.more')}
+            aria-label={i18n.t('git.selection.menu')}
             data-testid="git-context-menu"
             class="fixed z-50 min-w-[190px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-popover)] p-1 flex flex-col"
             style={{ left: `${pos().x}px`, top: `${pos().y}px` }}
