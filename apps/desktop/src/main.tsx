@@ -116,6 +116,15 @@ function persistSession() {
 kernel.onEvent('project.opened', persistSession)
 kernel.onEvent('project.closed', persistSession)
 kernel.onEvent('project.activated', persistSession)
+// 拖拽排序过程中每次实时换位都会触发一次重排事件，尾随去抖合并为一次写盘。
+let reorderPersistTimer: ReturnType<typeof setTimeout> | undefined
+kernel.onEvent('project.reordered', () => {
+  if (reorderPersistTimer !== undefined) clearTimeout(reorderPersistTimer)
+  reorderPersistTimer = setTimeout(() => {
+    reorderPersistTimer = undefined
+    persistSession()
+  }, 120)
+})
 
 async function restoreSession() {
   try {

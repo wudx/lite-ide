@@ -14,6 +14,7 @@ import { requestCloseProject } from '../close-guards'
 import { EditorBufferKey } from '../editor-buffers'
 import { getI18n } from '../i18n'
 import { LayoutStateKey } from '../services'
+import { createTabDragReorder } from '../tab-drag'
 
 export interface TitleBarProps {
   kernel: AppKernel
@@ -30,6 +31,12 @@ export function TitleBar(props: TitleBarProps) {
   const layout = props.kernel.tryGet(LayoutStateKey)
   const i18n = getI18n(props.kernel)
   const [maximized, setMaximized] = createSignal(false)
+  let projectStrip: HTMLDivElement | undefined
+
+  const tabDrag = createTabDragReorder({
+    getStrip: () => projectStrip,
+    reorder: (fromIndex, toIndex) => props.kernel.reorderProjects(fromIndex, toIndex),
+  })
 
   onMount(() => {
     if (!isTauri || isMac) return
@@ -110,17 +117,25 @@ export function TitleBar(props: TitleBarProps) {
       </div>
 
       {/* Project Tabs Strip (capsule tabs, one tab = one project) */}
-      <div class="flex items-center gap-1.5 py-1.5 overflow-x-auto no-scrollbar min-w-0">
+      <div
+        ref={(el) => (projectStrip = el)}
+        class="flex items-center gap-1.5 py-1.5 overflow-x-auto no-scrollbar min-w-0"
+      >
         <For each={props.kernel.projects()}>
           {(scope) => {
             const isActive = () => props.kernel.activeProjectId() === scope.id
             const hasDirty = () => scope.tryGet(EditorBufferKey)?.hasDirtyFiles() ?? false
+            const isDragging = () => tabDrag.draggingId() === scope.id
             return (
               <div
                 role="tab"
                 aria-selected={isActive()}
                 title={scope.rootPath}
+                data-tab-drag-id={scope.id}
+                {...tabDrag.tabHandlers(scope.id)}
                 class={`group relative h-[30px] flex items-center gap-2 px-2.5 min-w-[112px] max-w-[216px] rounded-lg border text-xs transition-all duration-150 shrink-0 ${
+                  isDragging() ? 'opacity-70 scale-[0.97] z-20' : ''
+                } ${
                   isActive()
                     ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-[var(--border-panel)] shadow-[var(--shadow-tab)]'
                     : 'bg-transparent border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'

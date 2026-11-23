@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createAppKernel,
   createServiceKey,
+  moveWithin,
   toDisposable,
   type KernelProjectHost,
   type Plugin,
@@ -179,6 +180,63 @@ describe('AppKernel & ProjectScope', () => {
     await kernel.closeProject(p1.id)
     expect(kernel.activeProjectId()).toBe(p2.id)
     kernel.dispose()
+  })
+
+  it('reorders project tabs without touching active project or warm set', async () => {
+    const kernel = createAppKernel({ host: createMemoryHost() })
+    const p1 = await kernel.openProject('/repo/1')
+    const p2 = await kernel.openProject('/repo/2')
+    const p3 = await kernel.openProject('/repo/3')
+    kernel.activateProject(p2.id)
+
+    kernel.reorderProjects(0, 2)
+    expect(kernel.projects().map((p) => p.name)).toEqual(['2', '3', '1'])
+    expect(kernel.activeProjectId()).toBe(p2.id)
+    expect(kernel.isWarm(p1.id)).toBe(true)
+
+    // 越界下标收敛到合法区间：拖过末尾等价于移到末位。
+    kernel.reorderProjects(1, 99)
+    expect(kernel.projects().map((p) => p.name)).toEqual(['2', '1', '3'])
+
+    // 无效起点与原地移动均为 no-op。
+    kernel.reorderProjects(-1, 0)
+    kernel.reorderProjects(99, 0)
+    kernel.reorderProjects(2, 2)
+    expect(kernel.projects().map((p) => p.name)).toEqual(['2', '1', '3'])
+
+    kernel.dispose()
+  })
+
+  it('emits project.reordered with the new id order', async () => {
+    const kernel = createAppKernel({ host: createMemoryHost() })
+    const p1 = await kernel.openProject('/repo/1')
+    const p2 = await kernel.openProject('/repo/2')
+    const p3 = await kernel.openProject('/repo/3')
+
+    const orders: string[][] = []
+    kernel.onEvent('project.reordered', ({ projectIds }) => {
+      orders.push([...projectIds])
+    })
+
+    kernel.reorderProjects(2, 0)
+    expect(orders).toEqual([[p3.id, p1.id, p2.id]])
+    expect(kernel.projects().map((p) => p.id)).toEqual([p3.id, p1.id, p2.id])
+
+    // no-op 不发事件。
+    kernel.reorderProjects(0, 0)
+    expect(orders.length).toBe(1)
+
+    kernel.dispose()
+  })
+
+  it('moveWithin clamps out-of-range targets and reports no-ops as null', () => {
+    expect(moveWithin(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a'])
+    expect(moveWithin(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b'])
+    expect(moveWithin(['a', 'b', 'c'], 1, 99)).toEqual(['a', 'c', 'b'])
+    expect(moveWithin(['a', 'b', 'c'], 1, -5)).toEqual(['b', 'a', 'c'])
+    expect(moveWithin(['a', 'b', 'c'], -1, 0)).toBeNull()
+    expect(moveWithin(['a', 'b', 'c'], 3, 0)).toBeNull()
+    expect(moveWithin(['a', 'b', 'c'], 1, 1)).toBeNull()
   })
 
   it('provides plugin services before projects/warm/active signals notify reactive UI', async () => {

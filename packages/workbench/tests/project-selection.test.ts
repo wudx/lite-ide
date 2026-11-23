@@ -97,3 +97,37 @@ describe('createProjectSelection allowMissing', () => {
     expect(fsDelta(['gone.ts']).affectedPaths).toEqual(['gone.ts'])
   })
 })
+
+describe('createProjectSelection moveTab', () => {
+  function createSelectionWithTabs() {
+    const selection = createProjectSelection(
+      'p1',
+      throwingBackend(new Error('stat should not be called by moveTab tests')),
+    )
+    selection.openUntitledTab('~untitled-1', '未命名 1')
+    selection.openUntitledTab('~untitled-2', '未命名 2')
+    selection.openUntitledTab('~untitled-3', '未命名 3')
+    return selection
+  }
+
+  it('moves a tab without changing the selection', () => {
+    const selection = createSelectionWithTabs()
+    // 连续打开后选中的是最后一个页签；重排不得改变它。
+    expect(selection.selectedPath()).toBe('~untitled-3')
+    selection.moveTab(0, 2)
+    expect(selection.openTabs().map((t) => t.name)).toEqual(['未命名 2', '未命名 3', '未命名 1'])
+    expect(selection.selectedPath()).toBe('~untitled-3')
+  })
+
+  it('clamps out-of-range indexes and ignores no-op moves', () => {
+    const selection = createSelectionWithTabs()
+    // 拖过末尾等价于移到末位。
+    selection.moveTab(1, 99)
+    expect(selection.openTabs().map((t) => t.name)).toEqual(['未命名 1', '未命名 3', '未命名 2'])
+
+    selection.moveTab(-1, 0)
+    selection.moveTab(99, 0)
+    selection.moveTab(2, 2)
+    expect(selection.openTabs().map((t) => t.name)).toEqual(['未命名 1', '未命名 3', '未命名 2'])
+  })
+})

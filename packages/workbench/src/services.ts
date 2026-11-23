@@ -2,6 +2,7 @@ import {
   createAppKernel,
   createServiceKey,
   EventBus,
+  moveWithin,
   type AppKernel,
   type ContributionMap,
   type KernelProjectHost,
@@ -55,6 +56,11 @@ export interface ProjectSelectionService {
     },
   ): Promise<void>
   openUntitledTab(relPath: string, name: string): void
+  /**
+   * 重排文件页签：把 fromIndex 的页签移动到 toIndex（splice 落位语义）。
+   * 不改变当前选中文件；越界下标收敛到合法区间，无效变动为 no-op。
+   */
+  moveTab(fromIndex: number, toIndex: number): void
   requestSaveAs(relPath: string, presetError?: string | null): void
   cancelSaveAs(): void
   syncFileMeta(meta: FileMeta): void
@@ -327,6 +333,10 @@ export function createProjectSelection(
 
     openUntitledTab(relPath: string, name: string) {
       openUntitledTabImpl(relPath, name)
+    },
+
+    moveTab(fromIndex: number, toIndex: number) {
+      setOpenTabs((prev) => moveWithin(prev, fromIndex, toIndex) ?? prev)
     },
 
     requestSaveAs(relPath: string, presetError?: string | null) {

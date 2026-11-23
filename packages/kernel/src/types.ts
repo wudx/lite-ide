@@ -92,6 +92,7 @@ export interface KernelEvents {
   'project.opened': { scope: ProjectScope }
   'project.activated': { scope: ProjectScope | undefined }
   'project.closed': { projectId: string; rootPath: string }
+  'project.reordered': { projectIds: readonly string[] }
   'plugin.registered': { id: string }
   'plugin.unregistered': { id: string }
   [key: string]: unknown
@@ -166,6 +167,11 @@ export interface AppKernel extends Disposable {
   openProject(rootPath: string): Promise<ProjectScope>
   openProjectWithDialog(options?: { title?: string }): Promise<ProjectScope | null>
   activateProject(projectId: string): void
+  /**
+   * 重排项目页签：把 fromIndex 的项目移动到 toIndex（splice 落位语义）。
+   * 不改变活跃项目与热项目集合；越界下标收敛到合法区间，无效变动为 no-op。
+   */
+  reorderProjects(fromIndex: number, toIndex: number): void
   closeProject(projectId: string): Promise<void>
   executeCommand(commandId: string): Promise<void>
 }

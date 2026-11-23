@@ -35,6 +35,7 @@ import { formatBytes } from '../format'
 import { getI18n } from '../i18n'
 import { joinNativePath } from '../paths'
 import { ProjectSelectionKey } from '../services'
+import { createTabDragReorder } from '../tab-drag'
 import { FileIcon } from './FileIcon'
 
 export interface PreviewHostProps {
@@ -160,6 +161,11 @@ export function PreviewHost(props: PreviewHostProps) {
   let tabStrip: HTMLDivElement | undefined
   let loadSeq = 0
 
+  const tabDrag = createTabDragReorder({
+    getStrip: () => tabStrip,
+    reorder: (fromIndex, toIndex) => selection.moveTab(fromIndex, toIndex),
+  })
+
   const matchedLoadedView = createMemo(() => {
     const current = activeProvider()
     const loaded = loadedView()
@@ -244,8 +250,11 @@ export function PreviewHost(props: PreviewHostProps) {
   // Reveal the active tab inside the scrollable tab strip. Newly opened tabs
   // are appended past the visible width, so scroll them into view whenever
   // the tab list or selection changes (open file, keyboard switch, close).
+  // Skipped while a tab drag is in progress: live reordering retriggers this
+  // effect and its smooth scroll would fight the drag's edge auto-scroll.
   createEffect(() => {
     selection.openTabs()
+    if (tabDrag.draggingId()) return
     if (!selection.selectedPath()) return
     const strip = tabStrip
     if (!strip) return
@@ -345,12 +354,17 @@ export function PreviewHost(props: PreviewHostProps) {
               const isDirty = () => buffers?.isDirty(tab.relPath) ?? false
               const disambiguate = () =>
                 duplicateTabNames().has(tab.name) ? parentFolderLabel(tab.relPath) : ''
+              const isDragging = () => tabDrag.draggingId() === tab.relPath
               return (
                 <div
                   role="tab"
                   aria-selected={isActive()}
                   title={tab.relPath}
+                  data-tab-drag-id={tab.relPath}
+                  {...tabDrag.tabHandlers(tab.relPath)}
                   class={`group relative flex items-center gap-1.5 min-w-[96px] max-w-[220px] text-xs transition-colors duration-150 shrink-0 ${
+                    isDragging() ? 'opacity-70 z-20' : ''
+                  } ${
                     isActive()
                       ? 'h-[32px] rounded-t-lg px-3 bg-[var(--bg-editor)] text-[var(--text-primary)] border-t border-x border-[var(--border-subtle)] -mb-px z-10 shadow-[var(--shadow-tab-doc)]'
                       : 'h-[29px] mb-[2px] rounded-lg px-2.5 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'

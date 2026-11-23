@@ -28,6 +28,24 @@ export function normalizePathKey(rawPath: string): string {
   return trimmed
 }
 
+/**
+ * 把 fromIndex 的元素移动到 toIndex（splice 落位语义，供页签拖拽排序共用）。
+ * 越界下标收敛到合法区间；起点非法或原地移动返回 null（no-op）。
+ */
+export function moveWithin<T>(
+  list: readonly T[],
+  fromIndex: number,
+  toIndex: number,
+): T[] | null {
+  if (fromIndex < 0 || fromIndex >= list.length) return null
+  const target = Math.max(0, Math.min(list.length - 1, toIndex))
+  if (target === fromIndex) return null
+  const next = [...list]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(target, 0, moved)
+  return next
+}
+
 export function createAppKernel(options: AppKernelOptions): AppKernel {
   const maxWarmProjects = Math.max(1, options.maxWarmProjects ?? 5)
   const services = new Map<symbol, unknown>()
@@ -314,6 +332,13 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
       touchWarmProject(projectId)
       setActiveProjectId(projectId)
       events.emit('project.activated', { scope })
+    },
+
+    reorderProjects(fromIndex: number, toIndex: number): void {
+      const next = moveWithin(projects(), fromIndex, toIndex)
+      if (!next) return
+      setProjects(next)
+      events.emit('project.reordered', { projectIds: next.map((p) => p.id) })
     },
 
     async closeProject(projectId: string): Promise<void> {
