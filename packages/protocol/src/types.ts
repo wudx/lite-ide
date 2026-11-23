@@ -264,6 +264,7 @@ export interface GitBackend {
     trackedPaths: string[],
   ): Promise<void>
   commit(projectId: string, message: string): Promise<GitCommitResult>
+  pull(projectId: string): Promise<void>
   push(projectId: string): Promise<void>
   /** Unified per-file patches for staged or worktree changes (empty when clean). */
   diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>

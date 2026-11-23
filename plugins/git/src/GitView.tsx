@@ -11,6 +11,7 @@ import Archive from 'lucide-solid/icons/archive'
 import Check from 'lucide-solid/icons/check'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
+import Download from 'lucide-solid/icons/download'
 import GitBranch from 'lucide-solid/icons/git-branch'
 import GitCommitHorizontal from 'lucide-solid/icons/git-commit-horizontal'
 import Globe from 'lucide-solid/icons/globe'
@@ -19,7 +20,6 @@ import ListTree from 'lucide-solid/icons/list-tree'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
-import RefreshCw from 'lucide-solid/icons/refresh-cw'
 import Sparkles from 'lucide-solid/icons/sparkles'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
@@ -534,7 +534,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [dirCollapsed, setDirCollapsed] = createSignal<Record<string, boolean>>({})
   const [viewMode, setViewMode] = createSignal<GitViewMode>(readStoredViewMode())
   const [panelMode, setPanelMode] = createSignal<GitPanelMode>(readStoredPanelMode())
-  const [manualSpinning, setManualSpinning] = createSignal(false)
   const [branchMenuOpen, setBranchMenuOpen] = createSignal(false)
   const [branchQuery, setBranchQuery] = createSignal('')
   const [branchActiveIdx, setBranchActiveIdx] = createSignal(0)
@@ -543,7 +542,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null)
   // Right-click context menu position (viewport coordinates); null = closed.
   const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number } | null>(null)
-  let spinTimer: ReturnType<typeof setTimeout> | null = null
   let branchBtnRef: HTMLButtonElement | undefined
   let branchPopoverRef: HTMLDivElement | undefined
   let branchListRef: HTMLDivElement | undefined
@@ -556,13 +554,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   // Kick off the initial status load if the plugin lifecycle has not started it yet.
   onMount(() => {
     void store.ensureLoaded()
-  })
-
-  onCleanup(() => {
-    if (spinTimer) {
-      clearTimeout(spinTimer)
-      spinTimer = null
-    }
   })
 
   createEffect(() => {
@@ -674,17 +665,6 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
         void selectBranchItem(target)
       }
     }
-  }
-
-  function handleManualRefresh() {
-    // Keep the icon spinning briefly so fast local/mock refreshes still show feedback.
-    setManualSpinning(true)
-    if (spinTimer) clearTimeout(spinTimer)
-    spinTimer = setTimeout(() => {
-      spinTimer = null
-      setManualSpinning(false)
-    }, 500)
-    void store.refresh()
   }
 
   const repo = () => store.status()?.repo ?? false
@@ -1118,14 +1098,26 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             </button>
             <button
               type="button"
-              aria-label={i18n.t('git.refreshStatus')}
-              title={i18n.t('git.refreshStatus')}
-              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-150 active:scale-95"
-              onClick={handleManualRefresh}
+              data-testid="git-pull-button"
+              aria-label={i18n.t('git.pull')}
+              title={i18n.t('git.pull')}
+              disabled={
+                !repo() ||
+                !store.status()?.branch ||
+                store.pulling() ||
+                store.pushing() ||
+                store.committing() ||
+                store.mutating()
+              }
+              class="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:pointer-events-none transition-all duration-150 active:scale-95"
+              onClick={() => void store.pull()}
             >
-              <RefreshCw
-                class={`w-3.5 h-3.5 ${store.refreshing() || manualSpinning() ? 'animate-spin' : ''}`}
-              />
+              <Show
+                when={!store.pulling()}
+                fallback={<Loader2 class="w-3.5 h-3.5 animate-spin" />}
+              >
+                <Download class="w-3.5 h-3.5" />
+              </Show>
             </button>
             <button
               type="button"
@@ -1136,6 +1128,7 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 !repo() ||
                 !store.status()?.branch ||
                 store.pushing() ||
+                store.pulling() ||
                 store.committing() ||
                 store.mutating()
               }

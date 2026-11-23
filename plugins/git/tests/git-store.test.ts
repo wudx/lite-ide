@@ -190,6 +190,7 @@ describe('git store (mock backend)', () => {
       unstage: unstageSpy,
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => [],
       diff: async () => [],
@@ -254,6 +255,7 @@ describe('git store (mock backend)', () => {
       },
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => [],
       diff: async () => [],
@@ -329,6 +331,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => {
         callCount += 1
@@ -425,6 +428,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => [],
       diff: async () => [],
@@ -479,6 +483,7 @@ describe('git store (mock backend)', () => {
         unstage: async () => {},
         discard: async () => {},
         commit: async () => ({ sha: 'abc1234' }),
+        pull: async () => {},
         push: async () => {},
         branches: async () => [],
         diff: async () => [],
@@ -555,6 +560,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {
         throw new Error('git push: failed to push some refs')
       },
@@ -578,6 +584,129 @@ describe('git store (mock backend)', () => {
     expect(await failingStore.push()).toBe(false)
     expect(failingStore.pushing()).toBe(false)
     expect(failingStore.error()).toContain('failed to push some refs')
+  })
+
+  it('pulls remote changes, refreshes status, branches, and loaded commits, and surfaces pull errors', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+    expect(await store.pull()).toBe(true)
+    expect(store.error()).toBeNull()
+    expect(store.pulling()).toBe(false)
+
+    // Pulling on a new local branch without an upstream fails cleanly in mock mode.
+    expect(await store.checkoutBranch('feat/no-upstream', true)).toBe(true)
+    expect(await store.pull()).toBe(false)
+    expect(store.pulling()).toBe(false)
+    expect(store.error()).toContain('no tracking information')
+
+    // Pulling refreshes status, branch list, and already-loaded history, and
+    // serializes against concurrent push/commit attempts.
+    let releasePull!: () => void
+    const pullGate = new Promise<void>((resolve) => {
+      releasePull = resolve
+    })
+    let pulled = false
+    let branchCalls = 0
+    let logCalls = 0
+    const pullSpy = vi.fn(async () => {
+      await pullGate
+      pulled = true
+    })
+    const fakeBackend: GitBackend = {
+      status: async () => ({
+        repo: true,
+        branch: 'main',
+        upstream: 'origin/main',
+        ahead: 0,
+        behind: pulled ? 0 : 2,
+        entries: [],
+      }),
+      stage: async () => {},
+      unstage: async () => {},
+      discard: async () => {},
+      commit: async () => ({ sha: 'abc1234' }),
+      pull: pullSpy,
+      push: async () => {},
+      branches: async () => {
+        branchCalls += 1
+        return [{ name: 'main', current: true, remote: false, upstream: 'origin/main' }]
+      },
+      diff: async () => [],
+      checkoutBranch: async () => {},
+      resetMixed: async () => {},
+      createBranchAt: async () => {},
+      cherryPick: async () => {},
+      stashAll: async () => {},
+      stashPaths: async () => {},
+      stashList: async () => [],
+      stashRestore: async () => {},
+      stashDrop: async () => {},
+      log: async () => {
+        logCalls += 1
+        return [
+          {
+            sha: (pulled ? '2' : '1').repeat(40),
+            shortSha: (pulled ? '2' : '1').repeat(7),
+            subject: pulled ? 'remote commit' : 'local commit',
+            body: null,
+            author: 'Test',
+            email: 'test@example.com',
+            dateMs: 1_700_000_000,
+          },
+        ]
+      },
+      show: async () => [],
+      readBlob: async () => null,
+    }
+
+    const customStore = createGitStore('pull-sync', fakeBackend)
+    await customStore.refresh()
+    await customStore.ensureCommitsLoaded()
+    expect(customStore.status()?.behind).toBe(2)
+    expect(logCalls).toBe(1)
+
+    const pullPromise = customStore.pull()
+    expect(customStore.pulling()).toBe(true)
+    expect(customStore.mutating()).toBe(true)
+    // Concurrent push refuses while pull is in flight.
+    expect(await customStore.push()).toBe(false)
+
+    releasePull()
+    expect(await pullPromise).toBe(true)
+    expect(pullSpy).toHaveBeenCalledWith('pull-sync')
+    expect(customStore.pulling()).toBe(false)
+    expect(customStore.mutating()).toBe(false)
+    expect(customStore.status()?.behind).toBe(0)
+    expect(branchCalls).toBe(1)
+    expect(logCalls).toBe(2)
+    expect(customStore.commits()[0].subject).toBe('remote commit')
+
+    // Backend pull failures surface as store errors and still refresh status.
+    let statusAfterFail = 0
+    const failPullBackend: GitBackend = {
+      ...fakeBackend,
+      status: async () => {
+        statusAfterFail += 1
+        return {
+          repo: true,
+          branch: 'main',
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 1,
+          entries: [{ x: 'U', y: 'U', relPath: 'conflict.ts' }],
+        }
+      },
+      pull: async () => {
+        throw new Error('git pull: merge conflict in conflict.ts')
+      },
+    }
+    const failingPullStore = createGitStore('fail-pull', failPullBackend)
+    await failingPullStore.refresh()
+    expect(await failingPullStore.pull()).toBe(false)
+    expect(failingPullStore.pulling()).toBe(false)
+    expect(failingPullStore.error()).toContain('merge conflict in conflict.ts')
+    expect(statusAfterFail).toBe(2)
+    expect(failingPullStore.status()?.entries[0].relPath).toBe('conflict.ts')
   })
 
   it('lists preset stashes for the demo repository', async () => {
@@ -685,6 +814,7 @@ describe('git store (mock backend)', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => [],
       diff: async () => [],
@@ -793,6 +923,7 @@ describe('git store history pagination', () => {
       unstage: async () => {},
       discard: async () => {},
       commit: async () => ({ sha: 'abc1234' }),
+      pull: async () => {},
       push: async () => {},
       branches: async () => [],
       diff: async () => [],

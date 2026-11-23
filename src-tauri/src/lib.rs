@@ -201,6 +201,15 @@ async fn git_commit(
 }
 
 #[tauri::command]
+async fn git_pull(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::pull(&root).await
+}
+
+#[tauri::command]
 async fn git_push(
     manager: State<'_, Arc<ProjectManager>>,
     project_id: String,
@@ -479,6 +488,7 @@ pub fn run() {
             git_unstage,
             git_discard,
             git_commit,
+            git_pull,
             git_push,
             git_diff,
             git_branches,

@@ -55,10 +55,18 @@ test('git panel lists changes, stages files and commits in mock mode', async ({
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('↑1')
   await page.screenshot({ path: testInfo.outputPath('git-panel-committed.png'), animations: 'disabled' })
 
-  // Push the commit via the button to the right of Refresh and verify ahead indicator clears.
+  // Push the commit via the button to the right of Pull and verify ahead indicator clears.
+  const pullBtn = page.getByTestId('git-pull-button')
   const pushBtn = page.getByTestId('git-push-button')
+  await expect(pullBtn).toBeVisible()
+  await expect(pullBtn).toBeEnabled()
   await expect(pushBtn).toBeVisible()
   await expect(pushBtn).toBeEnabled()
+  const pullBox = await pullBtn.boundingBox()
+  const pushBox = await pushBtn.boundingBox()
+  expect(pullBox).not.toBeNull()
+  expect(pushBox).not.toBeNull()
+  expect(pullBox!.x + pullBox!.width).toBeLessThanOrEqual(pushBox!.x)
   await pushBtn.click()
   await expect(page.getByTestId('statusbar-git-branch')).not.toContainText('↑1')
   await expect(page.getByTestId('git-branch-switcher')).not.toContainText('↑1')
@@ -83,6 +91,7 @@ test('git panel shows the not-a-repository state for mock projects without git',
   await page.getByRole('button', { name: 'Git', exact: true }).click()
 
   await expect(page.getByText('当前目录不是 Git 仓库')).toBeVisible()
+  await expect(page.getByTestId('git-pull-button')).toBeDisabled()
   await expect(page.getByTestId('git-push-button')).toBeDisabled()
   // The statusbar branch indicator hides for non-repositories.
   await expect(page.getByTestId('statusbar-git-branch')).toHaveCount(0)
@@ -147,11 +156,14 @@ test('git panel stages all and unstages all changes in mock mode', async ({
   await expect(page.locator('[data-git-section="unstaged"]')).toHaveCount(4)
   await page.screenshot({ path: testInfo.outputPath('git-panel-unstaged-all.png'), animations: 'disabled' })
 
-  // Clicking the branch-header refresh button shows visible spin feedback even on fast backends.
-  const refreshBtn = page.getByRole('button', { name: '刷新状态', exact: true })
-  await refreshBtn.click()
-  await expect(refreshBtn.locator('svg')).toHaveClass(/animate-spin/)
-  await expect(refreshBtn.locator('svg')).not.toHaveClass(/animate-spin/)
+  // Clicking the branch-header pull button (replaced the old refresh button) succeeds cleanly on tracked branches.
+  await expect(page.getByRole('button', { name: '刷新状态', exact: true })).toHaveCount(0)
+  const pullBtn = page.getByRole('button', { name: '拉取', exact: true })
+  await expect(pullBtn).toBeVisible()
+  await expect(pullBtn).toBeEnabled()
+  await pullBtn.click()
+  await expect(pullBtn).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath('git-panel-pull-button.png'), animations: 'disabled' })
 
   // Stage all changes back into Staged Changes in one click.
   await page.getByRole('button', { name: '暂存全部更改', exact: true }).click()
@@ -332,6 +344,10 @@ test('git panel switches branches and creates a new branch in mock mode', async 
   await expect(popover).toHaveCount(0)
   await expect(page.getByTestId('git-branch-name')).toHaveText('feat/e2e-branch')
   await expect(page.getByTestId('statusbar-git-branch')).toContainText('feat/e2e-branch')
+
+  // Pulling on a new branch without upstream surfaces the tracking error banner.
+  await page.getByTestId('git-pull-button').click()
+  await expect(page.getByText('There is no tracking information for the current branch.')).toBeVisible()
 
   expect(consoleErrors).toEqual([])
 })

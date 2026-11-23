@@ -48,15 +48,14 @@ export interface GitStore {
   readonly status: Accessor<GitStatus | null>
   /** True until the first status response arrives. */
   readonly loading: Accessor<boolean>
-  /** True while a non-initial status refresh is in flight (refresh spinner). */
-  readonly refreshing: Accessor<boolean>
   readonly error: Accessor<string | null>
   /** Surfaces non-store failures (e.g. AI generation) in the error banner. */
   setError(message: string | null): void
   readonly commitMessage: Accessor<string>
   readonly committing: Accessor<boolean>
+  readonly pulling: Accessor<boolean>
   readonly pushing: Accessor<boolean>
-  /** True while a stage/unstage/discard/checkout/push write action is in flight. */
+  /** True while a stage/unstage/discard/checkout/pull/push write action is in flight. */
   readonly mutating: Accessor<boolean>
   readonly branches: Accessor<GitBranchInfo[]>
   readonly branchesLoading: Accessor<boolean>
@@ -119,6 +118,8 @@ export interface GitStore {
   stashDrop(index: number): Promise<void>
   /** Resolves false (with `error` set) when the commit was rejected. */
   commit(): Promise<boolean>
+  /** Resolves false (with `error` set) when the pull failed. */
+  pull(): Promise<boolean>
   /** Resolves false (with `error` set) when the push failed. */
   push(): Promise<boolean>
   /** Cancels pending debounced refreshes; called when the project scope closes. */
@@ -213,10 +214,10 @@ export function createGitStore(
   const t: TranslateFn = options?.t ?? ((_key, _params, fallback) => fallback ?? _key)
   const [status, setStatus] = createSignal<GitStatus | null>(null)
   const [loading, setLoading] = createSignal(true)
-  const [refreshing, setRefreshing] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   const [commitMessage, setCommitMessage] = createSignal('')
   const [committing, setCommitting] = createSignal(false)
+  const [pulling, setPulling] = createSignal(false)
   const [pushing, setPushing] = createSignal(false)
   const [pendingWrites, setPendingWrites] = createSignal(0)
   const mutating = () => pendingWrites() > 0
@@ -273,8 +274,6 @@ export function createGitStore(
       const firstLoad = status() === null
       if (firstLoad) {
         setLoading(true)
-      } else {
-        setRefreshing(true)
       }
 
       try {
@@ -295,7 +294,6 @@ export function createGitStore(
       } finally {
         if (seq === requestSeq) {
           setLoading(false)
-          setRefreshing(false)
         }
       }
     })()
@@ -454,16 +452,50 @@ export function createGitStore(
     })
   }
 
+  async function runRemoteAction(
+    setBusy: (busy: boolean) => void,
+    action: () => Promise<void>,
+    options?: { reloadBranches?: boolean; reloadCommits?: boolean },
+  ): Promise<boolean> {
+    if (pulling() || pushing() || committing() || mutating()) return false
+
+    setError(null)
+    setBusy(true)
+    try {
+      return await enqueueWrite(async () => {
+        let actionError: string | null = null
+        let ok = false
+        try {
+          await action()
+          ok = true
+        } catch (err) {
+          actionError = err instanceof Error ? err.message : String(err)
+        }
+        const [statusError, branchError] = await Promise.all([
+          fetchStatus(false),
+          options?.reloadBranches ? fetchBranches(false) : Promise.resolve(null),
+        ])
+        setError(actionError ?? statusError ?? branchError)
+        if (ok && options?.reloadCommits && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
+        return ok
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return {
     status,
     loading,
-    refreshing,
     error,
     setError(message: string | null) {
       setError(message)
     },
     commitMessage,
     committing,
+    pulling,
     pushing,
     mutating,
     branches,
@@ -718,28 +750,15 @@ export function createGitStore(
       }
     },
 
-    async push(): Promise<boolean> {
-      if (pushing() || committing() || mutating()) return false
+    pull(): Promise<boolean> {
+      return runRemoteAction(setPulling, () => backend.pull(projectId), {
+        reloadBranches: true,
+        reloadCommits: true,
+      })
+    },
 
-      setError(null)
-      setPushing(true)
-      try {
-        return await enqueueWrite(async () => {
-          let pushError: string | null = null
-          let ok = false
-          try {
-            await backend.push(projectId)
-            ok = true
-          } catch (err) {
-            pushError = err instanceof Error ? err.message : String(err)
-          }
-          const statusError = await fetchStatus(false)
-          setError(pushError ?? statusError)
-          return ok
-        })
-      } finally {
-        setPushing(false)
-      }
+    push(): Promise<boolean> {
+      return runRemoteAction(setPushing, () => backend.push(projectId))
     },
 
     dispose() {

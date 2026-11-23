@@ -123,9 +123,10 @@ async fn spawn_git(root: &Path, args: &[&str]) -> Result<std::process::Output, A
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     // Avoid refreshing the index (and touching mtimes) for read-only commands,
-    // and never block waiting on interactive terminal prompts.
+    // and never block waiting on interactive terminal prompts or merge editors.
     cmd.env("GIT_OPTIONAL_LOCKS", "0");
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.env("GIT_MERGE_AUTOEDIT", "no");
     #[cfg(windows)]
     {
         // Prevent Windows GUI builds (`windows_subsystem = "windows"`) from
@@ -492,6 +493,14 @@ pub async fn read_blob(
         )));
     }
     Ok(Some(base64::engine::general_purpose::STANDARD.encode(&output.stdout)))
+}
+
+pub async fn pull(canonical_root: &Path) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    run_git(canonical_root, &["pull"]).await?;
+    Ok(())
 }
 
 pub async fn push(canonical_root: &Path) -> Result<(), AppError> {
@@ -1793,7 +1802,52 @@ mod repo_tests {
         assert!(diff(&root, false, &[]).await.unwrap().is_empty());
         assert_eq!(st.branch, None);
         assert!(st.entries.is_empty());
+        assert!(pull(&root).await.is_err());
         assert!(push(&root).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn pulls_remote_commits_into_local_branch() {
+        let remote_dir = tempdir().unwrap();
+        let remote_root = std::fs::canonicalize(remote_dir.path()).unwrap();
+        git_ok(&remote_root, &["init", "-q", "--bare", "-b", "main"]).await;
+        let remote_url = remote_dir.path().to_string_lossy().into_owned();
+
+        let peer_dir = tempdir().unwrap();
+        let peer_root = std::fs::canonicalize(peer_dir.path()).unwrap();
+        git_ok(&peer_root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&peer_root, &["config", "user.email", "peer@example.com"]).await;
+        git_ok(&peer_root, &["config", "user.name", "Peer"]).await;
+        git_ok(&peer_root, &["remote", "add", "origin", &remote_url]).await;
+        std::fs::write(peer_root.join("a.txt"), "one").unwrap();
+        git_ok(&peer_root, &["add", "--", "a.txt"]).await;
+        commit(&peer_root, "init").await.unwrap();
+        push(&peer_root).await.unwrap();
+
+        let local_dir = tempdir().unwrap();
+        let local_root = std::fs::canonicalize(local_dir.path()).unwrap();
+        git_ok(
+            &local_root,
+            &["clone", "-q", &remote_url, "."],
+        )
+        .await;
+        git_ok(&local_root, &["config", "user.email", "local@example.com"]).await;
+        git_ok(&local_root, &["config", "user.name", "Local"]).await;
+
+        // Peer pushes a new commit that local has not pulled yet.
+        std::fs::write(peer_root.join("a.txt"), "from-remote").unwrap();
+        git_ok(&peer_root, &["add", "--", "a.txt"]).await;
+        commit(&peer_root, "remote update").await.unwrap();
+        push(&peer_root).await.unwrap();
+
+        pull(&local_root).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(local_root.join("a.txt")).unwrap(),
+            "from-remote"
+        );
+        let st = status(&local_root).await.unwrap();
+        assert_eq!(st.behind, 0);
+        assert_eq!(log(&local_root, 10, 0).await.unwrap()[0].subject, "remote update");
     }
 
     #[tokio::test]

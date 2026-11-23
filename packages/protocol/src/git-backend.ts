@@ -45,6 +45,10 @@ export function createTauriGitBackend(): GitBackend {
       return invoke<GitCommitResult>('git_commit', { projectId, message })
     },
 
+    async pull(projectId: string): Promise<void> {
+      await invoke<void>('git_pull', { projectId })
+    },
+
     async push(projectId: string): Promise<void> {
       await invoke<void>('git_push', { projectId })
     },
@@ -152,6 +156,7 @@ interface MockGitRepoState {
   /** Stash stack, newest entry first; each entry snapshots what it holds. */
   stashes: MockStash[]
   commitCount: number
+  behindCount: number
   /** Commit history on the current branch, newest first. */
   log: MockGitCommit[]
 }
@@ -429,6 +434,7 @@ function defaultMockState(): MockGitRepoState {
     unstagedDiffs: new Map(),
     stashes: [],
     commitCount: 0,
+    behindCount: 0,
     log: [],
   }
 }
@@ -531,7 +537,7 @@ export function createMockGitBackend(): GitBackend {
       branch: state.repo ? state.branch : null,
       upstream: state.repo && state.upstream ? state.upstream : null,
       ahead: state.commitCount,
-      behind: 0,
+      behind: state.behindCount,
       entries,
     }
   }
@@ -678,6 +684,16 @@ export function createMockGitBackend(): GitBackend {
         files,
       })
       return { sha }
+    },
+
+    async pull(projectId: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      if (!state.branch) throw new Error('HEAD is detached')
+      if (!state.upstream) {
+        throw new Error('There is no tracking information for the current branch.')
+      }
+      state.behindCount = 0
     },
 
     async push(projectId: string): Promise<void> {
