@@ -371,6 +371,53 @@ test('git panel discards all unstaged changes after confirmation', async ({
   expect(consoleErrors).toEqual([])
 })
 
+test('git panel header offers discard-all left of stage-all', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+
+  // The unstaged section header shows 撤销全部更改 to the LEFT of 暂存全部更改.
+  const discardHeaderBtn = page.getByTestId('git-discard-all-header')
+  const stageAllBtn = page.getByRole('button', { name: '暂存全部更改', exact: true })
+  await expect(discardHeaderBtn).toBeVisible()
+  await expect(stageAllBtn).toBeVisible()
+  const discardBox = await discardHeaderBtn.boundingBox()
+  const stageBox = await stageAllBtn.boundingBox()
+  expect(discardBox).not.toBeNull()
+  expect(stageBox).not.toBeNull()
+  expect(discardBox!.x + discardBox!.width).toBeLessThanOrEqual(stageBox!.x)
+
+  // Clicking it asks for confirmation before discarding.
+  await discardHeaderBtn.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.screenshot({
+    path: testInfo.outputPath('git-discard-all-header-confirm.png'),
+    animations: 'disabled',
+  })
+  await page.getByRole('dialog').getByText('全部撤销', { exact: true }).click()
+
+  // Unstaged entries are gone (staged ones stay), and the header button
+  // hides once nothing is discardable.
+  await expect(page.locator(`[data-git-section="unstaged"]`)).toHaveCount(0)
+  await expect(page.locator(`[data-git-section="staged"][data-git-path="${STAGED_FILE}"]`)).toBeVisible()
+  await expect(discardHeaderBtn).toHaveCount(0)
+  await page.screenshot({
+    path: testInfo.outputPath('git-discard-all-header-done.png'),
+    animations: 'disabled',
+  })
+
+  expect(consoleErrors).toEqual([])
+})
+
 // AI commit-message generation (mock git backend + intercepted provider API).
 const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
 

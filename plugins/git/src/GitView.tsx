@@ -445,6 +445,11 @@ interface SectionHeaderProps {
   actionLabel?: string
   actionDisabled?: boolean
   onAction?: () => void
+  /** Optional secondary icon button rendered to the left of the primary action. */
+  secondaryActionLabel?: string
+  secondaryActionDisabled?: boolean
+  onSecondaryAction?: () => void
+  secondaryActionTestId?: string
   class?: string
 }
 
@@ -464,6 +469,19 @@ function SectionHeader(props: SectionHeaderProps) {
           {props.title} ({props.count})
         </span>
       </button>
+      <Show when={props.secondaryActionLabel && props.onSecondaryAction}>
+        <button
+          type="button"
+          data-testid={props.secondaryActionTestId}
+          aria-label={props.secondaryActionLabel}
+          title={props.secondaryActionLabel}
+          disabled={props.secondaryActionDisabled}
+          class="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all"
+          onClick={() => props.onSecondaryAction?.()}
+        >
+          <Undo2 class="w-3.5 h-3.5" />
+        </button>
+      </Show>
       <Show when={props.actionKind && props.actionLabel && props.onAction}>
         <button
           type="button"
@@ -1406,6 +1424,12 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                   actionLabel={i18n.t('git.section.stageAll')}
                   actionDisabled={store.committing() || store.mutating()}
                   onAction={() => void store.stageAll()}
+                  secondaryActionLabel={
+                    discardableCount() > 0 ? i18n.t('git.discardAll.title') : undefined
+                  }
+                  secondaryActionDisabled={store.committing() || store.mutating()}
+                  onSecondaryAction={() => void discardAllChanges()}
+                  secondaryActionTestId="git-discard-all-header"
                   class={stagedEntries().length > 0 ? 'pt-2' : 'pt-1'}
                 />
                 <Show when={!sectionCollapsed().unstaged}>
