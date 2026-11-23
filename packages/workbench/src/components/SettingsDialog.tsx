@@ -58,7 +58,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           }
         }}
       >
-        <div class="w-full max-w-2xl h-[460px] flex rounded-2xl glass-surface overflow-hidden animate-dialog-in">
+        <div class="w-full max-w-3xl h-[520px] flex rounded-2xl glass-surface overflow-hidden animate-dialog-in">
           {/* Left navigation: contributed sections */}
           <aside class="w-44 shrink-0 border-r border-[var(--border-subtle)] bg-[var(--bg-dialog-footer)] flex flex-col">
             <div class="px-4 py-3.5 border-b border-[var(--border-subtle)]">

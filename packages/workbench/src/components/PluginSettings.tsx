@@ -148,10 +148,17 @@ export function PluginSettings(props: PluginSettingsProps) {
             </div>
           </Show>
 
-          {/* 已安装列表 */}
-          <h4 class="text-[11px] font-medium text-[var(--text-secondary)] mb-2 leading-normal">
-            {i18n.t('plugins.installed.heading')}
-          </h4>
+          {/* 已安装列表（内置插件说明整表只展示一次，避免挤压行内布局） */}
+          <div class="flex items-baseline justify-between gap-3 mb-2">
+            <h4 class="text-[11px] font-medium text-[var(--text-secondary)] leading-normal shrink-0">
+              {i18n.t('plugins.installed.heading')}
+            </h4>
+            <Show when={registry.states().some((s) => s.embedded)}>
+              <span class="text-[11px] text-[var(--text-muted)] truncate leading-normal">
+                {i18n.t('plugins.embeddedHint')}
+              </span>
+            </Show>
+          </div>
           <Show
             when={registry.states().length > 0}
             fallback={
@@ -169,21 +176,23 @@ export function PluginSettings(props: PluginSettingsProps) {
                     <div class="rounded-xl border border-[var(--border-panel)] bg-[var(--bg-subtle)] px-3 py-2.5">
                       <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">
-                          <div class="text-[11.5px] font-medium text-[var(--text-primary)] leading-normal truncate">
-                            {state.manifest.name}
-                            <span class="ml-1.5 font-normal text-[var(--text-muted)]">
-                              v{state.manifest.version}
-                            </span>
-                            <Show when={state.embedded}>
-                              <span
-                                class="ml-1.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-soft)] px-1 py-px text-[10px] text-[var(--accent)]"
-                                data-testid={`plugin-embedded-${id}`}
-                              >
-                                {i18n.t('plugins.embedded')}
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-[11.5px] font-medium text-[var(--text-primary)] leading-normal truncate">
+                              {state.manifest.name}
+                              <span class="ml-1.5 font-normal text-[var(--text-muted)]">
+                                v{state.manifest.version}
                               </span>
-                            </Show>
+                              <Show when={state.embedded}>
+                                <span
+                                  class="ml-1.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-soft)] px-1 py-px text-[10px] text-[var(--accent)]"
+                                  data-testid={`plugin-embedded-${id}`}
+                                >
+                                  {i18n.t('plugins.embedded')}
+                                </span>
+                              </Show>
+                            </span>
                             <span
-                              class={`ml-2 ${statusBadgeClass(state.status)}`}
+                              class={`shrink-0 text-[11px] leading-normal ${statusBadgeClass(state.status)}`}
                               data-testid={`plugin-status-${id}`}
                             >
                               {i18n.t(`plugins.status.${state.status}`)}
@@ -237,18 +246,8 @@ export function PluginSettings(props: PluginSettingsProps) {
                               <RotateCcw class="w-3 h-3" />
                             </button>
                           </Show>
-                          {/* 嵌入式内置插件随应用分发：只可停用，不可卸载。 */}
-                          <Show
-                            when={!state.embedded}
-                            fallback={
-                              <span
-                                class="h-[26px] px-2.5 inline-flex items-center text-[11px] text-[var(--text-muted)]"
-                                title={i18n.t('plugins.embeddedHint')}
-                              >
-                                {i18n.t('plugins.embeddedHint')}
-                              </span>
-                            }
-                          >
+                          {/* 嵌入式内置插件随应用分发：只可停用，不可卸载（说明见"已安装"标题行）。 */}
+                          <Show when={!state.embedded}>
                             <button
                               type="button"
                               data-testid={`plugin-uninstall-${id}`}
