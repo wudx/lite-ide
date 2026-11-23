@@ -286,7 +286,7 @@ async fn resolve_default_branch(
 /// Structured download failure so 404-driven ref fallback can't be fooled
 /// by error text containing "404".
 enum DownloadError {
-    NotFound(String),
+    NotFound,
     Other(String),
 }
 
@@ -306,7 +306,7 @@ async fn download_zipball(
     if !status.is_success() {
         let msg = format!("archive download failed: HTTP {status}");
         return Err(if status == reqwest::StatusCode::NOT_FOUND {
-            DownloadError::NotFound(msg)
+            DownloadError::NotFound
         } else {
             DownloadError::Other(msg)
         });
@@ -372,11 +372,11 @@ pub async fn fetch_repo_zipball(
         };
         match download_zipball(client, &attempt.zipball_url(&attempt_ref)).await {
             Ok(bytes) => return Ok(bytes),
-            Err(DownloadError::NotFound(_)) if !rest.is_empty() => {
+            Err(DownloadError::NotFound) if !rest.is_empty() => {
                 ref_parts.push(rest[0].clone());
                 rest = &rest[1..];
             }
-            Err(DownloadError::NotFound(_)) => {
+            Err(DownloadError::NotFound) => {
                 return Err(format!(
                     "repository archive not found for {}/{} ref \"{attempt_ref}\" (check the branch or tag)",
                     source.owner, source.repo
