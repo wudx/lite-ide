@@ -313,6 +313,40 @@ describe('createPluginRegistry', () => {
     kernel.dispose()
   })
 
+  it('installs from a GitHub url through the backend and refreshes', async () => {
+    const kernel = createKernel()
+    const fake = createFakePluginBackend()
+    const githubInstalls: string[] = []
+    fake.backend.pluginInstallFromGithub = (url: string) => {
+      githubInstalls.push(url)
+      fake.store.set('github-plugin', {
+        manifest: makeManifest('github-plugin'),
+        mainJs: `liteide.plugin({ activate() {} })`,
+        installedMs: Date.now(),
+      })
+      return Promise.resolve({
+        manifest: makeManifest('github-plugin'),
+        dirName: 'github-plugin',
+        installedMs: Date.now(),
+        error: null,
+      })
+    }
+    const registry = createPluginRegistry(kernel, fake.backend)
+    await registry.refresh()
+
+    await registry.installFromGithub('https://github.com/u/r')
+    expect(githubInstalls).toEqual(['https://github.com/u/r'])
+    const state = registry.states().find((s) => s.manifest.id === 'github-plugin')
+    expect(state).toMatchObject({ enabled: true, status: 'running', error: null })
+    kernel.dispose()
+  })
+
+  it('installFromGithub rejects backends without the capability', async () => {
+    const registry = createPluginRegistry(createKernel(), createFakePluginBackend().backend)
+    await registry.refresh()
+    await expect(registry.installFromGithub('u/r')).rejects.toThrow(/GitHub/)
+  })
+
   it('disabling deactivates the plugin and persists; a fresh registry stays stopped', async () => {
     const kernel = createKernel()
     const fake = createFakePluginBackend()

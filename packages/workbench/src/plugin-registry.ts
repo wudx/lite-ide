@@ -41,6 +41,7 @@ export interface PluginRegistryService {
   refresh(): Promise<void>
   installFromCatalog(catalogId: string): Promise<void>
   installFromPath(sourcePath: string): Promise<void>
+  installFromGithub(url: string): Promise<void>
   uninstall(pluginId: string): Promise<void>
   setEnabled(pluginId: string, enabled: boolean): Promise<void>
   reload(pluginId: string): Promise<void>
@@ -411,6 +412,15 @@ export function createPluginRegistry(
         throw new Error('当前后端不支持从文件夹安装插件')
       }
       await backend.pluginInstallFromPath(sourcePath)
+      await refresh()
+    },
+
+    async installFromGithub(url: string): Promise<void> {
+      if (!backend.pluginInstallFromGithub) {
+        throw new Error('当前后端不支持从 GitHub 安装插件')
+      }
+      await backend.pluginInstallFromGithub(url)
+      // 新装插件默认启用：不在 disabled 名单即自动激活。
       await refresh()
     },
 

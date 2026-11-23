@@ -31,6 +31,8 @@ percent-encoding = "2"
 base64 = "0.22"
 portable-pty = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"] }
+# GitHub 仓库 zipball 解包（仅需 deflate；zip 炸弹与路径穿越在解包处另行防护）
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

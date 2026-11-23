@@ -1,4 +1,5 @@
 import { BUILTIN_PLUGIN_SAMPLES, builtinPluginCatalog } from './plugin-samples'
+import { fetchGithubPlugin, parseGithubPluginUrl } from './github-plugin'
 import { createMockShellSession, type MockShellSession } from './mock-terminal'
 import type {
   CatalogPlugin,
@@ -1010,6 +1011,31 @@ export function createMockBackend(): WorkspaceBackend {
         installedMs: Date.now(),
       }
       store[catalogId] = installed
+      saveMockPluginStore(store)
+      return {
+        manifest: installed.manifest,
+        dirName: installed.manifest.id,
+        installedMs: installed.installedMs,
+        error: null,
+      }
+    },
+
+    // 浏览器演示后端直连 GitHub REST API（api.github.com 与
+    // raw.githubusercontent.com 均允许跨域），只拉取 manifest 声明的文件。
+    async pluginInstallFromGithub(url: string): Promise<InstalledPlugin> {
+      const source = parseGithubPluginUrl(url)
+      const payload = await fetchGithubPlugin(source)
+      const store = loadMockPluginStore()
+      if (store[payload.manifest.id]) {
+        throw new Error(`Plugin "${payload.manifest.id}" is already installed`)
+      }
+      const installed: StoredMockPlugin = {
+        manifest: payload.manifest,
+        mainJs: payload.mainJs,
+        assets: payload.assets,
+        installedMs: Date.now(),
+      }
+      store[payload.manifest.id] = installed
       saveMockPluginStore(store)
       return {
         manifest: installed.manifest,

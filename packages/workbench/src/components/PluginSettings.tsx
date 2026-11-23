@@ -1,10 +1,14 @@
 import type { AppKernel } from '@lite-ide/kernel'
+import Download from 'lucide-solid/icons/download'
 import FolderPlus from 'lucide-solid/icons/folder-plus'
 import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import { createSignal, For, Show } from 'solid-js'
 import { WorkspaceBackendKey } from '../services'
 import { getI18n } from '../i18n'
 import { PluginRegistryKey, type ExternalPluginState } from '../plugin-registry'
+
+const inputClass =
+  'h-[28px] min-w-0 flex-1 rounded-lg border border-[var(--border-panel)] bg-[var(--bg-app)] px-2.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent-border)] transition-colors'
 
 export interface PluginSettingsProps {
   kernel: AppKernel
@@ -28,6 +32,9 @@ export function PluginSettings(props: PluginSettingsProps) {
   const [busyId, setBusyId] = createSignal<string | null>(null)
   // Two-click confirm for uninstalling; null = none armed.
   const [uninstallArmedId, setUninstallArmedId] = createSignal<string | null>(null)
+  // GitHub 仓库地址安装：展开式输入行（收起时零占位）。
+  const [githubOpen, setGithubOpen] = createSignal(false)
+  const [githubUrl, setGithubUrl] = createSignal('')
 
   if (!registry) return null
 
@@ -35,13 +42,16 @@ export function PluginSettings(props: PluginSettingsProps) {
   const installedIds = () => new Set(registry.states().map((s) => s.manifest.id))
   const catalogEntries = () => registry.catalog().filter((c) => !installedIds().has(c.manifest.id))
 
-  async function run(op: string, fn: () => Promise<void>): Promise<void> {
+  /** Runs an operation with busy/error bookkeeping; resolves to success. */
+  async function run(op: string, fn: () => Promise<void>): Promise<boolean> {
     setOpError(null)
     setBusyId(op)
     try {
       await fn()
+      return true
     } catch (err) {
       setOpError(err instanceof Error ? err.message : String(err))
+      return false
     } finally {
       setBusyId(null)
     }
@@ -57,6 +67,17 @@ export function PluginSettings(props: PluginSettingsProps) {
     })
     if (typeof selected !== 'string' || selected.length === 0) return
     await run('install-from-path', () => registry!.installFromPath(selected))
+  }
+
+  async function installFromGithub(): Promise<void> {
+    const url = githubUrl().trim()
+    if (url.length === 0) return
+    const ok = await run('install-from-github', () => registry!.installFromGithub(url))
+    // 成功后收起输入行并清空地址；失败保留现场便于修改重试。
+    if (ok) {
+      setGithubOpen(false)
+      setGithubUrl('')
+    }
   }
 
   function uninstallPlugin(state: ExternalPluginState) {
@@ -76,21 +97,72 @@ export function PluginSettings(props: PluginSettingsProps) {
           <h3 class="text-xs font-semibold text-[var(--text-primary)] leading-normal">
             {i18n.t('plugins.heading')}
           </h3>
-          <Show when={isDesktop && registry.supported}>
-            <button
-              type="button"
-              class={`${ghostButtonClass} inline-flex items-center gap-1.5`}
-              disabled={busyId() !== null}
-              onClick={() => void pickAndInstallFromFolder()}
-            >
-              <FolderPlus class="w-3.5 h-3.5" />
-              {i18n.t('plugins.installFromFolder')}
-            </button>
-          </Show>
+          <div class="flex items-center gap-2">
+            <Show when={isDesktop && registry.supported}>
+              <button
+                type="button"
+                class={`${ghostButtonClass} inline-flex items-center gap-1.5`}
+                disabled={busyId() !== null}
+                onClick={() => void pickAndInstallFromFolder()}
+              >
+                <FolderPlus class="w-3.5 h-3.5" />
+                {i18n.t('plugins.installFromFolder')}
+              </button>
+            </Show>
+            <Show when={registry.supported}>
+              <button
+                type="button"
+                data-testid="plugin-github-toggle"
+                class={`${ghostButtonClass} inline-flex items-center gap-1.5`}
+                disabled={busyId() !== null}
+                onClick={() => setGithubOpen((v) => !v)}
+              >
+                <Download class="w-3.5 h-3.5" />
+                {i18n.t('plugins.installFromGithub')}
+              </button>
+            </Show>
+          </div>
         </div>
         <p class="text-[11px] text-[var(--text-muted)] mt-1 mb-3 leading-relaxed">
           {i18n.t('plugins.description')}
         </p>
+
+        <Show when={registry.supported}>
+          {/* GitHub 仓库地址安装行：桌面端与浏览器演示后端均可直连 GitHub */}
+          <Show when={githubOpen()}>
+            <div class="mb-3 space-y-1.5">
+              <div class="flex items-center gap-2">
+                <input
+                  type="text"
+                  data-testid="plugin-github-url-input"
+                  class={inputClass}
+                  aria-label={i18n.t('plugins.installFromGithubInput')}
+                  placeholder={i18n.t('plugins.installFromGithubPlaceholder')}
+                  value={githubUrl()}
+                  onInput={(e) => setGithubUrl(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    // busy 互斥与安装按钮一致：下载进行中 Enter 不再并发触发。
+                    if (e.key === 'Enter' && busyId() === null) void installFromGithub()
+                  }}
+                />
+                <button
+                  type="button"
+                  data-testid="plugin-github-install"
+                  class="h-[28px] px-2.5 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] text-[11px] text-[var(--accent)] hover:bg-[var(--bg-active-strong)] transition-colors disabled:opacity-50 disabled:pointer-events-none shrink-0"
+                  disabled={busyId() !== null || githubUrl().trim().length === 0}
+                  onClick={() => void installFromGithub()}
+                >
+                  {busyId() === 'install-from-github'
+                    ? i18n.t('plugins.installing')
+                    : i18n.t('plugins.install')}
+                </button>
+              </div>
+              <p class="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                {i18n.t('plugins.installFromGithubHint')}
+              </p>
+            </div>
+          </Show>
+        </Show>
 
         <Show when={!registry.supported}>
           <p class="text-[11px] text-[var(--warning-text)] leading-relaxed">

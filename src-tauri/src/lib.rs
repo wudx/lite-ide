@@ -4,6 +4,7 @@ mod fs;
 mod git;
 mod jumplist;
 mod plugins;
+mod plugins_github;
 mod project;
 mod protocol;
 mod terminal;
@@ -502,6 +503,7 @@ pub fn run() {
             plugins::plugin_catalog,
             plugins::plugin_install_from_path,
             plugins::plugin_install_from_catalog,
+            plugins::plugin_install_from_github,
             plugins::plugin_uninstall,
             plugins::plugin_read_entry,
             plugins::plugin_read_asset

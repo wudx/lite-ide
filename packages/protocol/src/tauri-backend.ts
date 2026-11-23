@@ -165,6 +165,11 @@ export function createTauriBackend(): WorkspaceBackend {
       return invoke<InstalledPlugin>('plugin_install_from_catalog', { catalogId })
     },
 
+    // GitHub 安装由 Rust 侧下载 zipball 并走同一套校验/落盘管线。
+    async pluginInstallFromGithub(url: string): Promise<InstalledPlugin> {
+      return invoke<InstalledPlugin>('plugin_install_from_github', { url })
+    },
+
     async pluginUninstall(pluginId: string): Promise<void> {
       await invoke<void>('plugin_uninstall', { pluginId })
     },

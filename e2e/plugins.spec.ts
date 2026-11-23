@@ -248,3 +248,94 @@ test('catalog install of the bundle-format sample activates sidebar, css and chu
 
   expect(consoleErrors).toEqual([])
 })
+
+const GITHUB_MANIFEST = {
+  id: 'github-demo',
+  name: 'GitHub Demo',
+  version: '1.0.0',
+  main: 'main.js',
+}
+const GITHUB_MAIN_JS =
+  "liteide.plugin({ activate(ctx) { return ctx.contribute('statusbar.item', {" +
+  " id: 'github-demo.item', align: 'right', order: 95," +
+  " component: () => { const el = document.createElement('span');" +
+  " el.textContent = '来自 GitHub'; return el } }) } })"
+
+/** 拦截 api.github.com 与 raw.githubusercontent.com，伪造一个单文件插件仓库。 */
+async function interceptGithubDemo(page: Page): Promise<void> {
+  const tree = {
+    tree: [
+      { path: 'README.md', type: 'blob', size: 30 },
+      { path: 'plugin.json', type: 'blob', size: JSON.stringify(GITHUB_MANIFEST).length },
+      { path: 'main.js', type: 'blob', size: GITHUB_MAIN_JS.length },
+    ],
+    truncated: false,
+  }
+  await page.route(/api\.github\.com\/repos\/lite-ide\/demo(\/|$|\?)/, (route) =>
+    route.fulfill({ json: { default_branch: 'main' } }),
+  )
+  await page.route(/api\.github\.com\/repos\/lite-ide\/demo\/git\/trees\//, (route) =>
+    route.fulfill({ json: tree }),
+  )
+  await page.route(/raw\.githubusercontent\.com\/lite-ide\/demo\/.+\/plugin\.json$/, (route) =>
+    route.fulfill({ body: JSON.stringify(GITHUB_MANIFEST) }),
+  )
+  await page.route(/raw\.githubusercontent\.com\/lite-ide\/demo\/.+\/main\.js$/, (route) =>
+    route.fulfill({ body: GITHUB_MAIN_JS }),
+  )
+}
+
+test('installs a plugin from a GitHub repository URL (network intercepted)', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await interceptGithubDemo(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  const dialog = await openPluginsSection(page)
+  await dialog.getByTestId('plugin-github-toggle').click()
+  await expect(dialog.getByTestId('plugin-github-url-input')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('plugins-github-input.png'), animations: 'disabled' })
+
+  await dialog.getByTestId('plugin-github-url-input').fill('https://github.com/lite-ide/demo')
+  await dialog.getByTestId('plugin-github-install').click()
+  // 安装后立即激活：状态栏贡献与「运行中」徽标同时出现，输入行收起。
+  await expect(page.getByText('来自 GitHub')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-status-github-demo')).toHaveText('运行中')
+  await expect(dialog.getByTestId('plugin-github-url-input')).toHaveCount(0)
+  await page.screenshot({
+    path: testInfo.outputPath('plugins-github-installed.png'),
+    animations: 'disabled',
+  })
+
+  // 浏览器演示后端经 localStorage 持久化。
+  const stored = await page.evaluate((k) => localStorage.getItem(k), MOCK_PLUGIN_STORE_KEY)
+  expect(stored).toContain('github-demo')
+
+  // 卸载恢复现场：贡献消失，目录即空。
+  await dialog.getByTestId('plugin-uninstall-github-demo').click()
+  await dialog.getByTestId('plugin-uninstall-github-demo').click()
+  await expect(page.getByText('来自 GitHub')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-status-github-demo')).toHaveCount(0)
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('github install surfaces parse errors for non-github URLs', async ({ page }) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  const dialog = await openPluginsSection(page)
+  await dialog.getByTestId('plugin-github-toggle').click()
+  await dialog.getByTestId('plugin-github-url-input').fill('https://gitlab.com/foo/bar')
+  await dialog.getByTestId('plugin-github-install').click()
+  // 解析失败在发起网络请求前报错，错误框展示后端 message。
+  await expect(dialog.getByText(/操作失败/)).toBeVisible()
+  await expect(dialog.getByText(/only github\.com/)).toBeVisible()
+  // 输入行保留现场便于修改重试。
+  await expect(dialog.getByTestId('plugin-github-url-input')).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})

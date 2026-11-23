@@ -329,6 +329,46 @@ impl PluginManager {
         Ok(self.read_installed(&target))
     }
 
+    /// Installs a plugin from a GitHub repository URL: download the zipball,
+    /// extract into a staging temp dir, locate the plugin folder and run the
+    /// regular `install_from_path` pipeline (manifest validation, duplicate
+    /// check, copy budget). The staging dir is always cleaned up.
+    pub async fn install_from_github(&self, url: &str) -> Result<InstalledPlugin, AppError> {
+        let source =
+            crate::plugins_github::parse_github_plugin_url(url).map_err(AppError::Plugin)?;
+        let client = crate::plugins_github::plugin_client()?;
+        let zip_bytes = crate::plugins_github::fetch_repo_zipball(&client, &source)
+            .await
+            .map_err(AppError::Plugin)?;
+
+        let staging = std::env::temp_dir().join(format!(
+            "lite-ide-plugin-dl-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        // 预清理防御上次异常残留的同名目录（uuid 撞名几乎不可能，但清理无害）。
+        let _ = fs::remove_dir_all(&staging);
+        fs::create_dir_all(&staging)?;
+
+        let result = (|| {
+            crate::plugins_github::extract_zipball(
+                &zip_bytes,
+                &staging,
+                crate::plugins_github::MAX_ZIP_DECOMPRESSED_BYTES,
+            )?;
+            let plugin_root = crate::plugins_github::locate_plugin_root(
+                &staging,
+                source.subdir.as_deref(),
+            )?;
+            let plugin_root = plugin_root
+                .to_str()
+                .ok_or_else(|| AppError::Plugin("plugin folder path is not valid UTF-8".into()))?;
+            self.install_from_path(plugin_root)
+        })();
+        let _ = fs::remove_dir_all(&staging);
+        result
+    }
+
     pub fn uninstall(&self, plugin_id: &str) -> Result<(), AppError> {
         // 按清单 id 扫描定位（broken 目录以文件夹名为身份），避免用户输入
         // 直接拼接路径；命中项的目录名来自枚举，不可能包含路径分量。
@@ -618,6 +658,16 @@ pub fn plugin_install_from_catalog(
     catalog_id: String,
 ) -> Result<InstalledPlugin, AppError> {
     manager.install_from_catalog(&catalog_id)
+}
+
+/// 网络下载放在 async 命令里执行；State 借用不跨 await（先 clone Arc）。
+#[tauri::command]
+pub async fn plugin_install_from_github(
+    manager: tauri::State<'_, Arc<PluginManager>>,
+    url: String,
+) -> Result<InstalledPlugin, AppError> {
+    let manager = manager.inner().clone();
+    manager.install_from_github(&url).await
 }
 
 #[tauri::command]

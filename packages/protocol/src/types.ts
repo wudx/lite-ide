@@ -359,6 +359,12 @@ export interface WorkspaceBackend extends Partial<TerminalCapabilities> {
   pluginInstallFromPath?(sourcePath: string): Promise<InstalledPlugin>
   /** Installs a built-in catalog plugin by id (desktop & demo backends). */
   pluginInstallFromCatalog?(catalogId: string): Promise<InstalledPlugin>
+  /**
+   * Installs a plugin from a GitHub repository URL (`owner/repo` or
+   * `https://github.com/owner/repo[/tree/<ref>[/<subdir>]]`; desktop &
+   * demo backends).
+   */
+  pluginInstallFromGithub?(url: string): Promise<InstalledPlugin>
   /** Removes an installed plugin folder. */
   pluginUninstall?(pluginId: string): Promise<void>
   /** Entry script source of an installed plugin, ready for evaluation. */

@@ -145,6 +145,11 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'plugins.action.uninstallConfirm': '再次点击确认卸载',
   'plugins.installFromFolder': '从文件夹安装…',
   'plugins.installFromFolderTitle': '选择包含 plugin.json 的插件文件夹',
+  'plugins.installFromGithub': '从 GitHub 安装…',
+  'plugins.installFromGithubInput': 'GitHub 仓库地址',
+  'plugins.installFromGithubPlaceholder': 'https://github.com/owner/repo',
+  'plugins.installFromGithubHint':
+    '支持 owner/repo 或完整仓库链接，可带 /tree/<分支或标签>/<子目录>；plugin.json 须位于仓库根或该子目录。',
   'plugins.rootPath': '插件目录：{path}',
   'plugins.unsupported': '当前后端不支持插件管理。',
   'plugins.embedded': '内置',
@@ -382,6 +387,11 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'plugins.action.uninstallConfirm': 'Click again to confirm',
   'plugins.installFromFolder': 'Install from folder…',
   'plugins.installFromFolderTitle': 'Choose a plugin folder with plugin.json',
+  'plugins.installFromGithub': 'Install from GitHub…',
+  'plugins.installFromGithubInput': 'GitHub repository URL',
+  'plugins.installFromGithubPlaceholder': 'https://github.com/owner/repo',
+  'plugins.installFromGithubHint':
+    'Accepts owner/repo or a full repository URL, optionally /tree/<ref>/<subdir>; plugin.json must sit at the repo root or that subdirectory.',
   'plugins.rootPath': 'Plugins directory: {path}',
   'plugins.unsupported': 'Plugin management is not supported by this backend.',
   'plugins.embedded': 'Built-in',
