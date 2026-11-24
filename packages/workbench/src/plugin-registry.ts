@@ -38,6 +38,8 @@ export interface PluginRegistryService {
   readonly catalog: Accessor<readonly CatalogPlugin[]>
   /** Managed plugins root (desktop only); null on the browser demo backend. */
   readonly rootPath: Accessor<string | null>
+  /** Resolves once the initial plugin list & activation pass finishes. */
+  whenReady(): Promise<void>
   refresh(): Promise<void>
   installFromCatalog(catalogId: string): Promise<void>
   installFromPath(sourcePath: string): Promise<void>
@@ -445,6 +447,7 @@ export function createPluginRegistry(
     states,
     catalog,
     rootPath,
+    whenReady: () => initialReadyPromise,
 
     refresh,
 
@@ -530,8 +533,9 @@ export function createPluginRegistry(
   if (backend.pluginCatalog) {
     void backend.pluginCatalog().then(setCatalog, () => setCatalog([]))
   }
+  let initialReadyPromise: Promise<void>
   if (supported) {
-    void refresh()
+    initialReadyPromise = refresh()
       .catch(() => {
         // 列表读取失败：保持空列表，UI 由 supported/空态兜底。
       })
@@ -540,6 +544,7 @@ export function createPluginRegistry(
       })
   } else {
     options.onInitialRefreshDone?.()
+    initialReadyPromise = Promise.resolve()
   }
 
   return service

@@ -80,8 +80,62 @@
         }
       })()
     </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: var(--bg-app, #12141a);
+      }
+      html.light,
+      html.light body {
+        background-color: var(--bg-app, #eaedf2);
+      }
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--bg-app, #12141a);
+        user-select: none;
+        opacity: 1;
+        transition: opacity 180ms ease-out;
+      }
+      html.light #app-splash {
+        background-color: var(--bg-app, #eaedf2);
+      }
+      html[data-theme='solarized-light'],
+      html[data-theme='solarized-light'] body,
+      html[data-theme='solarized-light'] #app-splash {
+        background-color: var(--bg-app, #eee8d5);
+      }
+      #app-splash.is-ready {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .app-splash-logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 15px;
+        pointer-events: none;
+        -webkit-user-drag: none;
+        filter: drop-shadow(0 14px 32px rgba(0, 0, 0, 0.52));
+      }
+      html.light .app-splash-logo {
+        filter: drop-shadow(0 10px 24px rgba(15, 23, 42, 0.18))
+          drop-shadow(0 2px 6px rgba(15, 23, 42, 0.08));
+      }
+    </style>
   </head>
   <body>
+    <div id="app-splash" data-tauri-drag-region aria-label="Loading LiteIDE">
+      <img src="/icon.png" alt="LiteIDE" draggable="false" class="app-splash-logo" />
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

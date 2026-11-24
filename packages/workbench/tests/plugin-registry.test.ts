@@ -611,4 +611,39 @@ describe('createPluginRegistry', () => {
     ).toContain('.x')
     kernel.dispose()
   })
+
+  it('whenReady() resolves only after the initial plugin list & activation pass finishes', async () => {
+    const kernel = createKernel()
+    const fake = createFakePluginBackend()
+    let resolveList!: (value: { rootPath: string; plugins: [] }) => void
+    const deferredList = new Promise<{ rootPath: string; plugins: [] }>((resolve) => {
+      resolveList = resolve
+    })
+    const backend = {
+      ...fake.backend,
+      pluginList: () => deferredList,
+    }
+
+    let onDoneCalled = false
+    const registry = createPluginRegistry(kernel, backend, [], {
+      onInitialRefreshDone: () => {
+        onDoneCalled = true
+      },
+    })
+
+    let readyResolved = false
+    const readyPromise = registry.whenReady().then(() => {
+      readyResolved = true
+    })
+
+    await Promise.resolve()
+    expect(readyResolved).toBe(false)
+    expect(onDoneCalled).toBe(false)
+
+    resolveList({ rootPath: 'C:/fake/plugins', plugins: [] })
+    await readyPromise
+    expect(readyResolved).toBe(true)
+    expect(onDoneCalled).toBe(true)
+    kernel.dispose()
+  })
 })

@@ -4,10 +4,12 @@ import { listen } from '@tauri-apps/api/event'
 import { createDefaultBackend, MOCK_DEMO_PATHS, type PluginManifest } from '@lite-ide/protocol'
 import {
   createWorkbenchKernel,
+  PluginRegistryKey,
   WorkbenchShell,
   type EmbeddedPluginSource,
 } from '@lite-ide/workbench'
 import { render } from 'solid-js/web'
+import { dismissSplash, waitForNextFrames } from './splash'
 // 嵌入式内置插件（"一切皆插件"）：按外部插件格式构建的 dist 内联进应用包，
 // 与用户安装的外部插件走同一加载器。dist 由根脚本 `build:plugins` 产出，
 // dev 时可运行 `watch:plugins` 让改动即时生效。
@@ -226,11 +228,21 @@ async function wireExternalProjectRequests(): Promise<void> {
 }
 
 async function start() {
-  await wireExternalProjectRequests()
-  await restoreSession()
-  if (launchProjectPath) {
-    await openExternalProject(launchProjectPath)
-    launchProjectPath = null
+  try {
+    await Promise.all([
+      kernel.get(PluginRegistryKey).whenReady(),
+      (async () => {
+        await wireExternalProjectRequests()
+        await restoreSession()
+        if (launchProjectPath) {
+          await openExternalProject(launchProjectPath)
+          launchProjectPath = null
+        }
+      })(),
+    ])
+    await waitForNextFrames(2)
+  } finally {
+    dismissSplash()
   }
 }
 
