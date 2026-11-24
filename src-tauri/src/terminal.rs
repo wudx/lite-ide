@@ -124,7 +124,10 @@ fn which_program(program: &str) -> bool {
 fn build_default_command(root: &Path) -> (CommandBuilder, String) {
     let (program, label) = default_shell();
     let mut cmd = CommandBuilder::new(program);
-    cmd.cwd(root);
+    // canonicalize 在 Windows 上产生 `\\?\` 前缀，交给 shell 前剥掉，
+    // 否则 PowerShell 会把工作目录显示为 `Microsoft.PowerShell.Core\FileSystem::\\?\...`。
+    let plain_cwd = crate::project::strip_verbatim_prefix(root);
+    cmd.cwd(plain_cwd);
     (cmd, label)
 }
 
@@ -577,5 +580,14 @@ mod tests {
         assert!(kill(&manager, &spawned.session_id).is_ok());
         let err = write(&manager, &spawned.session_id, "x").unwrap_err();
         assert!(matches!(err, AppError::Terminal(_)));
+    }
+
+    #[test]
+    fn build_default_command_strips_windows_verbatim_prefix() {
+        let (cmd, _label) = build_default_command(Path::new(r"\\?\E:\ProjectsCocos\Arrow-Cube-fengling"));
+        assert_eq!(
+            cmd.get_cwd().and_then(|p| p.to_str()),
+            Some(r"E:\ProjectsCocos\Arrow-Cube-fengling")
+        );
     }
 }
