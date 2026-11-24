@@ -189,19 +189,17 @@ test('six built-in themes appear in a 3x2 grid, switch Gruvbox and Catppuccin La
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
 
-  // 外观设置共 6 套内置主题（3 深 + 3 浅），呈 3×2 网格整齐排列。
+  // 外观设置共 6 套内置主题（前 3 浅 + 后 3 深），呈 3×2 网格整齐排列。
   const themeCards = dialog.locator('section button')
   await expect(themeCards).toHaveCount(6)
-  for (const label of [
-    '深色',
+  await expect(themeCards).toHaveText([
     '浅色',
     'Solarized Light',
+    'Catppuccin 浅色',
+    '深色',
     'Nord 深色',
     'Gruvbox 深色',
-    'Catppuccin 浅色',
-  ]) {
-    await expect(dialog.getByRole('button', { name: label, exact: true })).toBeVisible()
-  }
+  ])
   await page.screenshot({ path: testInfo.outputPath('theme-grid-6.png'), animations: 'disabled' })
 
   // 切换到 Gruvbox 深色（嵌入式内置）。

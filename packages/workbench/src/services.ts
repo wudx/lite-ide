@@ -130,7 +130,6 @@ export interface ThemeDefinition {
 
 /** 内置主题：样式由 app.css 的 [data-theme] 选择器提供（index.html FOUC 脚本维护同名白名单）。 */
 export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
-  { id: 'dark', label: '深色', labelKey: 'settings.theme.dark', appearance: 'dark' },
   { id: 'light', label: '浅色', labelKey: 'settings.theme.light', appearance: 'light' },
   {
     id: 'solarized-light',
@@ -138,9 +137,12 @@ export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
     labelKey: 'settings.theme.solarized-light',
     appearance: 'light',
   },
+  { id: 'dark', label: '深色', labelKey: 'settings.theme.dark', appearance: 'dark' },
 ]
 
 const DEFAULT_THEME_ID: ThemeMode = 'dark'
+const DEFAULT_THEME_DEFINITION: ThemeDefinition =
+  THEME_DEFINITIONS.find((t) => t.id === DEFAULT_THEME_ID) ?? THEME_DEFINITIONS[0]
 
 /** 内核 theme 贡献点形态（见 ContributionMap['theme']）。 */
 export type ThemeContribution = ContributionMap['theme']
@@ -653,22 +655,24 @@ export function createThemeState(
   kernel?: Pick<AppKernel, 'contributions'>,
   options: ThemeStateOptions = {},
 ): ThemeStateService {
-  // 内置主题在前，插件贡献主题按注册顺序追加；贡献点变化时响应式重算。
+  // 浅色主题在前、深色主题在后；各分组内保持内置优先、插件按注册顺序追加。
   // 按 id 去重保留先注册者（防止残留外部同名主题重复出卡），并保持原引用以免 <For> 重挂载格子。
   const registry = createMemo<readonly ThemeDefinition[]>(() => {
     const seen = new Set<string>()
-    const result: ThemeDefinition[] = []
-    for (const def of THEME_DEFINITIONS) {
-      if (seen.has(def.id)) continue
+    const lights: ThemeDefinition[] = []
+    const darks: ThemeDefinition[] = []
+    const append = (def: ThemeDefinition) => {
+      if (seen.has(def.id)) return
       seen.add(def.id)
-      result.push(def)
+      if (def.appearance === 'light') {
+        lights.push(def)
+      } else {
+        darks.push(def)
+      }
     }
-    for (const def of kernel?.contributions('theme')() ?? []) {
-      if (seen.has(def.id)) continue
-      seen.add(def.id)
-      result.push(def)
-    }
-    return result
+    for (const def of THEME_DEFINITIONS) append(def)
+    for (const def of kernel?.contributions('theme')() ?? []) append(def)
+    return [...lights, ...darks]
   })
   const initialThemeId = readStoredThemeId()
   const initialSnapshot = readStoredThemeSnapshot(initialThemeId)
@@ -687,7 +691,7 @@ export function createThemeState(
     if (active) return active
     const snap = pendingSnapshot()
     if (snap && snap.id === theme() && !pluginsReady()) return snap
-    return THEME_DEFINITIONS[0]
+    return DEFAULT_THEME_DEFINITION
   })
 
   function setTheme(mode: ThemeMode) {
@@ -732,7 +736,7 @@ export function createThemeState(
       }
       if (snap !== null) setPendingSnapshot(null)
       writeStoredThemeSnapshot(null)
-      applyThemeToDom(THEME_DEFINITIONS[0])
+      applyThemeToDom(DEFAULT_THEME_DEFINITION)
     })
   })
 
@@ -744,7 +748,7 @@ export function createThemeState(
     toggleTheme() {
       const defs = registry()
       const idx = defs.findIndex((t) => t.id === theme())
-      // idx === -1 (未知主题) 时前进到 0，即内置 dark，随后正常循环。
+      // idx === -1 (未知主题) 时前进到 0，即列表首个主题，随后正常循环。
       setTheme(defs[(idx + 1) % defs.length].id)
     },
   }

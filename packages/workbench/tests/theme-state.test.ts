@@ -78,11 +78,15 @@ describe('createThemeState', () => {
   it('cycles through all themes on toggle and persists', () => {
     const state = createThemeState()
     const ids = THEME_DEFINITIONS.map((t) => t.id)
+    const startIdx = ids.indexOf(state.theme())
+    expect(startIdx).toBeGreaterThanOrEqual(0)
     for (let i = 0; i < ids.length; i++) {
-      expect(state.theme()).toBe(ids[i])
+      const currentIdx = (startIdx + i) % ids.length
+      const nextIdx = (startIdx + i + 1) % ids.length
+      expect(state.theme()).toBe(ids[currentIdx])
       state.toggleTheme()
       // Each toggle advances to the next theme and persists it.
-      expect(state.theme()).toBe(ids[(i + 1) % ids.length])
+      expect(state.theme()).toBe(ids[nextIdx])
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(state.theme())
       expect(document.documentElement.dataset.theme).toBe(state.theme())
     }
@@ -129,12 +133,43 @@ describe('createThemeState', () => {
       'nord-dark',
     ])
 
-    // toggle 从最后一个内置主题推进到插件主题，再回到内置 dark。
-    state.setTheme('solarized-light')
+    // toggle 从最后一个内置主题推进到插件主题，再回到列表首个主题（light）。
+    state.setTheme('dark')
     state.toggleTheme()
     expect(state.theme()).toBe('nord-dark')
     state.toggleTheme()
-    expect(state.theme()).toBe('dark')
+    expect(state.theme()).toBe('light')
+  })
+
+  it('groups light themes before dark themes while preserving relative order', () => {
+    const fake = createFakeThemeHost()
+    const state = createThemeState(fake.host)
+
+    fake.register(NORD)
+    fake.register({
+      id: 'gruvbox-dark',
+      label: 'Gruvbox 深色',
+      appearance: 'dark',
+      variables: { '--bg-app': '#282828', '--accent': '#8ec07c' },
+    })
+    fake.register({
+      id: 'catppuccin-latte',
+      label: 'Catppuccin 浅色',
+      appearance: 'light',
+      variables: { '--bg-app': '#dce0e8', '--accent': '#8839ef' },
+    })
+
+    const themes = state.themes()
+    expect(themes.map((t) => t.id)).toEqual([
+      'light',
+      'solarized-light',
+      'catppuccin-latte',
+      'dark',
+      'nord-dark',
+      'gruvbox-dark',
+    ])
+    expect(themes.slice(0, 3).every((t) => t.appearance === 'light')).toBe(true)
+    expect(themes.slice(3).every((t) => t.appearance === 'dark')).toBe(true)
   })
 
   it('applies plugin theme variables as inline styles and clears them on switch', () => {
