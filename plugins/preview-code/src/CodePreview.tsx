@@ -43,6 +43,8 @@ import {
   type RevealLocationRequest,
   type ThemeAppearance,
 } from '@lite-ide/workbench'
+import ChevronDown from 'lucide-solid/icons/chevron-down'
+import ChevronUp from 'lucide-solid/icons/chevron-up'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Lock from 'lucide-solid/icons/lock'
 import Search from 'lucide-solid/icons/search'
@@ -53,6 +55,21 @@ import { CODEMIRROR_ZH_CN_PHRASES } from './i18n'
 import { CodeStatsKey } from './stats'
 
 const EXTENDED_MAX_BYTES = 10 * 1024 * 1024
+
+/** Returns 1-based line numbers of `<<<<<<<` markers when complete conflict blocks exist. */
+export function findMergeConflictLines(content: string): number[] {
+  if (!/^=======\s*$/m.test(content) || !/^>>>>>>>(?:\s|$)/m.test(content)) {
+    return []
+  }
+  const lines = content.split(/\r?\n/)
+  const result: number[] = []
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^<<<<<<<(?:\s|$)/.test(lines[i])) {
+      result.push(i + 1)
+    }
+  }
+  return result
+}
 
 // Module-level Compartment singletons remain valid across EditorState cache restores.
 const languageCompartment = new Compartment()
@@ -501,6 +518,29 @@ export default function CodePreview(props: PreviewProps) {
       flashTimer = undefined
       view?.dispatch({ effects: clearFlashEffect.of(null) })
     }, 1600)
+  }
+
+  const conflictLines = createMemo(() =>
+    findMergeConflictLines(activeBuffer()?.content ?? ''),
+  )
+
+  function jumpToConflict(direction: 'prev' | 'next') {
+    const lines = conflictLines()
+    if (lines.length === 0 || !view) return
+    const curLine = view.state.doc.lineAt(view.state.selection.main.head).number
+    let targetLine: number
+    if (direction === 'next') {
+      targetLine = lines.find((line) => line > curLine) ?? lines[0]
+    } else {
+      targetLine = [...lines].reverse().find((line) => line < curLine) ?? lines[lines.length - 1]
+    }
+    performReveal({
+      relPath: props.file.relPath,
+      line: targetLine,
+      column: 1,
+      seq: 0,
+    })
+    view.focus()
   }
 
   /** Consume a pending reveal that matches the currently mounted buffer. */
@@ -1022,6 +1062,41 @@ export default function CodePreview(props: PreviewProps) {
             </div>
           )}
         </Show>
+      </Show>
+
+      {/* Git merge conflict navigation bar */}
+      <Show when={conflictLines().length > 0}>
+        <div
+          data-testid="preview-code-conflict-bar"
+          class="px-3.5 py-1.5 bg-[var(--warning-bg)] border-b border-[var(--warning-border)] flex items-center justify-between gap-3 text-xs text-[var(--warning-text)]"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <AlertTriangle class="w-3.5 h-3.5 shrink-0 text-[var(--warning-icon)]" />
+            <span class="truncate font-medium">
+              {i18n.t('previewCode.mergeConflictCount', { count: conflictLines().length })}
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              data-testid="preview-code-prev-conflict"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
+              onClick={() => jumpToConflict('prev')}
+            >
+              <ChevronUp class="w-3.5 h-3.5" />
+              <span>{i18n.t('previewCode.prevConflict')}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="preview-code-next-conflict"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[var(--bg-subtle)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] font-medium transition-colors"
+              onClick={() => jumpToConflict('next')}
+            >
+              <ChevronDown class="w-3.5 h-3.5" />
+              <span>{i18n.t('previewCode.nextConflict')}</span>
+            </button>
+          </div>
+        </div>
       </Show>
 
       {/* Truncation / Read-only protection banner */}

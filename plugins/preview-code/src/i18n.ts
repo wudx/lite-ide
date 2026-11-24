@@ -23,6 +23,9 @@ export const PREVIEW_CODE_ZH_CN: Record<string, string> = {
   'previewCode.status.ro': '只读',
   'previewCode.status.cursor': '第 {line} 行，第 {column} 列',
   'previewCode.status.lines': '{count} 行',
+  'previewCode.mergeConflictCount': '检测到 {count} 处合并冲突',
+  'previewCode.prevConflict': '上个冲突',
+  'previewCode.nextConflict': '下个冲突',
 }
 
 export const PREVIEW_CODE_EN_US: Record<string, string> = {
@@ -52,6 +55,9 @@ export const PREVIEW_CODE_EN_US: Record<string, string> = {
   'previewCode.status.ro': 'RO',
   'previewCode.status.cursor': 'Ln {line}, Col {column}',
   'previewCode.status.lines': '{count} lines',
+  'previewCode.mergeConflictCount': '{count} merge conflicts',
+  'previewCode.prevConflict': 'Prev Conflict',
+  'previewCode.nextConflict': 'Next Conflict',
 }
 
 export const CODEMIRROR_ZH_CN_PHRASES: Record<string, string> = {

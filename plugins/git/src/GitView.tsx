@@ -11,9 +11,12 @@ import Archive from 'lucide-solid/icons/archive'
 import Check from 'lucide-solid/icons/check'
 import ChevronDown from 'lucide-solid/icons/chevron-down'
 import ChevronRight from 'lucide-solid/icons/chevron-right'
+import Code from 'lucide-solid/icons/code'
 import Download from 'lucide-solid/icons/download'
+import ExternalLink from 'lucide-solid/icons/external-link'
 import GitBranch from 'lucide-solid/icons/git-branch'
 import GitCommitHorizontal from 'lucide-solid/icons/git-commit-horizontal'
+import GitMerge from 'lucide-solid/icons/git-merge'
 import Globe from 'lucide-solid/icons/globe'
 import List from 'lucide-solid/icons/list'
 import ListTree from 'lucide-solid/icons/list-tree'
@@ -38,6 +41,7 @@ import {
 import type { GitBranchInfo } from '@lite-ide/protocol'
 import { buildCommitMessagePrompt, stripCodeFence } from './commit-message'
 import {
+  extractWorktreeConflictPath,
   hasStagedChanges,
   hasUnstagedChanges,
   isStageableEntry,
@@ -45,6 +49,7 @@ import {
   isUntrackedEntry,
   statusLetter,
   unstagePathsForEntry,
+  worktreeFolderName,
   GitBackendKey,
   GIT_DIFF_PREVIEWER_ID,
   type GitDiffSection,
@@ -726,9 +731,29 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     setBranchMenuOpen(false)
     if (item.kind === 'create') {
       await store.checkoutBranch(item.name, true)
+    } else if (item.branch.worktreePath) {
+      await store.openWorktreeProject(item.branch.worktreePath)
     } else if (!item.branch.current) {
       await store.checkoutBranch(item.branch.name, false)
     }
+  }
+
+  async function mergeBranchFromPicker(branchName: string) {
+    setBranchMenuOpen(false)
+    if (dialogs) {
+      const target = branchLabel()
+      const choice = await dialogs.confirm({
+        title: i18n.t('git.merge.title'),
+        message: i18n.t('git.merge.message', { source: branchName, target }),
+        actions: [
+          { id: 'merge', label: i18n.t('git.merge.confirm'), variant: 'primary' },
+          { id: 'cancel', label: i18n.t('git.merge.cancel'), variant: 'secondary' },
+        ],
+        cancelId: 'cancel',
+      })
+      if (choice !== 'merge') return
+    }
+    await store.mergeBranch(branchName)
   }
 
   function onBranchPickerKeyDown(e: KeyboardEvent) {
@@ -762,11 +787,16 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     return branch ? branch : i18n.t('git.detachedHead')
   }
 
+  const unmergedEntries = createMemo(() =>
+    (store.status()?.entries ?? []).filter(isUnmergedEntry),
+  )
   const stagedEntries = createMemo(() =>
     (store.status()?.entries ?? []).filter(hasStagedChanges),
   )
   const unstagedEntries = createMemo(() =>
-    (store.status()?.entries ?? []).filter(hasUnstagedChanges),
+    (store.status()?.entries ?? []).filter(
+      (e) => hasUnstagedChanges(e) && !isUnmergedEntry(e),
+    ),
   )
   const stageableEntries = createMemo(() =>
     unstagedEntries().filter(isStageableEntry),
@@ -902,6 +932,22 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     })
     if (choice !== 'discard') return
     void store.discard(untracked, tracked)
+  }
+
+  async function abortMergeWithConfirm() {
+    if (dialogs) {
+      const choice = await dialogs.confirm({
+        title: i18n.t('git.merge.abortTitle'),
+        message: i18n.t('git.merge.abortMessage'),
+        actions: [
+          { id: 'abort', label: i18n.t('git.merge.abortConfirm'), variant: 'danger' },
+          { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+        ],
+        cancelId: 'cancel',
+      })
+      if (choice !== 'abort') return
+    }
+    void store.abortMerge()
   }
 
   // --- Multi-selection (Ctrl/Shift click) and the row context menu ---
@@ -1326,43 +1372,88 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                           </span>
                         </button>
                       ) : (
-                        <button
+                        <div
                           id={branchOptionId(index())}
-                          type="button"
                           role="option"
                           aria-selected={isActive()}
-                          data-git-branch={item.branch.name}
-                          class={`w-full px-2 h-[26px] rounded-lg flex items-center gap-1.5 text-left text-[11.5px] transition-colors ${
+                          class={`group/branch w-full h-[26px] rounded-lg flex items-center gap-1 transition-colors ${
                             isActive()
                               ? 'bg-[var(--bg-hover)] text-[var(--text-primary)]'
                               : item.branch.current
                                 ? 'text-[var(--text-primary)]'
                                 : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
                           } ${item.branch.current ? 'font-medium' : ''}`}
-                          onFocus={() => setBranchActiveIdx(index())}
                           onMouseEnter={() => setBranchActiveIdx(index())}
-                          onClick={() => void selectBranchItem(item)}
                         >
-                          <Show
-                            when={item.branch.remote}
-                            fallback={
-                              <GitBranch class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                          <button
+                            type="button"
+                            data-git-branch={item.branch.name}
+                            title={
+                              item.branch.worktreePath
+                                ? i18n.t('git.branchPicker.worktreeTitle', {
+                                    path: item.branch.worktreePath,
+                                  })
+                                : undefined
                             }
+                            class="flex-1 min-w-0 h-full px-2 flex items-center gap-1.5 text-left text-[11.5px]"
+                            onFocus={() => setBranchActiveIdx(index())}
+                            onClick={() => void selectBranchItem(item)}
                           >
-                            <Globe class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-                          </Show>
-                          <span class="truncate flex-1 leading-normal min-w-0">
-                            {item.branch.name}
-                          </span>
-                          <Show when={item.branch.remote}>
-                            <span class="shrink-0 text-[9.5px] uppercase tracking-wider text-[var(--text-muted)]">
-                              {i18n.t('git.branchPicker.remote')}
+                            <Show
+                              when={item.branch.remote}
+                              fallback={
+                                <GitBranch class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                              }
+                            >
+                              <Globe class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                            </Show>
+                            <span class="truncate flex-1 leading-normal min-w-0">
+                              {item.branch.name}
                             </span>
+                            <Show when={item.branch.worktreePath}>
+                              {(wtPath) => (
+                                <span
+                                  data-git-branch-worktree={wtPath()}
+                                  class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--bg-inset)] border border-[var(--border-subtle)] text-[9.5px] text-[var(--text-muted)]"
+                                >
+                                  <span class="max-w-[96px] truncate leading-normal">
+                                    {i18n.t('git.branchPicker.worktreeBadge', {
+                                      name: worktreeFolderName(wtPath()),
+                                    })}
+                                  </span>
+                                  <ExternalLink class="w-2.5 h-2.5 shrink-0 text-[var(--accent)]" />
+                                </span>
+                              )}
+                            </Show>
+                            <Show when={item.branch.remote}>
+                              <span class="shrink-0 text-[9.5px] uppercase tracking-wider text-[var(--text-muted)]">
+                                {i18n.t('git.branchPicker.remote')}
+                              </span>
+                            </Show>
+                            <Show when={item.branch.current}>
+                              <Check class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
+                            </Show>
+                          </button>
+                          <Show when={!item.branch.current}>
+                            <button
+                              type="button"
+                              data-git-merge-branch={item.branch.name}
+                              aria-label={`${i18n.t('git.branchPicker.mergeIntoCurrent')}: ${item.branch.name}`}
+                              title={i18n.t('git.branchPicker.mergeIntoCurrent')}
+                              class={`shrink-0 mr-1 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-active)] transition-opacity ${
+                                isActive()
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover/branch:opacity-100 group-focus-within/branch:opacity-100'
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void mergeBranchFromPicker(item.branch.name)
+                              }}
+                            >
+                              <GitMerge class="w-3 h-3" />
+                            </button>
                           </Show>
-                          <Show when={item.branch.current}>
-                            <Check class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
-                          </Show>
-                        </button>
+                        </div>
                       )
                     }}
                   </For>
@@ -1375,11 +1466,31 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
 
       {/* Error banner */}
       <Show when={store.error()}>
-        {(msg) => (
-          <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[var(--danger-text)] bg-[var(--danger-bg)] border border-[var(--danger-border)] break-words">
-            {msg()}
-          </div>
-        )}
+        {(msg) => {
+          const conflictPath = () => extractWorktreeConflictPath(msg())
+          return (
+            <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[var(--danger-text)] bg-[var(--danger-bg)] border border-[var(--danger-border)] break-words flex flex-col gap-1.5">
+              <span>{msg()}</span>
+              <Show when={conflictPath()}>
+                {(wtPath) => (
+                  <button
+                    type="button"
+                    data-testid="git-switch-worktree-button"
+                    class="self-start inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--bg-surface)] hover:bg-[var(--bg-hover)] text-[var(--text-primary)] border border-[var(--border-subtle)] text-[11px] font-medium transition-colors"
+                    onClick={() => void store.openWorktreeProject(wtPath())}
+                  >
+                    <ExternalLink class="w-3 h-3 shrink-0 text-[var(--accent)]" />
+                    <span>
+                      {i18n.t('git.error.openWorktree', {
+                        name: worktreeFolderName(wtPath()),
+                      })}
+                    </span>
+                  </button>
+                )}
+              </Show>
+            </div>
+          )
+        }}
       </Show>
 
       <Show
@@ -1415,6 +1526,35 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
           when={panelMode() === 'changes'}
           fallback={<GitHistory scope={props.scope} />}
         >
+          {/* In-progress merge banner */}
+          <Show when={store.status()?.merging || unmergedEntries().length > 0}>
+            <div
+              data-testid="git-merge-banner"
+              class="mx-2 mt-2 px-2.5 py-2 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] flex items-center gap-2"
+            >
+              <GitMerge class="w-3.5 h-3.5 shrink-0 text-[var(--accent)]" />
+              <div class="flex-1 min-w-0">
+                <div class="text-[11px] font-medium text-[var(--text-primary)] leading-tight">
+                  {i18n.t('git.merge.inProgress')}
+                </div>
+                <div class="text-[10px] text-[var(--text-muted)] leading-tight mt-0.5">
+                  {unmergedEntries().length > 0
+                    ? i18n.t('git.merge.resolveHint')
+                    : i18n.t('git.merge.readyToCommit')}
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="git-abort-merge-button"
+                disabled={store.committing() || store.mutating()}
+                class="shrink-0 px-2 py-1 rounded-md text-[10.5px] font-medium text-[var(--danger-text)] bg-[var(--danger-bg)] border border-[var(--danger-border)] hover:opacity-85 disabled:opacity-40 transition-opacity"
+                onClick={() => void abortMergeWithConfirm()}
+              >
+                {i18n.t('git.merge.abort')}
+              </button>
+            </div>
+          </Show>
+
           {/* Commit box */}
           <div class="shrink-0 px-2.5 pt-2.5 pb-2 border-b border-[var(--border-subtle)]">
             <textarea
@@ -1478,13 +1618,107 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
             }}
           >
             <Show
-              when={stagedEntries().length > 0 || unstagedEntries().length > 0}
+              when={
+                unmergedEntries().length > 0 ||
+                stagedEntries().length > 0 ||
+                unstagedEntries().length > 0
+              }
               fallback={
                 <div class="px-3 py-8 text-center text-xs text-[var(--text-muted)]">
                   {i18n.t('git.state.clean')}
                 </div>
               }
             >
+              <Show when={unmergedEntries().length > 0}>
+                <SectionHeader
+                  title={i18n.t('git.section.conflicts')}
+                  count={unmergedEntries().length}
+                  collapsed={Boolean(sectionCollapsed().conflicts)}
+                  onToggle={() => toggleSection('conflicts')}
+                />
+                <Show when={!sectionCollapsed().conflicts}>
+                  <For each={unmergedEntries()}>
+                    {(entry) => {
+                      const disabled = () => store.committing() || store.mutating()
+                      const fileName = () => entry.relPath.split('/').pop() ?? entry.relPath
+                      return (
+                        <div
+                          data-git-path={entry.relPath}
+                          data-git-section="conflicts"
+                          title={entry.relPath}
+                          class="group/row mx-1.5 rounded-lg flex items-center gap-1 pr-1.5 pl-2 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer transition-colors duration-100"
+                          onClick={() => openDiff(entry, 'unstaged')}
+                        >
+                          <FileIcon name={fileName()} isDir={false} />
+                          <span class="truncate flex-1 leading-normal min-w-0">
+                            {fileName()}
+                          </span>
+                          <span class="shrink-0 hidden group-hover/row:flex group-focus-within/row:flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              aria-label={`${i18n.t('git.conflict.openEditor')}: ${entry.relPath}`}
+                              title={i18n.t('git.conflict.openEditor')}
+                              class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void selection.selectFile(entry.relPath, {
+                                  preferredPreviewerId: null,
+                                })
+                              }}
+                            >
+                              <Code class="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={disabled()}
+                              title={i18n.t('git.conflict.acceptCurrent')}
+                              class="px-1 py-0.5 rounded text-[9.5px] font-medium text-[var(--diff-add-text)] hover:bg-[var(--bg-active)] disabled:opacity-40 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void store.resolveConflict(entry.relPath, 'ours')
+                              }}
+                            >
+                              {i18n.t('git.conflict.acceptCurrent')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={disabled()}
+                              title={i18n.t('git.conflict.acceptIncoming')}
+                              class="px-1 py-0.5 rounded text-[9.5px] font-medium text-[var(--accent)] hover:bg-[var(--bg-active)] disabled:opacity-40 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void store.resolveConflict(entry.relPath, 'theirs')
+                              }}
+                            >
+                              {i18n.t('git.conflict.acceptIncoming')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={disabled()}
+                              aria-label={`${i18n.t('git.conflict.markResolved')}: ${entry.relPath}`}
+                              title={i18n.t('git.conflict.markResolved')}
+                              class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--diff-add-text)] hover:bg-[var(--bg-active)] disabled:opacity-40 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void store.stage([entry.relPath])
+                              }}
+                            >
+                              <Check class="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                          <span
+                            class="shrink-0 w-4 text-center font-mono text-[10.5px] font-semibold text-[var(--danger-text)]"
+                            title={i18n.t('git.status.conflicted')}
+                          >
+                            C
+                          </span>
+                        </div>
+                      )
+                    }}
+                  </For>
+                </Show>
+              </Show>
+
               <Show when={stagedEntries().length > 0}>
                 <SectionHeader
                   title={i18n.t('git.section.staged')}

@@ -18,9 +18,11 @@ import './plugin.css'
 
 export {
   createGitStore,
+  extractWorktreeConflictPath,
   GitBackendKey,
   GitStoreKey,
   GIT_DIFF_PREVIEWER_ID,
+  worktreeFolderName,
   commitFileLetter,
   hasStagedChanges,
   hasUnstagedChanges,
@@ -67,7 +69,10 @@ export const gitPlugin: Plugin = {
 
     ctx.onProjectOpen((scope) => {
       const backend = ctx.get(GitBackendKey)
-      const store = createGitStore(scope.id, backend, { t: i18n.t })
+      const store = createGitStore(scope.id, backend, {
+        t: i18n.t,
+        openProject: (rootPath) => ctx.kernel.openProject(rootPath),
+      })
       scope.provide(GitStoreKey, store)
 
       // Load immediately so the statusbar branch indicator works without the

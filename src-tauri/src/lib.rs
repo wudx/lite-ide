@@ -286,6 +286,36 @@ async fn git_cherry_pick(
 }
 
 #[tauri::command]
+async fn git_merge_branch(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    branch: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::merge_branch(&root, &branch).await
+}
+
+#[tauri::command]
+async fn git_resolve_conflict(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    rel_path: String,
+    side: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::resolve_conflict(&root, &rel_path, &side).await
+}
+
+#[tauri::command]
+async fn git_abort_merge(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+) -> Result<(), AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::abort_merge(&root).await
+}
+
+#[tauri::command]
 async fn git_stash_all(
     manager: State<'_, Arc<ProjectManager>>,
     project_id: String,
@@ -496,6 +526,9 @@ pub fn run() {
             git_reset_mixed,
             git_create_branch_at,
             git_cherry_pick,
+            git_merge_branch,
+            git_resolve_conflict,
+            git_abort_merge,
             git_stash_all,
             git_stash_paths,
             git_stash_list,

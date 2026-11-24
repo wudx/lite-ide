@@ -105,6 +105,22 @@ export function createTauriGitBackend(): GitBackend {
       await invoke<void>('git_cherry_pick', { projectId, sha })
     },
 
+    async mergeBranch(projectId: string, branch: string): Promise<void> {
+      await invoke<void>('git_merge_branch', { projectId, branch })
+    },
+
+    async resolveConflict(
+      projectId: string,
+      relPath: string,
+      side: 'ours' | 'theirs',
+    ): Promise<void> {
+      await invoke<void>('git_resolve_conflict', { projectId, relPath, side })
+    },
+
+    async abortMerge(projectId: string): Promise<void> {
+      await invoke<void>('git_abort_merge', { projectId })
+    },
+
     async stashAll(projectId: string, message?: string): Promise<void> {
       await invoke<void>('git_stash_all', { projectId, message: message ?? null })
     },
@@ -945,6 +961,50 @@ export function createMockGitBackend(): GitBackend {
         files: source.files.map((f) => ({ ...f })),
       })
       state.commitCount += 1
+    },
+
+    async mergeBranch(projectId: string, branch: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      const trimmed = branch.trim()
+      if (!trimmed || trimmed.startsWith('-') || /\s/.test(trimmed)) {
+        throw new Error(`fatal: '${branch}' is not a valid branch name`)
+      }
+      const target = state.branches.find((b) => b.name === trimmed)
+      if (!target) {
+        throw new Error(`merge: ${trimmed} - not something we can merge`)
+      }
+      if (target.current) return
+      const sha16 = (0x4000000 + (state.commitCount * 31 + state.log.length) * 0x9e3779)
+        .toString(16)
+        .padStart(7, '0')
+      state.log.unshift({
+        sha: sha16.padEnd(40, '0'),
+        shortSha: sha16,
+        subject: `Merge branch '${trimmed}' into ${state.branch}`,
+        body: null,
+        author: 'Demo User',
+        email: 'demo@example.com',
+        dateMs: Date.now(),
+        files: [],
+      })
+      state.commitCount += 1
+    },
+
+    async resolveConflict(
+      projectId: string,
+      relPath: string,
+      _side: 'ours' | 'theirs',
+    ): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
+      state.unstaged.delete(relPath)
+      state.staged.set(relPath, 'M')
+    },
+
+    async abortMerge(projectId: string): Promise<void> {
+      const state = getState(projectId)
+      if (!state.repo) throw new Error('not a git repository')
     },
 
     async stashAll(projectId: string, message?: string): Promise<void> {

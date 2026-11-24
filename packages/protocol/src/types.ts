@@ -177,6 +177,8 @@ export interface GitStatus {
   ahead: number
   behind: number
   entries: GitFileStatus[]
+  /** True when a merge, cherry-pick, or revert is currently in progress. */
+  merging?: boolean
 }
 
 export interface GitCommitResult {
@@ -211,6 +213,8 @@ export interface GitBranchInfo {
   remote: boolean
   /** Configured upstream tracking branch for local branches, if any. */
   upstream?: string | null
+  /** Path of another git worktree where this local branch is currently checked out, if any. */
+  worktreePath?: string | null
 }
 
 /** One entry from `git stash list`; `index` 0 is the newest entry. */
@@ -299,6 +303,12 @@ export interface GitBackend {
   createBranchAt(projectId: string, name: string, sha: string): Promise<void>
   /** Applies commit `sha` as a new commit on top of the current branch. */
   cherryPick(projectId: string, sha: string): Promise<void>
+  /** Merges `branch` into the current branch (`git merge --no-edit <branch>`). */
+  mergeBranch(projectId: string, branch: string): Promise<void>
+  /** Resolves a conflicted path with `--ours` or `--theirs` and stages it. */
+  resolveConflict(projectId: string, relPath: string, side: 'ours' | 'theirs'): Promise<void>
+  /** Aborts an in-progress merge, cherry-pick, or revert. */
+  abortMerge(projectId: string): Promise<void>
   /** Stashes all tracked + untracked changes; optional stash message. */
   stashAll(projectId: string, message?: string): Promise<void>
   /** Stashes only the given paths' changes (tracked and untracked). */

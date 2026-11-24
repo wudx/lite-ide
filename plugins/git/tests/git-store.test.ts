@@ -4,12 +4,14 @@ import {
   commitFileLetter,
   COMMITS_PAGE_SIZE,
   createGitStore,
+  extractWorktreeConflictPath,
   hasStagedChanges,
   hasUnstagedChanges,
   isStageableEntry,
   isUnmergedEntry,
   statusLetter,
   unstagePathsForEntry,
+  worktreeFolderName,
   type GitStore,
 } from '../src/git-store'
 
@@ -198,6 +200,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -263,6 +268,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -350,6 +358,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -436,6 +447,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -491,6 +505,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
         stashAll: async () => {},
         stashPaths: async () => {},
         stashList: async () => [],
@@ -570,6 +587,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -636,6 +656,9 @@ describe('git store (mock backend)', () => {
       resetMixed: async () => {},
       createBranchAt: async () => {},
       cherryPick: async () => {},
+      mergeBranch: async () => {},
+      resolveConflict: async () => {},
+      abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -822,6 +845,9 @@ describe('git store (mock backend)', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: stashAllSpy,
       stashPaths: stashPathsSpy,
       stashList: async () => [],
@@ -931,6 +957,9 @@ describe('git store history pagination', () => {
         resetMixed: async () => {},
         createBranchAt: async () => {},
         cherryPick: async () => {},
+        mergeBranch: async () => {},
+        resolveConflict: async () => {},
+        abortMerge: async () => {},
       stashAll: async () => {},
       stashPaths: async () => {},
       stashList: async () => [],
@@ -1043,5 +1072,55 @@ describe('commitFileLetter', () => {
     expect(commitFileLetter('diff --git a/x b/x\ndeleted file mode 100644\n')).toBe('D')
     expect(commitFileLetter('diff --git a/x b/x\nrename from old.txt\nrename to new.txt\n')).toBe('R')
     expect(commitFileLetter('diff --git a/x b/x\nindex 111..222\n--- a/x\n+++ b/x\n')).toBe('M')
+  })
+})
+
+describe('worktree helpers', () => {
+  it('extracts folder name from posix and windows paths', () => {
+    expect(worktreeFolderName('E:/workspace/repo-feature')).toBe('repo-feature')
+    expect(worktreeFolderName('E:\\workspace\\repo-feature\\')).toBe('repo-feature')
+    expect(worktreeFolderName('single-folder')).toBe('single-folder')
+  })
+
+  it('extracts conflict path from git switch worktree error', () => {
+    expect(
+      extractWorktreeConflictPath(
+        "git error: git switch: fatal: 'feature-ui' is already used by worktree at 'E:/workspace/repo-feature'",
+      ),
+    ).toBe('E:/workspace/repo-feature')
+    expect(extractWorktreeConflictPath('unrelated error')).toBeNull()
+  })
+
+  it('opens target worktree project and clears prior error', async () => {
+    const openProject = vi.fn(async () => {})
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend(), { openProject })
+    expect(await store.openWorktreeProject('E:/workspace/repo-feature')).toBe(true)
+    expect(openProject).toHaveBeenCalledWith('E:/workspace/repo-feature')
+    expect(store.error()).toBeNull()
+
+    const failingStore = createGitStore(DEMO_PROJECT, createMockGitBackend(), {
+      openProject: async () => {
+        throw new Error('directory missing')
+      },
+    })
+    expect(await failingStore.openWorktreeProject('E:/missing')).toBe(false)
+    expect(failingStore.error()).toContain('directory missing')
+  })
+})
+
+describe('mergeBranch', () => {
+  it('rejects empty branch name and delegates merge to backend', async () => {
+    const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
+    await store.refresh()
+    await store.ensureCommitsLoaded()
+    const beforeCount = store.commits().length
+
+    expect(await store.mergeBranch('   ')).toBe(false)
+    expect(store.error()).toContain('Branch name is empty')
+
+    expect(await store.mergeBranch('feat/demo')).toBe(true)
+    expect(store.error()).toBeNull()
+    expect(store.commits().length).toBe(beforeCount + 1)
+    expect(store.commits()[0].subject).toContain("Merge branch 'feat/demo'")
   })
 })

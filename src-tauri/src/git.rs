@@ -40,6 +40,8 @@ pub struct GitStatus {
     pub ahead: u32,
     pub behind: u32,
     pub entries: Vec<GitFileStatus>,
+    /// True when a merge, cherry-pick, or revert is currently in progress.
+    pub merging: bool,
 }
 
 impl Default for GitStatus {
@@ -51,6 +53,7 @@ impl Default for GitStatus {
             ahead: 0,
             behind: 0,
             entries: Vec::new(),
+            merging: false,
         }
     }
 }
@@ -77,6 +80,8 @@ pub struct GitBranchInfo {
     pub remote: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -228,7 +233,21 @@ pub async fn status(canonical_root: &Path) -> Result<GitStatus, AppError> {
         &["status", "--porcelain=v1", "-z", "-b", "--untracked-files=all"],
     )
     .await?;
-    Ok(parse_status(&stdout))
+    let mut parsed = parse_status(&stdout);
+    parsed.merging = has_in_progress_merge(canonical_root).await;
+    Ok(parsed)
+}
+
+async fn has_git_head_ref(canonical_root: &Path, ref_name: &str) -> bool {
+    run_git(canonical_root, &["rev-parse", "-q", "--verify", ref_name])
+        .await
+        .is_ok()
+}
+
+async fn has_in_progress_merge(canonical_root: &Path) -> bool {
+    has_git_head_ref(canonical_root, "MERGE_HEAD").await
+        || has_git_head_ref(canonical_root, "CHERRY_PICK_HEAD").await
+        || has_git_head_ref(canonical_root, "REVERT_HEAD").await
 }
 
 /// Runs `git <prefix_args...> -- <paths...>` in batches sized to stay well
@@ -566,7 +585,18 @@ pub async fn branches(canonical_root: &Path) -> Result<Vec<GitBranchInfo>, AppEr
         ],
     )
     .await?;
-    Ok(parse_branches(&stdout))
+
+    let mut worktree_branches = std::collections::HashMap::new();
+    if let Ok(wt_stdout) = run_git(canonical_root, &["worktree", "list", "--porcelain"]).await {
+        let current_key = normalize_worktree_key(&canonical_root.to_string_lossy());
+        for (wt_path, branch_name) in parse_worktrees(&wt_stdout) {
+            if normalize_worktree_key(&wt_path) != current_key {
+                worktree_branches.entry(branch_name).or_insert(wt_path);
+            }
+        }
+    }
+
+    Ok(parse_branches_with_worktrees(&stdout, &worktree_branches))
 }
 
 /// Recent commits on the current branch, newest first. A repository without
@@ -814,6 +844,63 @@ pub async fn cherry_pick(canonical_root: &Path, sha: &str) -> Result<(), AppErro
     Ok(())
 }
 
+/// `git merge --no-edit <branch>`: merges `branch` into the current branch.
+/// Conflicts surface git's stderr and leave the repository in its standard
+/// conflicted merge state for the user to resolve.
+pub async fn merge_branch(canonical_root: &Path, branch: &str) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let name = validate_branch_name(branch)?;
+    run_git(canonical_root, &["check-ref-format", "--branch", name]).await?;
+    run_git(canonical_root, &["merge", "--no-edit", name]).await?;
+    Ok(())
+}
+
+/// Resolves a conflicted file by checking out either `--ours` or `--theirs`
+/// and staging the result with `git add`.
+pub async fn resolve_conflict(
+    canonical_root: &Path,
+    rel_path: &str,
+    side: &str,
+) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    let side_flag = match side {
+        "ours" => "--ours",
+        "theirs" => "--theirs",
+        _ => return Err(AppError::Git(format!("invalid conflict side: '{side}'"))),
+    };
+    let paths = [rel_path.to_string()];
+    validate_pathspecs(&paths)?;
+    run_git(canonical_root, &["checkout", side_flag, "--", rel_path]).await?;
+    run_git(canonical_root, &["add", "-v", "--", rel_path]).await?;
+    Ok(())
+}
+
+/// Aborts an in-progress merge, cherry-pick, or revert.
+pub async fn abort_merge(canonical_root: &Path) -> Result<(), AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Err(AppError::Git("not a git repository".into()));
+    }
+    if has_git_head_ref(canonical_root, "MERGE_HEAD").await {
+        run_git(canonical_root, &["merge", "--abort"]).await?;
+        return Ok(());
+    }
+    if has_git_head_ref(canonical_root, "CHERRY_PICK_HEAD").await {
+        run_git(canonical_root, &["cherry-pick", "--abort"]).await?;
+        return Ok(());
+    }
+    if has_git_head_ref(canonical_root, "REVERT_HEAD").await {
+        run_git(canonical_root, &["revert", "--abort"]).await?;
+        return Ok(());
+    }
+    Err(AppError::Git(
+        "no merge, cherry-pick, or revert in progress".into(),
+    ))
+}
+
 /// Validates an explicit stash message before handing it to `git stash push -m`.
 fn sanitize_stash_message(message: &str) -> Result<&str, AppError> {
     let trimmed = message.trim();
@@ -935,7 +1022,70 @@ pub fn parse_stash_list(raw: &str) -> Vec<GitStashEntry> {
     items
 }
 
+fn normalize_worktree_key(raw: &str) -> String {
+    let resolved = std::fs::canonicalize(raw)
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| raw.to_string());
+    let stripped = resolved.strip_prefix(r"\\?\").unwrap_or(&resolved);
+    let forward = stripped.replace('\\', "/");
+    let trimmed = if forward.len() > 1 {
+        forward.trim_end_matches('/')
+    } else {
+        forward.as_str()
+    };
+    if cfg!(windows) {
+        trimmed.to_ascii_lowercase()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Parses `git worktree list --porcelain` into `(worktree_path, branch_short_name)` pairs.
+/// Detached, bare, or incomplete records without a `refs/heads/` branch are skipped.
+pub fn parse_worktrees(raw: &str) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    let mut current_path: Option<String> = None;
+    let mut current_branch: Option<String> = None;
+
+    let flush = |path: &mut Option<String>,
+                 branch: &mut Option<String>,
+                 out: &mut Vec<(String, String)>| {
+        if let (Some(p), Some(b)) = (path.take(), branch.take()) {
+            out.push((p, b));
+        } else {
+            *path = None;
+            *branch = None;
+        }
+    };
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            flush(&mut current_path, &mut current_branch, &mut entries);
+            continue;
+        }
+        if let Some(path) = trimmed.strip_prefix("worktree ") {
+            current_path = Some(path.trim().to_string());
+        } else if let Some(branch_ref) = trimmed.strip_prefix("branch ") {
+            if let Some(short) = branch_ref.trim().strip_prefix("refs/heads/") {
+                current_branch = Some(short.to_string());
+            }
+        }
+    }
+    flush(&mut current_path, &mut current_branch, &mut entries);
+    entries
+}
+
+#[cfg(test)]
 pub fn parse_branches(raw: &str) -> Vec<GitBranchInfo> {
+    parse_branches_with_worktrees(raw, &std::collections::HashMap::new())
+}
+
+pub fn parse_branches_with_worktrees(
+    raw: &str,
+    worktree_branches: &std::collections::HashMap<String, String>,
+) -> Vec<GitBranchInfo> {
     let mut items = Vec::new();
     for line in raw.lines() {
         let mut parts = line.splitn(4, '\t');
@@ -946,15 +1096,23 @@ pub fn parse_branches(raw: &str) -> Vec<GitBranchInfo> {
         if short_name.is_empty() || full_ref.ends_with("/HEAD") {
             continue;
         }
+        let current = head.trim() == "*";
+        let remote = full_ref.starts_with("refs/remotes/");
+        let worktree_path = if !remote && !current {
+            worktree_branches.get(short_name).cloned()
+        } else {
+            None
+        };
         items.push(GitBranchInfo {
             name: short_name.to_string(),
-            current: head.trim() == "*",
-            remote: full_ref.starts_with("refs/remotes/"),
+            current,
+            remote,
             upstream: if upstream.is_empty() {
                 None
             } else {
                 Some(upstream.to_string())
             },
+            worktree_path,
         });
     }
     items.sort_by(|a, b| {
@@ -2064,5 +2222,135 @@ mod repo_tests {
         );
         // Invalid revisions remain rejected.
         assert!(read_blob(&root, "--all", "img.png").await.is_err());
+    }
+
+    #[test]
+    fn parses_worktree_porcelain_and_attaches_to_branches() {
+        let wt_raw = "\
+worktree E:/workspace/repo-main
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/main
+
+worktree E:/workspace/repo-feature
+HEAD 2222222222222222222222222222222222222222
+branch refs/heads/feature-ui
+
+worktree E:/workspace/detached-wt
+HEAD 3333333333333333333333333333333333333333
+detached
+";
+        let worktrees = parse_worktrees(wt_raw);
+        assert_eq!(
+            worktrees,
+            vec![
+                ("E:/workspace/repo-main".to_string(), "main".to_string()),
+                ("E:/workspace/repo-feature".to_string(), "feature-ui".to_string()),
+            ]
+        );
+
+        let mut map = std::collections::HashMap::new();
+        map.insert("feature-ui".to_string(), "E:/workspace/repo-feature".to_string());
+        let branches_raw = "*\tmain\trefs/heads/main\torigin/main\n \tfeature-ui\trefs/heads/feature-ui\t\n \torigin/feature-ui\trefs/remotes/origin/feature-ui\t\n";
+        let list = parse_branches_with_worktrees(branches_raw, &map);
+        assert_eq!(list[0].name, "main");
+        assert_eq!(list[0].worktree_path, None);
+        assert_eq!(list[1].name, "feature-ui");
+        assert_eq!(
+            list[1].worktree_path.as_deref(),
+            Some("E:/workspace/repo-feature")
+        );
+        assert_eq!(list[2].name, "origin/feature-ui");
+        assert_eq!(list[2].worktree_path, None);
+    }
+
+    #[tokio::test]
+    async fn branches_reports_other_worktree_path() {
+        let dir = tempdir().unwrap();
+        let main_root = std::fs::canonicalize(dir.path()).unwrap().join("main-repo");
+        let wt_root = std::fs::canonicalize(dir.path()).unwrap().join("wt-feature");
+        std::fs::create_dir_all(&main_root).unwrap();
+
+        git_ok(&main_root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&main_root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&main_root, &["config", "user.name", "Test"]).await;
+        std::fs::write(main_root.join("a.txt"), "hello").unwrap();
+        git_ok(&main_root, &["add", "--", "a.txt"]).await;
+        git_ok(&main_root, &["commit", "-q", "-m", "init"]).await;
+
+        let wt_arg = wt_root
+            .to_string_lossy()
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&wt_root.to_string_lossy())
+            .to_string();
+        git_ok(&main_root, &["worktree", "add", "-b", "feat-wt", &wt_arg]).await;
+
+        let main_branches = branches(&main_root).await.unwrap();
+        let main_entry = main_branches.iter().find(|b| b.name == "main").unwrap();
+        let feat_entry = main_branches.iter().find(|b| b.name == "feat-wt").unwrap();
+        assert!(main_entry.current);
+        assert_eq!(main_entry.worktree_path, None);
+        assert!(!feat_entry.current);
+        assert!(feat_entry.worktree_path.is_some());
+        assert_eq!(
+            normalize_worktree_key(feat_entry.worktree_path.as_deref().unwrap()),
+            normalize_worktree_key(&wt_arg)
+        );
+    }
+
+    #[tokio::test]
+    async fn merge_branch_merges_and_surfaces_conflicts_in_real_repo() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q", "-b", "main"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+
+        std::fs::write(root.join("a.txt"), "base\n").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        // Clean fast-forward merge from a feature branch.
+        checkout_branch(&root, "feat-clean", true).await.unwrap();
+        std::fs::write(root.join("b.txt"), "feature").unwrap();
+        git_ok(&root, &["add", "--", "b.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "feat clean"]).await;
+
+        checkout_branch(&root, "main", false).await.unwrap();
+        merge_branch(&root, "feat-clean").await.unwrap();
+        assert_eq!(std::fs::read_to_string(root.join("b.txt")).unwrap(), "feature");
+
+        // Conflicting merge surfaces an error and leaves UU conflict status.
+        checkout_branch(&root, "feat-conflict", true).await.unwrap();
+        std::fs::write(root.join("a.txt"), "from-feature\n").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "conflict feat"]).await;
+
+        checkout_branch(&root, "main", false).await.unwrap();
+        std::fs::write(root.join("a.txt"), "from-main\n").unwrap();
+        git_ok(&root, &["add", "--", "a.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "conflict main"]).await;
+
+        assert!(merge_branch(&root, "feat-conflict").await.is_err());
+        let letters = status_letters(&root).await;
+        assert!(letters.iter().any(|(x, y, p)| *x == 'U' && *y == 'U' && p == "a.txt"));
+
+        // Invalid branch names remain rejected.
+        assert!(merge_branch(&root, "--abort").await.is_err());
+
+        // `status` reports merging = true while MERGE_HEAD is present.
+        let st = status(&root).await.unwrap();
+        assert!(st.merging);
+
+        // Resolving with --ours stages the file and clears UU status.
+        resolve_conflict(&root, "a.txt", "ours").await.unwrap();
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap().trim(), "from-main");
+        let letters_after = status_letters(&root).await;
+        assert!(!letters_after.iter().any(|(x, y, _)| *x == 'U' || *y == 'U'));
+
+        // Aborting restores clean state and clears merging flag.
+        abort_merge(&root).await.unwrap();
+        let st_aborted = status(&root).await.unwrap();
+        assert!(!st_aborted.merging);
+        assert!(st_aborted.entries.is_empty());
     }
 }

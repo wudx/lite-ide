@@ -20,6 +20,7 @@ import {
   synthesizeAddedDiff,
   type DiffRow,
 } from './diff-parse'
+import GitConflictResolver from './GitConflictResolver'
 import GitDiffImage from './GitDiffImage'
 import GitDiffTable from './GitDiffTable'
 import {
@@ -285,11 +286,10 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
         let text = ''
         let nextImageBlobs: { oldBase64: string | null; newBase64: string | null } | null = null
 
-        if (imageFile()) {
-          if (!commitSha && current && isUnmergedEntry(current)) {
-            text = `diff --cc ${props.file.relPath}`
-          } else {
-            const untracked = !commitSha && !staged && current !== undefined && isUntrackedEntry(current)
+        if (!commitSha && current && isUnmergedEntry(current)) {
+          text = `diff --cc ${props.file.relPath}`
+        } else if (imageFile()) {
+          const untracked = !commitSha && !staged && current !== undefined && isUntrackedEntry(current)
             const deleted = !commitSha && !staged && current?.y === 'D'
             const oldRev = commitSha ? `${commitSha}^` : staged ? 'HEAD' : ':0'
             const newRev = commitSha ? commitSha : staged ? ':0' : 'worktree'
@@ -323,7 +323,6 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
             if (seq !== fetchSeq) return
             nextImageBlobs = { oldBase64: oldBlob, newBase64: newBlob }
             text = svgPatch
-          }
         } else if (commitSha) {
           const files = await backendRef.show(props.file.projectId, commitSha, [
             props.file.relPath,
@@ -429,6 +428,8 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
   })
 
   const bodyState = createMemo<DiffBodyState>(() => {
+    const currentEntry = entry()
+    if (!rev() && currentEntry && isUnmergedEntry(currentEntry)) return 'combined'
     const current = parsed()
     if (current?.isCombined) return 'combined'
     if (isImageView()) {
@@ -626,9 +627,11 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
           >
             <Switch>
               <Match when={bodyState() === 'combined'}>
-                <div class="flex-1 flex items-center justify-center px-6 text-center text-xs text-[var(--text-muted)]">
-                  {i18n.t('git.diff.conflictUnsupported')}
-                </div>
+                <GitConflictResolver
+                  scope={props.scope}
+                  relPath={props.file.relPath}
+                  isBinary={props.file.isBinary}
+                />
               </Match>
               <Match when={bodyState() === 'binary'}>
                 <div class="flex-1 flex items-center justify-center px-6 text-center text-xs text-[var(--text-muted)]">

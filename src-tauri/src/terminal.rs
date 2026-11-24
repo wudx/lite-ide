@@ -584,10 +584,10 @@ mod tests {
 
     #[test]
     fn build_default_command_strips_windows_verbatim_prefix() {
-        let (cmd, _label) = build_default_command(Path::new(r"\\?\E:\ProjectsCocos\Arrow-Cube-fengling"));
+        let (cmd, _label) = build_default_command(Path::new(r"\\?\E:\workspace\sample-project"));
         assert_eq!(
             cmd.get_cwd().and_then(|p| p.to_str()),
-            Some(r"E:\ProjectsCocos\Arrow-Cube-fengling")
+            Some(r"E:\workspace\sample-project")
         );
     }
 }

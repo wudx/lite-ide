@@ -93,6 +93,8 @@ export interface GitStore {
   /** Fetches the next history page and appends it. */
   loadMoreCommits(): Promise<void>
   checkoutBranch(name: string, create?: boolean): Promise<boolean>
+  /** Opens or focuses the workspace folder for another git worktree. */
+  openWorktreeProject(worktreePath: string): Promise<boolean>
   /**
    * Resets the current branch to `sha` (mixed): the index follows the target
    * commit and every difference stays in the worktree as unstaged changes.
@@ -103,6 +105,12 @@ export interface GitStore {
   createBranchAt(name: string, sha: string): Promise<boolean>
   /** Applies commit `sha` as a new commit on the current branch. */
   cherryPick(sha: string): Promise<boolean>
+  /** Merges `branch` into the current branch (`git merge --no-edit`). */
+  mergeBranch(branch: string): Promise<boolean>
+  /** Resolves a conflicted path with `--ours` or `--theirs` and stages it. */
+  resolveConflict(relPath: string, side: 'ours' | 'theirs'): Promise<boolean>
+  /** Aborts an in-progress merge, cherry-pick, or revert. */
+  abortMerge(): Promise<boolean>
   handleFsDelta(delta: { affectedPaths: string[]; overflow: boolean }): void
   stage(relPaths: string[]): Promise<void>
   unstage(relPaths: string[]): Promise<void>
@@ -203,8 +211,25 @@ export function commitFileLetter(patch: string): string {
   return 'M'
 }
 
+export function worktreeFolderName(worktreePath: string): string {
+  const normalized = worktreePath.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized) return worktreePath
+  const idx = normalized.lastIndexOf('/')
+  return idx === -1 ? normalized : normalized.slice(idx + 1)
+}
+
+/**
+ * Extracts the target worktree path from a git switch conflict error such as:
+ * `fatal: 'branch' is already used by worktree at 'E:/path/to/worktree'`.
+ */
+export function extractWorktreeConflictPath(errorMessage: string): string | null {
+  const match = errorMessage.match(/is already used by worktree at ['"]([^'"]+)['"]/)
+  return match?.[1]?.trim() || null
+}
+
 export interface GitStoreOptions {
   readonly t?: TranslateFn
+  readonly openProject?: (rootPath: string) => Promise<unknown>
 }
 
 export function createGitStore(
@@ -572,6 +597,19 @@ export function createGitStore(
       })
     },
 
+    async openWorktreeProject(worktreePath: string): Promise<boolean> {
+      const trimmed = worktreePath.trim()
+      if (!trimmed || !options?.openProject) return false
+      try {
+        await options.openProject(trimmed)
+        setError(null)
+        return true
+      } catch (err) {
+        setError(formatErrorMessage(err))
+        return false
+      }
+    },
+
     async resetToCommit(sha: string): Promise<boolean> {
       if (committing() || mutating()) return false
       return enqueueWrite(async () => {
@@ -631,6 +669,75 @@ export function createGitStore(
         // (cherry-pick conflicts surface here) and history gains a head row.
         const statusError = await fetchStatus(false)
         setError(pickError ?? statusError)
+        if (ok && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
+        return ok
+      })
+    },
+
+    async mergeBranch(branch: string): Promise<boolean> {
+      const trimmed = branch.trim()
+      if (!trimmed) {
+        setError(t('git.error.emptyBranch', undefined, 'Branch name is empty.'))
+        return false
+      }
+      if (committing() || mutating()) return false
+
+      return enqueueWrite(async () => {
+        let mergeError: string | null = null
+        let ok = false
+        try {
+          await backend.mergeBranch(projectId, trimmed)
+          ok = true
+        } catch (err) {
+          mergeError = formatErrorMessage(err)
+        }
+        const [statusError, branchError] = await Promise.all([
+          fetchStatus(false),
+          fetchBranches(false),
+        ])
+        setError(mergeError ?? statusError ?? branchError)
+        if (ok && commitsLoaded) {
+          await loadCommitsPage(false)
+        }
+        return ok
+      })
+    },
+
+    async resolveConflict(relPath: string, side: 'ours' | 'theirs'): Promise<boolean> {
+      if (committing() || mutating()) return false
+      return enqueueWrite(async () => {
+        let resolveError: string | null = null
+        let ok = false
+        try {
+          await backend.resolveConflict(projectId, relPath, side)
+          ok = true
+        } catch (err) {
+          resolveError = formatErrorMessage(err)
+        }
+        const statusError = await fetchStatus(false)
+        setError(resolveError ?? statusError)
+        return ok
+      })
+    },
+
+    async abortMerge(): Promise<boolean> {
+      if (committing() || mutating()) return false
+      return enqueueWrite(async () => {
+        let abortError: string | null = null
+        let ok = false
+        try {
+          await backend.abortMerge(projectId)
+          ok = true
+        } catch (err) {
+          abortError = formatErrorMessage(err)
+        }
+        const [statusError, branchError] = await Promise.all([
+          fetchStatus(false),
+          fetchBranches(false),
+        ])
+        setError(abortError ?? statusError ?? branchError)
         if (ok && commitsLoaded) {
           await loadCommitsPage(false)
         }
