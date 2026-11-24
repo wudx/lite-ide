@@ -154,3 +154,88 @@ test('empty preview page hints Ctrl+P and double-clicking it creates an untitled
 
   expect(consoleErrors).toEqual([])
 })
+
+test('suppresses browser context menu globally including git stash and diff views', async ({
+  page,
+}) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  // Install a bubble-phase observer on window after WorkbenchShell mounts so we
+  // see the final `defaultPrevented` state for every contextmenu event.
+  await page.evaluate(() => {
+    const events: Array<{ defaultPrevented: boolean; tag: string | null }> = []
+    ;(window as unknown as { __contextMenuEvents: typeof events }).__contextMenuEvents = events
+    window.addEventListener('contextmenu', (e) => {
+      events.push({
+        defaultPrevented: e.defaultPrevented,
+        tag: e.target instanceof Element ? e.target.tagName : null,
+      })
+    })
+  })
+
+  const readRecordedEvents = () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __contextMenuEvents: Array<{ defaultPrevented: boolean; tag: string | null }>
+          }
+        ).__contextMenuEvents,
+    )
+
+  // 1. Empty preview pane
+  const emptyPane = page.getByRole('button', { name: '双击空白处新建未命名文件' })
+  await expect(emptyPane).toBeVisible()
+  await emptyPane.click({ button: 'right' })
+  let events = await readRecordedEvents()
+  expect(events).toHaveLength(1)
+  expect(events[0].defaultPrevented).toBe(true)
+
+  // 2. Git stash section
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  await expect(page.getByTestId('git-branch-name')).toHaveText('main')
+  const stashSection = page.getByTestId('git-stash-section')
+  await expect(stashSection).toBeVisible()
+  await stashSection.click({ button: 'right' })
+  events = await readRecordedEvents()
+  expect(events).toHaveLength(2)
+  expect(events[1].defaultPrevented).toBe(true)
+
+  // 3. Git diff preview area
+  const stagedRow = page.locator('[data-git-section="staged"][data-git-path="README.md"]')
+  await stagedRow.click()
+  const diffView = page.getByTestId('git-diff-view')
+  await expect(diffView).toBeVisible()
+  await expect(diffView.locator('[data-git-diff-kind="add"]')).toBeVisible()
+  await diffView.click({ button: 'right' })
+  events = await readRecordedEvents()
+  expect(events).toHaveLength(3)
+  expect(events[2].defaultPrevented).toBe(true)
+
+  // 4. Git commit message textarea
+  const commitInput = page.getByPlaceholder('输入提交信息 (Ctrl+Enter 提交)')
+  await expect(commitInput).toBeVisible()
+  await commitInput.click({ button: 'right' })
+  events = await readRecordedEvents()
+  expect(events).toHaveLength(4)
+  expect(events[3]).toEqual({ defaultPrevented: true, tag: 'TEXTAREA' })
+
+  // Custom context menus still open and remain unaffected.
+  await stagedRow.click({ button: 'right' })
+  await expect(page.getByTestId('git-context-menu')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('git-context-menu')).toBeHidden()
+
+  await page.getByRole('button', { name: '资源管理器', exact: true }).click()
+  await openExplorerContextMenu(page)
+  await expect(page.getByRole('menu')).toBeVisible()
+
+  expect(consoleErrors).toEqual([])
+})

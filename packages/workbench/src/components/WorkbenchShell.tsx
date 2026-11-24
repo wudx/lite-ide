@@ -395,7 +395,15 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         .catch(() => {})
     }
 
+    const handleContextMenu = (e: MouseEvent) => {
+      if (e.defaultPrevented) return
+      e.preventDefault()
+    }
+
     window.addEventListener('keydown', handleKeyDown, true)
+    // 在冒泡阶段全局屏蔽浏览器/WebView 原生右键菜单，让组件和插件的自定义
+    // onContextMenu 优先执行，其余未处理区域冒泡到此处后统一兜底拦截。
+    window.addEventListener('contextmenu', handleContextMenu)
     // beforeunload 拦截仅用于浏览器 mock 模式的刷新保护；Tauri 下 preventDefault
     // 会阻塞 webview 卸载，使已确认的 close()/destroy()（如"不保存退出"路径，此时
     // 脏缓冲仍在）静默失败，窗口无法关闭。
@@ -404,6 +412,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
     onCleanup(() => {
       window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('contextmenu', handleContextMenu)
       if (!isTauriEnvironment()) {
         window.removeEventListener('beforeunload', handleBeforeUnload)
       }
