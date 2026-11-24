@@ -1,0 +1,9 @@
+{
+  "id": "builtin.theme-gruvbox",
+  "name": "Gruvbox Theme",
+  "version": "0.1.0",
+  "author": "LiteIDE built-in",
+  "main": "plugin.js",
+  "format": "bundle",
+  "api": 2
+}

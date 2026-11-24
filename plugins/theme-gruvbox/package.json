@@ -1,0 +1,17 @@
+{
+  "name": "@lite-ide/plugin-theme-gruvbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build:plugin": "vite build",
+    "watch:plugin": "vite build --watch"
+  },
+  "dependencies": {
+    "@lite-ide/kernel": "workspace:*"
+  }
+}

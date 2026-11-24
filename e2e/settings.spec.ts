@@ -74,7 +74,7 @@ test('appearance section switches the three built-in themes and persists across 
   // Fresh profile boots into the dark theme.
   expect(await themeState(page)).toEqual({ theme: 'dark', dark: true, light: false })
 
-  await dialog.getByRole('button', { name: '浅色' }).click()
+  await dialog.getByRole('button', { name: '浅色', exact: true }).click()
   expect(await themeState(page)).toEqual({ theme: 'light', dark: false, light: true })
   await page.screenshot({ path: testInfo.outputPath('theme-light.png'), animations: 'disabled' })
 
@@ -108,7 +108,7 @@ test('plugin-contributed Nord theme appears in settings, applies inline variable
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
 
-  // The theme-nord plugin contributes a 4th entry to the appearance grid.
+  // The theme-nord plugin contributes an entry to the appearance grid.
   const nordButton = dialog.getByRole('button', { name: 'Nord 深色' })
   await expect(nordButton).toBeVisible()
   await nordButton.click()
@@ -174,6 +174,118 @@ test('plugin-contributed Nord theme appears in settings, applies inline variable
   }))
   expect(cleared.theme).toBe('dark')
   expect(cleared.appBg).toBe('')
+
+  expect(consoleErrors).toEqual([])
+})
+
+test('six built-in themes appear in a 3x2 grid, switch Gruvbox and Catppuccin Latte without FOUC', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors = trackConsoleErrors(page)
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+
+  await page.keyboard.press('Control+,')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+
+  // 外观设置共 6 套内置主题（3 深 + 3 浅），呈 3×2 网格整齐排列。
+  const themeCards = dialog.locator('section button')
+  await expect(themeCards).toHaveCount(6)
+  for (const label of [
+    '深色',
+    '浅色',
+    'Solarized Light',
+    'Nord 深色',
+    'Gruvbox 深色',
+    'Catppuccin 浅色',
+  ]) {
+    await expect(dialog.getByRole('button', { name: label, exact: true })).toBeVisible()
+  }
+  await page.screenshot({ path: testInfo.outputPath('theme-grid-6.png'), animations: 'disabled' })
+
+  // 切换到 Gruvbox 深色（嵌入式内置）。
+  await dialog.getByRole('button', { name: 'Gruvbox 深色', exact: true }).click()
+  const gruvboxState = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    dark: document.documentElement.classList.contains('dark'),
+    light: document.documentElement.classList.contains('light'),
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+    accent: document.documentElement.style.getPropertyValue('--accent'),
+  }))
+  expect(gruvboxState).toEqual({
+    theme: 'gruvbox-dark',
+    dark: true,
+    light: false,
+    appBg: '#282828',
+    accent: '#8ec07c',
+  })
+  await page.screenshot({ path: testInfo.outputPath('theme-gruvbox-dark.png'), animations: 'disabled' })
+
+  // 切换到 Catppuccin 浅色（第 6 套嵌入式内置浅色主题）。
+  await dialog.getByRole('button', { name: 'Catppuccin 浅色', exact: true }).click()
+  const latteState = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    dark: document.documentElement.classList.contains('dark'),
+    light: document.documentElement.classList.contains('light'),
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+    accent: document.documentElement.style.getPropertyValue('--accent'),
+  }))
+  expect(latteState).toEqual({
+    theme: 'catppuccin-latte',
+    dark: false,
+    light: true,
+    appBg: '#dce0e8',
+    accent: '#8839ef',
+  })
+  await page.screenshot({
+    path: testInfo.outputPath('theme-catppuccin-latte.png'),
+    animations: 'disabled',
+  })
+
+  // 重载验证 Catppuccin 浅色快照首帧直出，无暗色闪烁。
+  await page.keyboard.press('Escape')
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    const record = () => {
+      const val = document.documentElement?.dataset.theme
+      if (val && seen[seen.length - 1] !== val) seen.push(val)
+    }
+    record()
+    new MutationObserver(record).observe(document, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+    ;(window as unknown as { __seenThemes?: string[] }).__seenThemes = seen
+  })
+  await page.reload()
+  await expect(page.getByRole('tree')).toBeVisible()
+  const restored = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    light: document.documentElement.classList.contains('light'),
+    appBg: document.documentElement.style.getPropertyValue('--bg-app'),
+    seenThemes: (window as unknown as { __seenThemes?: string[] }).__seenThemes ?? [],
+  }))
+  expect(restored.theme).toBe('catppuccin-latte')
+  expect(restored.light).toBe(true)
+  expect(restored.appBg).toBe('#dce0e8')
+  expect(restored.seenThemes).not.toContain('dark')
+
+  // 打开 README.md 与 src/kernel.ts，验证浅色插件主题下 Markdown 标题与代码视图均清晰可读。
+  await page.getByRole('treeitem', { name: 'README.md' }).click()
+  const mdHeading = page.locator('.markdown-body h1').first()
+  await expect(mdHeading).toBeVisible()
+  await expect(mdHeading).toHaveCSS('color', 'rgb(76, 79, 105)')
+  await page.screenshot({
+    path: testInfo.outputPath('theme-catppuccin-latte-workspace.png'),
+    animations: 'disabled',
+  })
+
+  await page.getByRole('treeitem', { name: 'src' }).click()
+  await page.getByRole('treeitem', { name: 'kernel.ts' }).click()
+  await expect(page.locator('.cm-editor')).toBeVisible()
+  await expect(page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(239, 241, 245)')
 
   expect(consoleErrors).toEqual([])
 })
@@ -302,10 +414,12 @@ test('general section switches display language across the IDE and persists acro
     animations: 'disabled',
   })
 
-  // Also check Appearance section theme labels translated (including plugin Nord theme).
+  // Also check Appearance section theme labels translated (including all built-in theme plugins).
   await dialog.getByRole('button', { name: 'Appearance' }).click()
   await expect(dialog.getByRole('button', { name: 'Dark', exact: true })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Nord Dark' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Gruvbox Dark' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Catppuccin Latte' })).toBeVisible()
 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()

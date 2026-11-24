@@ -20,6 +20,8 @@ import { previewFallbackPlugin } from '../../../plugins/preview-fallback/src/ind
 import { previewImagePlugin } from '../../../plugins/preview-image/src/index'
 import { previewMarkdownPlugin } from '../../../plugins/preview-markdown/src/index'
 import { searchPlugin } from '../../../plugins/search/src/index'
+import { themeCatppuccinLattePlugin } from '../../../plugins/theme-catppuccin-latte/src/index'
+import { themeGruvboxPlugin } from '../../../plugins/theme-gruvbox/src/index'
 import { themeNordPlugin } from '../../../plugins/theme-nord/src/index'
 
 function createFakeI18nHost() {
@@ -185,6 +187,8 @@ describe('createI18nState', () => {
         previewAudioPlugin,
         previewFallbackPlugin,
         themeNordPlugin,
+        themeGruvboxPlugin,
+        themeCatppuccinLattePlugin,
       ]) {
         kernel.registerPlugin(plugin)
       }

@@ -265,6 +265,31 @@ describe('createThemeState', () => {
     expect(document.documentElement.style.getPropertyValue('--bg-app')).toBe('')
     expect(localStorage.getItem(THEME_SNAPSHOT_STORAGE_KEY)).toBeNull()
   })
+
+  it('deduplicates contributed themes by id while preserving built-in and earlier registrations', () => {
+    const fake = createFakeThemeHost()
+    const state = createThemeState(fake.host)
+
+    // 覆盖内置 id（dark）或同 id 多次注册时，均保留最先注册的条目。
+    fake.register({
+      id: 'dark',
+      label: 'Hijack Dark',
+      appearance: 'dark',
+      variables: { '--bg-app': '#000000' },
+    })
+    fake.register(NORD)
+    fake.register({
+      id: 'nord-dark',
+      label: 'Duplicate Nord',
+      appearance: 'dark',
+      variables: { '--bg-app': '#111111' },
+    })
+
+    const ids = state.themes().map((t) => t.id)
+    expect(ids).toEqual([...THEME_DEFINITIONS.map((t) => t.id), 'nord-dark'])
+    expect(state.themes().find((t) => t.id === 'dark')?.label).toBe('深色')
+    expect(state.themes().find((t) => t.id === 'nord-dark')?.label).toBe('Nord 深色')
+  })
 })
 
 describe('createSettingsDialogService', () => {

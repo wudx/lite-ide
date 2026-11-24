@@ -29,9 +29,9 @@ const BUILTIN_CATALOG: &[(&str, &str, &str, &[(&str, &str)])] = &[
         &[],
     ),
     (
-        "theme-gruvbox",
-        include_str!("../../samples/plugins/theme-gruvbox/plugin.json"),
-        include_str!("../../samples/plugins/theme-gruvbox/main.js"),
+        "theme-dracula",
+        include_str!("../../samples/plugins/theme-dracula/plugin.json"),
+        include_str!("../../samples/plugins/theme-dracula/main.js"),
         &[],
     ),
     (

@@ -1,0 +1,8 @@
+{
+  "id": "theme-dracula",
+  "name": "Dracula",
+  "version": "0.1.0",
+  "description": "Dracula 深色主题插件，演示外部插件贡献配色主题。",
+  "author": "LiteIDE Samples",
+  "main": "main.js"
+}

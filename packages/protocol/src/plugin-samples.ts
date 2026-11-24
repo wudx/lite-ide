@@ -1,5 +1,5 @@
-import gruvboxManifest from '../../../samples/plugins/theme-gruvbox/plugin.json?raw'
-import gruvboxMain from '../../../samples/plugins/theme-gruvbox/main.js?raw'
+import draculaManifest from '../../../samples/plugins/theme-dracula/plugin.json?raw'
+import draculaMain from '../../../samples/plugins/theme-dracula/main.js?raw'
 import bundleNotesManifest from '../../../samples/plugins/bundle-notes/plugin.json?raw'
 import bundleNotesMain from '../../../samples/plugins/bundle-notes/dist/plugin.js?raw'
 import bundleNotesCss from '../../../samples/plugins/bundle-notes/dist/plugin.css?raw'
@@ -27,7 +27,7 @@ export interface PluginSample {
  */
 export const BUILTIN_PLUGIN_SAMPLES: readonly PluginSample[] = [
   { manifest: JSON.parse(helloManifest), mainJs: helloMain, assets: {} },
-  { manifest: JSON.parse(gruvboxManifest), mainJs: gruvboxMain, assets: {} },
+  { manifest: JSON.parse(draculaManifest), mainJs: draculaMain, assets: {} },
   {
     manifest: JSON.parse(bundleNotesManifest),
     mainJs: bundleNotesMain,

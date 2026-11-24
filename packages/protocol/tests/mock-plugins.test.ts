@@ -53,15 +53,15 @@ describe('mock backend plugin management', () => {
 
   it('persists installed plugins across backend instances via localStorage', async () => {
     const first = createMockBackend()
-    await first.pluginInstallFromCatalog!('theme-gruvbox')
+    await first.pluginInstallFromCatalog!('theme-dracula')
 
     const second = createMockBackend()
     const list = await second.pluginList!()
     expect(list.plugins).toHaveLength(1)
-    expect(list.plugins[0].manifest.id).toBe('theme-gruvbox')
+    expect(list.plugins[0].manifest.id).toBe('theme-dracula')
 
-    const entry = await second.pluginReadEntry!('theme-gruvbox')
-    expect(entry).toContain("id: 'gruvbox-dark'")
+    const entry = await second.pluginReadEntry!('theme-dracula')
+    expect(entry).toContain("id: 'dracula'")
   })
 
   it('ignores corrupted localStorage content instead of throwing', async () => {

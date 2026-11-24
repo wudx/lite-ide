@@ -32,13 +32,18 @@ test('plugins section lists the catalog and installs the Hello Status plugin', a
   await expect(page.getByRole('tree')).toBeVisible()
 
   const dialog = await openPluginsSection(page)
-  // 嵌入式内置插件常驻已安装列表（可停用、不可卸载）：本期含 explorer/git/preview-code。
+  // 嵌入式内置插件常驻已安装列表（可停用、不可卸载）：含 explorer/git/preview-code 与三套内置主题插件。
   await expect(dialog.getByTestId('plugin-embedded-builtin.explorer')).toBeVisible()
   await expect(dialog.getByTestId('plugin-embedded-builtin.git')).toBeVisible()
   await expect(dialog.getByTestId('plugin-embedded-builtin.preview-markdown')).toBeVisible()
   await expect(dialog.getByTestId('plugin-embedded-builtin.preview-code')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-nord')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-gruvbox')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-catppuccin-latte')).toBeVisible()
   await expect(dialog.getByTestId('plugin-uninstall-builtin.explorer')).toHaveCount(0)
   await expect(dialog.getByTestId('plugin-uninstall-builtin.git')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-uninstall-builtin.theme-gruvbox')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-uninstall-builtin.theme-catppuccin-latte')).toHaveCount(0)
   await expect(dialog.getByText('可安装的插件')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('plugins-section.png'), animations: 'disabled' })
 
@@ -94,7 +99,7 @@ test('disable / re-enable toggles plugin contributions and persists across reloa
   expect(consoleErrors).toEqual([])
 })
 
-test('installing the Gruvbox theme plugin extends the appearance section live', async ({
+test('installing the Dracula theme plugin extends the appearance section live', async ({
   page,
 }, testInfo) => {
   const consoleErrors = trackConsoleErrors(page)
@@ -102,24 +107,24 @@ test('installing the Gruvbox theme plugin extends the appearance section live', 
   await expect(page.getByRole('tree')).toBeVisible()
 
   const dialog = await openPluginsSection(page)
-  await dialog.getByTestId('plugin-catalog-install-theme-gruvbox').click()
-  await expect(dialog.getByTestId('plugin-status-theme-gruvbox')).toHaveText('运行中')
+  await dialog.getByTestId('plugin-catalog-install-theme-dracula').click()
+  await expect(dialog.getByTestId('plugin-status-theme-dracula')).toHaveText('运行中')
 
   // The contributed theme appears in the appearance grid without a reload.
   await dialog.getByRole('button', { name: '外观' }).click()
-  const gruvbox = dialog.getByRole('button', { name: 'Gruvbox Dark' })
-  await expect(gruvbox).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('plugins-gruvbox-appearance.png'), animations: 'disabled' })
+  const dracula = dialog.getByRole('button', { name: 'Dracula' })
+  await expect(dracula).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('plugins-dracula-appearance.png'), animations: 'disabled' })
 
   // Applying it injects the plugin-provided inline variables.
-  await gruvbox.click()
+  await dracula.click()
   const state = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
     appBg: document.documentElement.style.getPropertyValue('--bg-app'),
     accent: document.documentElement.style.getPropertyValue('--accent'),
   }))
-  expect(state).toEqual({ theme: 'gruvbox-dark', appBg: '#282828', accent: '#8ec07c' })
-  await page.screenshot({ path: testInfo.outputPath('plugins-gruvbox-applied.png'), animations: 'disabled' })
+  expect(state).toEqual({ theme: 'dracula', appBg: '#282a36', accent: '#bd93f9' })
+  await page.screenshot({ path: testInfo.outputPath('plugins-dracula-applied.png'), animations: 'disabled' })
 
   expect(consoleErrors).toEqual([])
 })
@@ -133,27 +138,27 @@ test('uninstalling (two-click confirm) removes plugins and their contributions',
 
   const dialog = await openPluginsSection(page)
   await dialog.getByTestId('plugin-catalog-install-hello-status').click()
-  await dialog.getByTestId('plugin-catalog-install-theme-gruvbox').click()
+  await dialog.getByTestId('plugin-catalog-install-theme-dracula').click()
   await expect(page.getByText('你好，插件！')).toBeVisible()
-  await expect(dialog.getByTestId('plugin-status-theme-gruvbox')).toHaveText('运行中')
+  await expect(dialog.getByTestId('plugin-status-theme-dracula')).toHaveText('运行中')
 
-  // Gruvbox is the active theme; uninstalling it must fall back to dark.
+  // Dracula is the active theme; uninstalling it must fall back to dark.
   await dialog.getByRole('button', { name: '外观' }).click()
-  await dialog.getByRole('button', { name: 'Gruvbox Dark' }).click()
+  await dialog.getByRole('button', { name: 'Dracula' }).click()
   expect(await page.evaluate((k) => localStorage.getItem(k), THEME_STORAGE_KEY)).toBe(
-    'gruvbox-dark',
+    'dracula',
   )
   await dialog.getByRole('button', { name: '插件' }).click()
 
   // Uninstall needs a second confirming click.
-  await dialog.getByTestId('plugin-uninstall-theme-gruvbox').click()
-  await expect(dialog.getByTestId('plugin-uninstall-theme-gruvbox')).toHaveText(
+  await dialog.getByTestId('plugin-uninstall-theme-dracula').click()
+  await expect(dialog.getByTestId('plugin-uninstall-theme-dracula')).toHaveText(
     '再次点击确认卸载',
   )
   await page.screenshot({ path: testInfo.outputPath('plugins-uninstall-armed.png'), animations: 'disabled' })
-  await dialog.getByTestId('plugin-uninstall-theme-gruvbox').click()
+  await dialog.getByTestId('plugin-uninstall-theme-dracula').click()
 
-  await expect(dialog.getByTestId('plugin-status-theme-gruvbox')).toHaveCount(0)
+  await expect(dialog.getByTestId('plugin-status-theme-dracula')).toHaveCount(0)
   // 未知主题 id 回退内置 dark，存储 id 保留（ThemeState 既有行为）。
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
 
@@ -162,6 +167,8 @@ test('uninstalling (two-click confirm) removes plugins and their contributions',
   await expect(page.getByText('你好，插件！')).toHaveCount(0)
   // 用户插件全部卸载后，嵌入式内置插件仍在列且不受影响。
   await expect(dialog.getByTestId('plugin-embedded-builtin.theme-nord')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-gruvbox')).toBeVisible()
+  await expect(dialog.getByTestId('plugin-embedded-builtin.theme-catppuccin-latte')).toBeVisible()
   await expect(dialog.getByTestId('plugin-status-hello-status')).toHaveCount(0)
 
   // The store is emptied and catalog entries come back.

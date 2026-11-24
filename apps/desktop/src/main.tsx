@@ -41,6 +41,10 @@ import terminalSource from '../../../plugins/terminal/dist/plugin.js?raw'
 import terminalCss from '../../../plugins/terminal/dist/plugin.css?raw'
 import themeNordManifest from '../../../plugins/theme-nord/plugin.json'
 import themeNordSource from '../../../plugins/theme-nord/dist/plugin.js?raw'
+import themeGruvboxManifest from '../../../plugins/theme-gruvbox/plugin.json'
+import themeGruvboxSource from '../../../plugins/theme-gruvbox/dist/plugin.js?raw'
+import themeCatppuccinLatteManifest from '../../../plugins/theme-catppuccin-latte/plugin.json'
+import themeCatppuccinLatteSource from '../../../plugins/theme-catppuccin-latte/dist/plugin.js?raw'
 
 const OPEN_PROJECTS_STORAGE_KEY = 'lite-ide.openProjects.v1'
 const ACTIVE_PROJECT_STORAGE_KEY = 'lite-ide.activeProject.v1'
@@ -67,6 +71,14 @@ const EMBEDDED_PLUGINS: EmbeddedPluginSource[] = [
   {
     manifest: asManifest(themeNordManifest),
     source: themeNordSource,
+  },
+  {
+    manifest: asManifest(themeGruvboxManifest),
+    source: themeGruvboxSource,
+  },
+  {
+    manifest: asManifest(themeCatppuccinLatteManifest),
+    source: themeCatppuccinLatteSource,
   },
   {
     manifest: asManifest(previewMarkdownManifest),

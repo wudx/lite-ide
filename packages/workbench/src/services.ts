@@ -654,11 +654,22 @@ export function createThemeState(
   options: ThemeStateOptions = {},
 ): ThemeStateService {
   // 内置主题在前，插件贡献主题按注册顺序追加；贡献点变化时响应式重算。
-  // 贡献项与 ThemeDefinition 结构一致，直接透传以免 <For> 按引用重挂载格子。
-  const registry = createMemo<readonly ThemeDefinition[]>(() => [
-    ...THEME_DEFINITIONS,
-    ...(kernel?.contributions('theme')() ?? []),
-  ])
+  // 按 id 去重保留先注册者（防止残留外部同名主题重复出卡），并保持原引用以免 <For> 重挂载格子。
+  const registry = createMemo<readonly ThemeDefinition[]>(() => {
+    const seen = new Set<string>()
+    const result: ThemeDefinition[] = []
+    for (const def of THEME_DEFINITIONS) {
+      if (seen.has(def.id)) continue
+      seen.add(def.id)
+      result.push(def)
+    }
+    for (const def of kernel?.contributions('theme')() ?? []) {
+      if (seen.has(def.id)) continue
+      seen.add(def.id)
+      result.push(def)
+    }
+    return result
+  })
   const initialThemeId = readStoredThemeId()
   const initialSnapshot = readStoredThemeSnapshot(initialThemeId)
   // index.html 首帧脚本可能已把快照变量写入 root.style，先登记进清除集合以免切换时残留。

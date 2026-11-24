@@ -1,7 +1,13 @@
-// LiteIDE 外部插件入口：贡献 Gruvbox Dark 配色主题。
-// variables 以行内样式覆盖 app.css 的 :root 默认值，未列出的变量回退
-// 到默认值；切换到其他主题时由 ThemeState 统一清除注入。
-const GRUVBOX_VARIABLES = {
+import type { Plugin } from '@lite-ide/kernel'
+
+/**
+ * Gruvbox 深色主题（经典暖灰底色 + 鼠尾草绿强调 + 暖金/珊瑚/水绿语法与图标色）。
+ *
+ * 通过 `theme` 贡献点注册：激活时变量以行内样式覆盖 app.css 的 `:root`
+ * 默认值，因此需要携带完整的关键表面与前景色集合（含 color-scheme 与文件图标色板）；
+ * 切走到其他主题时由 ThemeState 统一清除注入的变量。
+ */
+const GRUVBOX_VARIABLES: Record<string, string> = {
   'color-scheme': 'dark',
 
   /* Layered surfaces (bg0–bg2) */
@@ -73,15 +79,44 @@ const GRUVBOX_VARIABLES = {
   '--diff-add-text': '#b8bb26',
   '--diff-del-bg': 'rgba(251, 73, 52, 0.12)',
   '--diff-del-text': '#fb4934',
+
+  /* File icon palette */
+  '--icon-folder': 'rgba(142, 192, 124, 0.92)',
+  '--icon-folder-ignored': '#7c6f64',
+  '--icon-default': '#a89984',
+  '--icon-ts': '#83a598',
+  '--icon-js': '#fabd2f',
+  '--icon-style': '#8ec07c',
+  '--icon-web': '#fe8019',
+  '--icon-shell': '#b8bb26',
+  '--icon-code': '#fe8019',
+  '--icon-json': '#fabd2f',
+  '--icon-doc': '#8ec07c',
+  '--icon-image': '#d3869b',
+  '--icon-audio': '#fb4934',
+  '--icon-config': '#a89984',
 }
 
-liteide.plugin({
+export const themeGruvboxPlugin: Plugin = {
+  id: 'builtin.theme-gruvbox',
+  name: 'Gruvbox Theme',
   activate(ctx) {
-    return ctx.contribute('theme', {
+    ctx.contribute('i18n', {
+      locale: 'zh-CN',
+      messages: { 'theme.gruvbox-dark': 'Gruvbox 深色' },
+    })
+    ctx.contribute('i18n', {
+      locale: 'en-US',
+      messages: { 'theme.gruvbox-dark': 'Gruvbox Dark' },
+    })
+    ctx.contribute('theme', {
       id: 'gruvbox-dark',
-      label: 'Gruvbox Dark',
+      label: 'Gruvbox 深色',
+      labelKey: 'theme.gruvbox-dark',
       appearance: 'dark',
       variables: GRUVBOX_VARIABLES,
     })
   },
-})
+}
+
+export default themeGruvboxPlugin
