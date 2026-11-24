@@ -1,5 +1,5 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import { formatErrorMessage, type GitFileStatus } from '@lite-ide/protocol'
+import { formatErrorMessage, type GitFileStatus, type GitStashEntry } from '@lite-ide/protocol'
 import {
   AiModelKey,
   ConfirmDialogKey,
@@ -20,7 +20,9 @@ import ListTree from 'lucide-solid/icons/list-tree'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import Minus from 'lucide-solid/icons/minus'
 import Plus from 'lucide-solid/icons/plus'
+import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import Sparkles from 'lucide-solid/icons/sparkles'
+import Trash from 'lucide-solid/icons/trash'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
 import {
@@ -524,6 +526,82 @@ function SectionHeader(props: SectionHeaderProps) {
   )
 }
 
+interface StashSectionProps {
+  scope: ProjectScope
+  stashes: GitStashEntry[]
+  disabled: boolean
+  onRestore: (entry: GitStashEntry) => void
+  onDrop: (entry: GitStashEntry) => void
+}
+
+/** The project's stash stack with per-entry restore (apply) and drop actions. */
+function StashSection(props: StashSectionProps) {
+  const i18n = getI18n(props.scope)
+  const [collapsed, setCollapsed] = createSignal(false)
+
+  return (
+    <div class="mt-2" data-testid="git-stash-section">
+      <SectionHeader
+        title={i18n.t('git.stash.section')}
+        count={props.stashes.length}
+        collapsed={collapsed()}
+        onToggle={() => setCollapsed((prev) => !prev)}
+        class="pt-1"
+      />
+      <Show when={!collapsed()}>
+        <Show
+          when={props.stashes.length > 0}
+          fallback={
+            <div class="mx-1.5 px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">
+              {i18n.t('git.stash.empty')}
+            </div>
+          }
+        >
+          <For each={props.stashes}>
+            {(stash) => (
+              <div
+                data-git-stash={stash.refName}
+                title={stash.message}
+                class="group/row mx-1.5 rounded-lg flex items-center gap-1.5 pr-1.5 pl-2 h-[26px] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors duration-100"
+              >
+                <Archive class="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                <span class="truncate flex-1 leading-normal min-w-0">{stash.message}</span>
+                <span class="shrink-0 text-[10px] text-[var(--text-muted)] leading-normal">
+                  {stash.date}
+                </span>
+                <span class="shrink-0 hidden group-hover/row:flex group-focus-within/row:flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    data-testid={`git-stash-restore-${stash.index}`}
+                    aria-label={i18n.t('git.stash.restorePath', { ref: stash.refName })}
+                    title={i18n.t('git.stash.restore')}
+                    disabled={props.disabled}
+                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    onClick={() => props.onRestore(stash)}
+                  >
+                    <RotateCcw class="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`git-stash-drop-${stash.index}`}
+                    aria-label={i18n.t('git.stash.dropPath', { ref: stash.refName })}
+                    title={i18n.t('git.stash.drop')}
+                    disabled={props.disabled}
+                    class="p-0.5 rounded-md text-[var(--text-muted)] hover:text-[var(--danger-text)] hover:bg-[var(--danger-bg)] disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    onClick={() => props.onDrop(stash)}
+                  >
+                    <Trash class="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              </div>
+            )}
+          </For>
+        </Show>
+      </Show>
+    </div>
+  )
+}
+
 export const GitView: Component<{ scope: ProjectScope }> = (props) => {
   const store = props.scope.get(GitStoreKey)
   const dialogs = props.scope.tryGet(ConfirmDialogKey)
@@ -603,11 +681,22 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     setBranchActiveIdx(0)
   })
 
+  // Fetch the stash stack when the repository becomes available (panel opened
+  // or project switched); stash writes refresh it themselves afterwards. Guard
+  // with a flag so status-only refreshes don't re-run `git stash list`.
+  let stashesLoadedForRepo = false
   // Leave popover menus behind when the repository disappears (project switch).
   createEffect(() => {
-    if (repo()) return
-    if (branchMenuOpen()) {
-      setBranchMenuOpen(false)
+    if (!repo()) {
+      if (branchMenuOpen()) {
+        setBranchMenuOpen(false)
+      }
+      stashesLoadedForRepo = false
+      return
+    }
+    if (!stashesLoadedForRepo) {
+      stashesLoadedForRepo = true
+      void store.loadStashes()
     }
   })
 
@@ -953,6 +1042,27 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
     if (paths.length > 0) void store.stashPaths(paths)
     closeCtxMenu()
     clearSelection()
+  }
+
+  async function restoreStash(entry: GitStashEntry) {
+    await store.stashRestore(entry.index)
+  }
+
+  async function dropStash(entry: GitStashEntry) {
+    // Fail closed: dropping a stash entry is irreversible.
+    if (!dialogs) return
+    const choice = await dialogs.confirm({
+      title: i18n.t('git.stash.dropTitle'),
+      message: i18n.t('git.stash.dropMessage', { ref: entry.refName }),
+      details: [entry.message],
+      actions: [
+        { id: 'drop', label: i18n.t('git.stash.dropConfirm'), variant: 'danger' },
+        { id: 'cancel', label: i18n.t('git.discard.cancel'), variant: 'secondary' },
+      ],
+      cancelId: 'cancel',
+    })
+    if (choice !== 'drop') return
+    void store.stashDrop(entry.index)
   }
 
   async function commitFromBox() {
@@ -1445,6 +1555,15 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
                 </Show>
               </Show>
             </Show>
+
+            {/* Stash stack stays visible even when the working tree is clean. */}
+            <StashSection
+              scope={props.scope}
+              stashes={store.stashes()}
+              disabled={store.committing() || store.mutating()}
+              onRestore={(entry) => void restoreStash(entry)}
+              onDrop={(entry) => void dropStash(entry)}
+            />
           </div>
         </Show>
       </Show>
