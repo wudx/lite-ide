@@ -5,7 +5,7 @@
 轻量级跨平台桌面 IDE，基于 **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4** 构建。
 
 <p align="center">
-  <img src="docs/screenshots/workspace-dark.png" alt="LiteIDE 深色工作区（代码编辑与集成终端）" width="100%" />
+  <img src="docs/screenshots/workspace-overview.png" alt="LiteIDE 工作区总览（多文件标签、TypeScript 语法高亮与集成终端）" width="100%" />
 </p>
 
 ## 为什么做这个项目
@@ -25,6 +25,7 @@
 | --- | --- |
 | 安装包 (`LiteIDE_0.1.0_x64-setup.exe`) | **4.27 MB** |
 | 安装包 (`LiteIDE_0.1.0_x64_en-US.msi`) | **5.91 MB** |
+| 便携版 (`LiteIDE_0.1.0_x64-portable.zip`) | **5.83 MB** |
 | 主程序单文件 (`lite-ide.exe`) | **15.52 MB** |
 
 ### 2. 克制的内存占用
@@ -36,19 +37,52 @@
 - **Rust 原生后端**：文件列举（遵循 `.gitignore`）、`notify` 防抖监听、自定义协议文件流传输与 `portable-pty` 终端均由 Rust 原生承载，冷启动即开即用，不卡界面主线程；
 - **微内核 + 轻量化符号索引**：用轻量正则启发式符号索引提供 `F12` 跳转定义 / `Shift+F12` 查看引用 / `Ctrl+F12` 转到实现，无需拉起沉重的语言服务器进程即可完成日常代码浏览。
 
+---
+
+## 核心功能与界面展示
+
+### 1. Git 集成与并排差异对比
+- **完整日常工作流**：支持分支切换、Git Worktree 切换与合并、文件暂存/取消暂存/丢弃更改、Stash 存储管理。
+- **双模式 Diff 对比**：支持**统一（Unified）**与**并排（Split）**视图，清晰高亮增删行；支持工作区与暂存区差异快速切换。
+- **AI 提交信息生成**：支持接入模型配置一键生成 Commit Message（支持 `Ctrl+Enter` 快捷提交）。
+
 <p align="center">
-  <img src="docs/screenshots/git-markdown-light.png" alt="LiteIDE 浅色主题（Git 面板与 Markdown 预览）" width="100%" />
+  <img src="docs/screenshots/git-diff-nord.png" alt="Nord 主题下的 Git 面板与并排 Diff 对比" width="100%" />
 </p>
 
-## 核心能力（全插件化）
+### 2. 全局查找与多模态文件预览
+- **全局文本查找**：支持跨工作区快速检索，提供区分大小写、全词匹配、正则表达式以及自定义目录排除规则，点击结果直接跳转并高亮对应代码行。
+- **开箱即用的多格式预览**：无需额外安装插件或本地办公软件，原生支持多种文件格式：
+  - **Excel 表格（`.xlsx`）**：按需懒加载解析，直接渲染行列数据与结构信息，并支持**表格比对**差异；
+  - **Markdown 富文本**：基于 `markdown-it` + `DOMPurify` 安全渲染，支持相对路径图片、SVG 图表与站内代码文件一键跳转；
+  - **图片 / SVG**：棋盘格透明背景、滚轮缩放与拖拽平移；
+  - **音频文件**：内置波形渲染与播放控制；
+  - **兜底元信息卡**：任意未知或二进制文件自动展示大小、编码与基础元信息，不会卡死编辑器。
 
-LiteIDE 采用**微内核 + 插件化**架构，全部 12 个内置功能均以标准外部插件 `bundle` 格式构建加载，可按需启用或停用，也支持安装外部目录插件：
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/search-xlsx-preview.png" alt="全局查找与 Excel 表格预览" />
+      <p align="center"><sub>全局正则查找 + <code>.xlsx</code> 表格即时预览</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/git-markdown-light.png" alt="Catppuccin 浅色主题与 Markdown 预览" />
+      <p align="center"><sub>Catppuccin 浅色主题 + Markdown 富文本与 SVG 渲染</sub></p>
+    </td>
+  </tr>
+</table>
 
-- **工作区与编辑**：多项目标签页隔离、虚拟文件树与全局文本搜索、CodeMirror 6 代码编辑（全语言高亮 + 符号导航）。
-- **多模态文件预览**：Markdown 富文本（`markdown-it` + `DOMPurify`）、图片/SVG（缩放拖拽）、音频波形播放、Git Diff、Excel（`.xlsx` 懒加载）与二进制元信息兜底卡片。
-- **Git 与终端**：侧栏 Git 状态管理（分支、暂存/提交、AI 生成提交信息、Stash）+ 底部 `xterm.js` 集成终端。
-- **主题与多语言**：内置 Default Dark、Nord、Gruvbox、Catppuccin Latte 多套主题，支持 `zh-CN` / `en-US` 实时切换。
-- **双模式运行**：桌面端走 Tauri IPC；纯浏览器执行 `pnpm dev` 自动启用内置 Mock 后端并预载示例项目，无需编译 Rust 即可快速预览与调试 UI。
+### 3. 多项目工作区、代码编辑与集成终端
+- **多项目隔离标签页**：同时打开多个仓库时，每个项目拥有独立的文件树、搜索历史、Git 状态、打开文件标签与终端会话，切换互不干扰。
+- **CodeMirror 6 代码编辑**：支持主流编程语言语法高亮、页内查找替换（`Ctrl+F`）、`F12` 跳转定义 / `Shift+F12` 查看引用 / `Ctrl+F12` 转到实现（支持 `Ctrl+点击` 跳转）以及状态栏编码/行列统计。
+- **多标签集成终端**：底部集成 `xterm.js` + `portable-pty` 原生终端，支持 `Ctrl+\`` 一键呼出或折叠，隐藏时保活运行中的命令输出。
+
+### 4. 全插件化架构、多主题与双模式运行
+- **12 个内置插件按需启停**：Explorer、Search、Git、Terminal、4 个主题插件、5 个预览器均采用标准 `bundle` 格式加载，可在设置中自由启用或停用，也支持从本地文件夹安装第三方插件。
+- **多主题与多语言**：内置 Default Dark、Nord、Gruvbox、Catppuccin Latte 多套配色，支持跟随系统与 `zh-CN` / `en-US` 实时切换。
+- **桌面端 + 浏览器双模式**：桌面端通过 Tauri IPC 调用原生能力；浏览器运行 `pnpm dev` 自动启用内置 Mock 后端与伪终端并预载示例项目，无需编译 Rust 即可快速体验或调试界面。
+
+---
 
 ## 目录结构
 

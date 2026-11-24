@@ -5,7 +5,7 @@
 A lightweight, cross-platform desktop IDE built with **Tauri v2 (Rust) + SolidJS + Tailwind CSS v4**.
 
 <p align="center">
-  <img src="docs/screenshots/workspace-dark.png" alt="LiteIDE Dark Workspace (Code Editor & Integrated Terminal)" width="100%" />
+  <img src="docs/screenshots/workspace-overview.png" alt="LiteIDE Workspace Overview (Multi-file tabs, TypeScript highlighting & integrated terminal)" width="100%" />
 </p>
 
 ## Why LiteIDE?
@@ -25,6 +25,7 @@ Built on **Tauri v2 + Rust**, LiteIDE reuses the OS native WebView (Windows WebV
 | --- | --- |
 | Installer (`LiteIDE_0.1.0_x64-setup.exe`) | **4.27 MB** |
 | Installer (`LiteIDE_0.1.0_x64_en-US.msi`) | **5.91 MB** |
+| Portable (`LiteIDE_0.1.0_x64-portable.zip`) | **5.83 MB** |
 | Standalone Binary (`lite-ide.exe`) | **15.52 MB** |
 
 ### 2. Disciplined Memory Usage
@@ -36,19 +37,52 @@ Built on **Tauri v2 + Rust**, LiteIDE reuses the OS native WebView (Windows WebV
 - **Rust Native Backend**: `.gitignore`-aware directory listing, `notify` debounced file watching, custom protocol file streaming, and `portable-pty` terminal sessions all run natively in Rust without blocking the UI thread.
 - **Micro-Kernel + Lightweight Symbol Index**: A regex-based heuristic symbol index powers `F12` Go to Definition, `Shift+F12` Find References, and `Ctrl+F12` Go to Implementation—handling everyday code navigation without spinning up heavy language server processes.
 
+---
+
+## Features & Showcase
+
+### 1. Git Integration & Side-by-Side Diff
+- **Complete Daily Workflow**: Branch switching, Git worktree switching and merging, stage/unstage/discard changes, and Stash management.
+- **Dual Diff Modes**: Supports both **Unified** and **Side-by-Side (Split)** diff views with crisp red/green line highlights and quick switching between working tree and staged changes.
+- **AI Commit Message Generation**: Optional model integration to generate commit messages in one click (with `Ctrl+Enter` to commit).
+
 <p align="center">
-  <img src="docs/screenshots/git-markdown-light.png" alt="LiteIDE Light Theme (Git Panel & Markdown Preview)" width="100%" />
+  <img src="docs/screenshots/git-diff-nord.png" alt="Git Panel & Side-by-Side Diff in Nord Theme" width="100%" />
 </p>
 
-## Core Capabilities (Plugin-First)
+### 2. Global Search & Multi-Modal Previews
+- **Workspace-Wide Search**: Fast text search across projects with case-sensitive, whole-word, regex toggles, and custom exclude rules—click any match to jump directly to the highlighted line.
+- **Built-In Multi-Format Previews**: Inspect common assets directly without external apps:
+  - **Excel Spreadsheets (`.xlsx`)**: Lazy-loaded parser renders sheets, dimensions, and rows directly, with built-in **table diffing**;
+  - **Rich Markdown**: Safe rendering via `markdown-it` + `DOMPurify`, supporting relative images, SVG diagrams, and clickable workspace file links;
+  - **Images / SVG**: Checkerboard transparency background, zoom, and pan;
+  - **Audio Files**: Built-in waveform visualization and playback controls;
+  - **Binary Fallback Card**: Displays size, encoding, and metadata for arbitrary binary files without freezing the editor.
 
-LiteIDE uses a **micro-kernel + plugin** architecture. All 12 built-in features are compiled and loaded in the standard external `bundle` plugin format—meaning they can be enabled/disabled on demand, and external directory plugins can be installed alongside them:
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/search-xlsx-preview.png" alt="Global Search & Excel Spreadsheet Preview" />
+      <p align="center"><sub>Workspace Search + Instant <code>.xlsx</code> Spreadsheet Preview</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/git-markdown-light.png" alt="Catppuccin Light Theme & Markdown Preview" />
+      <p align="center"><sub>Catppuccin Latte Theme + Rich Markdown & SVG Preview</sub></p>
+    </td>
+  </tr>
+</table>
 
-- **Workspace & Editing**: Isolated multi-project tabs, virtualized file explorer, workspace-wide text search, and CodeMirror 6 editing (full language highlighting + symbol navigation).
-- **Multi-Modal File Previews**: Rich Markdown (`markdown-it` + `DOMPurify`), Image/SVG (zoom & pan), Audio waveform playback, Git Diff, Excel (`.xlsx` lazy-loaded), and a fallback binary metadata card.
-- **Git & Terminal**: Sidebar Git panel (branches, stage/commit, AI commit message generation, Stash) + bottom `xterm.js` integrated terminal.
-- **Themes & i18n**: Built-in Default Dark, Nord, Gruvbox, and Catppuccin Latte themes, with live `zh-CN` / `en-US` language switching.
-- **Dual Runtime Modes**: Uses Tauri IPC on desktop, and automatically falls back to a built-in Mock backend with preloaded sample projects when running `pnpm dev` in a browser—ideal for rapid UI preview and debugging without compiling Rust.
+### 3. Multi-Project Workbench, Code Editing & Terminal
+- **Isolated Multi-Project Tabs**: Open multiple repositories simultaneously—each project keeps its own file tree, search state, Git status, open file tabs, and terminal sessions.
+- **CodeMirror 6 Editing**: Full-language syntax highlighting, in-file Find & Replace (`Ctrl+F`), `F12` Go to Definition / `Shift+F12` References / `Ctrl+F12` Implementations (plus `Ctrl+Click` navigation), and status bar line/column/encoding stats.
+- **Multi-Tab Integrated Terminal**: Powered by `xterm.js` + `portable-pty`, toggled via `Ctrl+\`` with background session keep-alive so running commands never lose output when hidden.
+
+### 4. Plugin-First Architecture, Themes & Dual Modes
+- **12 Built-In Plugins**: Explorer, Search, Git, Terminal, 4 theme plugins, and 5 previewers are all compiled as standard `bundle` plugins—toggle them anytime in Settings or install external plugins from a local folder.
+- **Themes & i18n**: Ships with Default Dark, Nord, Gruvbox, and Catppuccin Latte, plus live `zh-CN` / `en-US` language switching.
+- **Desktop + Browser Dual Mode**: Runs over Tauri IPC on desktop, and automatically falls back to a built-in Mock backend with a pseudo-shell and sample projects on `pnpm dev`—great for quick previews and UI development without compiling Rust.
+
+---
 
 ## Project Structure
 
