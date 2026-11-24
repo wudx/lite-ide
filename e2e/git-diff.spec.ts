@@ -191,3 +191,50 @@ test('diff preview toggles between unified and side-by-side views and persists',
 
   expect(consoleErrors).toEqual([])
 })
+
+test('sticky hunk headers use an opaque background and isolate each hunk', async ({
+  page,
+}, testInfo) => {
+  const consoleErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => consoleErrors.push(String(err)))
+
+  await page.goto('/')
+  await expect(page.getByRole('tree')).toBeVisible()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+
+  await page.locator(`[data-git-section="unstaged"][data-git-path="${UNSTAGED_FILE}"]`).click()
+  const diffView = page.getByTestId('git-diff-view')
+  await expect(diffView).toBeVisible()
+
+  const assertOpaqueStickyHeader = async () => {
+    const hunk = diffView.locator('[data-git-diff-hunk]').first()
+    await expect(hunk).toBeVisible()
+    const header = hunk.locator('[data-git-diff-hunk-header]')
+    await expect(header).toBeVisible()
+    const styles = await header.evaluate((el) => {
+      const computed = getComputedStyle(el)
+      return { position: computed.position, backgroundColor: computed.backgroundColor }
+    })
+    expect(styles.position).toBe('sticky')
+    const rgbaMatch = /^rgba?\(([^)]+)\)$/.exec(styles.backgroundColor)
+    expect(rgbaMatch).not.toBeNull()
+    const parts = rgbaMatch![1].split(',').map((p) => Number(p.trim()))
+    const alpha = parts.length === 4 ? parts[3] : 1
+    expect(alpha).toBe(1)
+  }
+
+  // Unified view
+  await assertOpaqueStickyHeader()
+  await page.screenshot({ path: testInfo.outputPath('git-diff-sticky-unified.png'), animations: 'disabled' })
+
+  // Split view
+  await diffView.locator('[data-testid="git-diff-view-toggle"][data-view="split"]').click()
+  await expect(diffView).toHaveAttribute('data-git-diff-view-mode', 'split')
+  await assertOpaqueStickyHeader()
+  await page.screenshot({ path: testInfo.outputPath('git-diff-sticky-split.png'), animations: 'disabled' })
+
+  expect(consoleErrors).toEqual([])
+})

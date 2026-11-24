@@ -113,7 +113,7 @@ export const GitDiffTable: Component<{ model: TableDiffModel }> = (props) => {
                 <td
                   data-git-diff-table-hunk=""
                   colSpan={totalColumns()}
-                  class="sticky top-0 z-10 truncate px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] border-y border-[var(--border-subtle)]"
+                  class="sticky top-0 z-10 truncate px-2 py-0.5 bg-[var(--bg-editor-chrome)] text-[var(--accent)] border-y border-[var(--border-subtle)]"
                 >
                   {group.header}
                 </td>

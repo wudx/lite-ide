@@ -672,8 +672,11 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                       >
                         <For each={diff().hunks}>
                           {(hunk) => (
-                            <>
-                              <div class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]">
+                            <div data-git-diff-hunk="">
+                              <div
+                                data-git-diff-hunk-header=""
+                                class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-editor-chrome)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]"
+                              >
                                 {hunk.header}
                               </div>
                               <For each={splitHunkRows(hunk.rows)}>
@@ -684,7 +687,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                                   </div>
                                 )}
                               </For>
-                            </>
+                            </div>
                           )}
                         </For>
                       </div>
@@ -696,8 +699,11 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                       >
                         <For each={diff().hunks}>
                           {(hunk) => (
-                            <>
-                              <div class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-inset)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]">
+                            <div data-git-diff-hunk="" class="min-w-full w-fit">
+                              <div
+                                data-git-diff-hunk-header=""
+                                class="sticky top-0 z-10 px-2 py-0.5 bg-[var(--bg-editor-chrome)] text-[var(--accent)] whitespace-pre border-y border-[var(--border-subtle)]"
+                              >
                                 {hunk.header}
                               </div>
                               <For each={hunk.rows}>
@@ -723,7 +729,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                                   </div>
                                 )}
                               </For>
-                            </>
+                            </div>
                           )}
                         </For>
                       </div>

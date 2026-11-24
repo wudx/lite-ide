@@ -192,10 +192,10 @@ export const XlsxTablePreview: Component<PreviewProps> = (props) => {
                 </colgroup>
                 <thead>
                   <tr>
-                    <td class="sticky top-0 z-10 w-9 bg-[var(--bg-inset)] border-b border-[var(--border-subtle)]" />
+                    <td class="sticky top-0 z-10 w-9 bg-[var(--bg-editor-chrome)] border-b border-[var(--border-subtle)]" />
                     <For each={rows()![0].slice(0, MAX_PREVIEW_COLUMNS)}>
                       {(cell) => (
-                        <td class="sticky top-0 z-10 min-w-0 px-1.5 py-0.5 bg-[var(--bg-inset)] font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)] truncate">
+                        <td class="sticky top-0 z-10 min-w-0 px-1.5 py-0.5 bg-[var(--bg-editor-chrome)] font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)] truncate">
                           {cell}
                         </td>
                       )}
