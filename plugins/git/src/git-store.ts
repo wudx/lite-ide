@@ -759,7 +759,9 @@ export function createGitStore(
       if (fsRefreshTimer) clearTimeout(fsRefreshTimer)
       fsRefreshTimer = setTimeout(() => {
         fsRefreshTimer = null
-        void refresh()
+        // Background FS-triggered refreshes must not wipe an active action error
+        // (e.g. a merge/checkout failure whose git command touched .git/index).
+        void fetchStatus(false)
         // External commits (e.g. made in a terminal) change the log too; a
         // no-op when the history view was never opened this session.
         if (commitsLoaded) {

@@ -544,6 +544,40 @@ describe('git store (mock backend)', () => {
     }
   })
 
+  it('preserves active action error when handleFsDelta refreshes status', async () => {
+    vi.useFakeTimers()
+    try {
+      let statusCalls = 0
+      const mock = createMockGitBackend()
+      const backend: GitBackend = {
+        ...mock,
+        status: async (projectId) => {
+          statusCalls += 1
+          return mock.status(projectId)
+        },
+        mergeBranch: async () => {
+          throw new Error('git merge: local changes would be overwritten')
+        },
+      }
+
+      const store = createGitStore(DEMO_PROJECT, backend)
+      await store.refresh()
+      expect(await store.mergeBranch('feat')).toBe(false)
+      expect(store.error()).toContain('local changes would be overwritten')
+      const callsAfterMerge = statusCalls
+
+      store.handleFsDelta({
+        affectedPaths: ['.git/index'],
+        overflow: false,
+      })
+      await vi.advanceTimersByTimeAsync(500)
+      expect(statusCalls).toBe(callsAfterMerge + 1)
+      expect(store.error()).toContain('local changes would be overwritten')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('pushes committed changes, clears ahead count, and surfaces push errors', async () => {
     const store = createGitStore(DEMO_PROJECT, createMockGitBackend())
     await store.refresh()

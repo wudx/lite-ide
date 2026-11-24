@@ -28,6 +28,7 @@ import Sparkles from 'lucide-solid/icons/sparkles'
 import Trash from 'lucide-solid/icons/trash'
 import Undo2 from 'lucide-solid/icons/undo-2'
 import Upload from 'lucide-solid/icons/upload'
+import X from 'lucide-solid/icons/x'
 import {
   createEffect,
   createMemo,
@@ -1470,7 +1471,19 @@ export const GitView: Component<{ scope: ProjectScope }> = (props) => {
           const conflictPath = () => extractWorktreeConflictPath(msg())
           return (
             <div class="mx-2 mt-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[var(--danger-text)] bg-[var(--danger-bg)] border border-[var(--danger-border)] break-words flex flex-col gap-1.5">
-              <span>{msg()}</span>
+              <div class="flex items-start gap-1.5">
+                <span class="flex-1 min-w-0">{msg()}</span>
+                <button
+                  type="button"
+                  data-testid="git-error-dismiss"
+                  aria-label={i18n.t('git.error.dismiss')}
+                  title={i18n.t('git.error.dismiss')}
+                  class="shrink-0 p-0.5 rounded hover:bg-[var(--bg-hover)] text-[var(--danger-text)] opacity-75 hover:opacity-100 transition-opacity"
+                  onClick={() => store.setError(null)}
+                >
+                  <X class="w-3 h-3" />
+                </button>
+              </div>
               <Show when={conflictPath()}>
                 {(wtPath) => (
                   <button
