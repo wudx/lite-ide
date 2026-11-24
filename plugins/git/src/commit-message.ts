@@ -1,4 +1,7 @@
 import type { GitDiffFile, GitFileStatus } from '@lite-ide/protocol'
+import { DEFAULT_COMMIT_SYSTEM_PROMPT } from '@lite-ide/workbench'
+
+export { DEFAULT_COMMIT_SYSTEM_PROMPT }
 
 /**
  * Prompt assembly for AI commit-message generation. Kept free of SolidJS and
@@ -33,14 +36,6 @@ export interface CommitPrompt {
   system: string
   user: string
 }
-
-export const DEFAULT_COMMIT_SYSTEM_PROMPT = [
-  '你是一名资深软件工程师，请根据提供的代码变更生成一条 Git 提交信息。',
-  '要求：',
-  '1. 首行使用 Conventional Commits 格式「type(scope): 描述」，type 从 feat/fix/docs/style/refactor/perf/test/build/ci/chore 中选择；描述简明扼要，结尾不加句号。',
-  '2. 空一行后可用「- 」开头的要点列出主要改动，最多 5 条；改动很小时省略正文。',
-  '3. 只输出提交信息本身，不要输出 Markdown 代码块、解释或任何额外内容。',
-].join('\n')
 
 /** Extensions considered "key code files" for the priority ranking. */
 const CODE_EXTENSIONS = new Set([

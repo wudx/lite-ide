@@ -4,6 +4,7 @@ import {
   AI_PROVIDER_PRESETS,
   createAiModelService,
   DEFAULT_AI_PROVIDER_ID,
+  DEFAULT_COMMIT_SYSTEM_PROMPT,
 } from '../src/ai-model'
 
 const COMPLETION_PAYLOAD = {
@@ -271,5 +272,21 @@ describe('createAiModelService storage sanitation', () => {
     const ai = createAiModelService()
     expect(ai.providerId()).toBe(DEFAULT_AI_PROVIDER_ID)
     expect(ai.providers().deepseek?.baseUrl).toBe('https://api.deepseek.com')
+    expect(ai.commitPrompt()).toBe(DEFAULT_COMMIT_SYSTEM_PROMPT)
+  })
+
+  it('defaults commitPrompt to DEFAULT_COMMIT_SYSTEM_PROMPT when unset or blank', () => {
+    const fresh = createAiModelService()
+    expect(fresh.commitPrompt()).toBe(DEFAULT_COMMIT_SYSTEM_PROMPT)
+
+    localStorage.setItem(
+      AI_MODEL_STORAGE_KEY,
+      JSON.stringify({ providerId: 'deepseek', providers: {}, commitPrompt: '   ' }),
+    )
+    const blank = createAiModelService()
+    expect(blank.commitPrompt()).toBe(DEFAULT_COMMIT_SYSTEM_PROMPT)
+
+    blank.setCommitPrompt('Custom prompt')
+    expect(createAiModelService().commitPrompt()).toBe('Custom prompt')
   })
 })

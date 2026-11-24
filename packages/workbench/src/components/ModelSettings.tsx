@@ -8,7 +8,7 @@ import Plus from 'lucide-solid/icons/plus'
 import RotateCcw from 'lucide-solid/icons/rotate-ccw'
 import Trash from 'lucide-solid/icons/trash'
 import { createSignal, For, Show } from 'solid-js'
-import { AiModelKey } from '../ai-model'
+import { AiModelKey, DEFAULT_COMMIT_SYSTEM_PROMPT } from '../ai-model'
 import { getI18n } from '../i18n'
 
 export interface ModelSettingsProps {
@@ -375,18 +375,36 @@ export function ModelSettings(props: ModelSettingsProps) {
       </section>
 
       <section>
-        <h3 class="text-xs font-semibold text-[var(--text-primary)] leading-normal">
-          {i18n.t('settings.models.commitPromptHeading')}
-        </h3>
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-xs font-semibold text-[var(--text-primary)] leading-normal">
+            {i18n.t('settings.models.commitPromptHeading')}
+          </h3>
+          <button
+            type="button"
+            data-testid="ai-commit-prompt-reset"
+            disabled={ai.commitPrompt() === DEFAULT_COMMIT_SYSTEM_PROMPT}
+            title={i18n.t('settings.models.resetPromptTitle')}
+            onClick={() => ai.setCommitPrompt(DEFAULT_COMMIT_SYSTEM_PROMPT)}
+            class={`${ghostButtonClass} inline-flex items-center gap-1 h-[24px] px-2`}
+          >
+            <RotateCcw class="w-3 h-3" />
+            <span>{i18n.t('settings.models.resetPrompt')}</span>
+          </button>
+        </div>
         <p class="text-[11px] text-[var(--text-muted)] mt-1 mb-2 leading-relaxed">
           {i18n.t('settings.models.commitPromptDescription')}
         </p>
         <textarea
           data-testid="ai-commit-prompt"
-          rows={4}
+          rows={6}
           placeholder={i18n.t('settings.models.commitPromptPlaceholder')}
           value={ai.commitPrompt()}
           onInput={(e) => ai!.setCommitPrompt(e.currentTarget.value)}
+          onBlur={(e) => {
+            if (!e.currentTarget.value.trim()) {
+              ai!.setCommitPrompt(DEFAULT_COMMIT_SYSTEM_PROMPT)
+            }
+          }}
           class="w-full resize-y rounded-lg bg-[var(--bg-inset)] border border-[var(--border-subtle)] focus:border-[var(--accent-border)] focus:bg-[var(--bg-inset-focus)] outline-none px-2.5 py-1.5 text-[11.5px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-normal transition-all font-mono"
         />
       </section>

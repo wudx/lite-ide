@@ -99,6 +99,15 @@ export interface AiModelService {
 export const AI_MODEL_STORAGE_KEY = 'lite-ide.ai-model.v1'
 export const DEFAULT_AI_PROVIDER_ID: AiProviderId = 'deepseek'
 
+/** Default system prompt used when generating Git commit messages. */
+export const DEFAULT_COMMIT_SYSTEM_PROMPT = [
+  '你是一名资深软件工程师，请根据提供的代码变更生成一条 Git 提交信息。',
+  '要求：',
+  '1. 首行使用 Conventional Commits 格式「type(scope): 描述」，type 从 feat/fix/docs/style/refactor/perf/test/build/ci/chore 中选择；描述简明扼要，结尾不加句号。',
+  '2. 空一行后可用「- 」开头的要点列出主要改动，最多 5 条；改动很小时省略正文。',
+  '3. 只输出提交信息本身，不要输出 Markdown 代码块、解释或任何额外内容。',
+].join('\n')
+
 export const AiModelKey = createServiceKey<AiModelService>('workbench.aiModel')
 
 const CUSTOM_LABEL_FALLBACK = 'Custom'
@@ -209,7 +218,7 @@ function readStoredSettings(): StoredSettings {
       AI_PROVIDER_PRESETS.map((preset) => [preset.id, defaultProviderConfig(preset)]),
     ),
     customProviders: [],
-    commitPrompt: '',
+    commitPrompt: DEFAULT_COMMIT_SYSTEM_PROMPT,
   }
   if (typeof localStorage === 'undefined') return fallback
   try {
@@ -234,7 +243,10 @@ function readStoredSettings(): StoredSettings {
       providerId: resolveStoredProviderId(record.providerId, customProviders),
       providers,
       customProviders,
-      commitPrompt: typeof record.commitPrompt === 'string' ? record.commitPrompt : '',
+      commitPrompt:
+        typeof record.commitPrompt === 'string' && record.commitPrompt.trim().length > 0
+          ? record.commitPrompt
+          : DEFAULT_COMMIT_SYSTEM_PROMPT,
     }
   } catch {
     return fallback

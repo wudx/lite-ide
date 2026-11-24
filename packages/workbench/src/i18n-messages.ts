@@ -105,8 +105,10 @@ export const WORKBENCH_ZH_CN: Record<string, string> = {
   'settings.models.resetDefaultsTitle': '恢复该服务商的默认接口地址与模型',
   'settings.models.commitPromptHeading': '提交信息提示词',
   'settings.models.commitPromptDescription':
-    '生成 Git 提交信息时使用的系统指令，留空使用默认提示词。',
+    '生成 Git 提交信息时使用的系统指令，可直接在此基础上修改。',
   'settings.models.commitPromptPlaceholder': '例如：请用英文提交信息，遵循 Conventional Commits…',
+  'settings.models.resetPrompt': '恢复默认提示词',
+  'settings.models.resetPromptTitle': '恢复为默认的 Git 提交信息系统提示词',
   'settings.models.testConnection': '测试连接',
   'settings.models.testing': '测试中…',
   'settings.models.testOk': '连接成功',
@@ -346,9 +348,11 @@ export const WORKBENCH_EN_US: Record<string, string> = {
   'settings.models.resetDefaultsTitle': 'Restore the default base URL and model for this provider',
   'settings.models.commitPromptHeading': 'Commit Message Prompt',
   'settings.models.commitPromptDescription':
-    'System instruction used when generating Git commit messages. Leave empty for the default prompt.',
+    'System instruction used when generating Git commit messages. Edit directly as needed.',
   'settings.models.commitPromptPlaceholder':
     'e.g. Use English commit messages following Conventional Commits…',
+  'settings.models.resetPrompt': 'Reset prompt',
+  'settings.models.resetPromptTitle': 'Restore the default Git commit message system prompt',
   'settings.models.testConnection': 'Test Connection',
   'settings.models.testing': 'Testing…',
   'settings.models.testOk': 'Connection successful',
