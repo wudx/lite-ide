@@ -174,6 +174,8 @@ export const GIT_ZH_CN: Record<string, string> = {
   'git.diff.refresh': '刷新差异',
   'git.diff.loading': '正在加载差异…',
   'git.diff.empty': '此对比范围暂无差异。',
+  'git.diff.empty.eol':
+    '未检测到文本内容差异：当前文件仅存在换行符（LF/CRLF）或 core.autocrlf 规范化差异。',
   'git.diff.fileUnchanged': '文件暂无更改。',
   'git.diff.binary': '二进制文件的差异无法以文本展示。',
   'git.diff.conflictUnsupported': '该文件存在合并冲突，暂不支持在差异预览中展示。',
@@ -358,6 +360,8 @@ export const GIT_EN_US: Record<string, string> = {
   'git.diff.refresh': 'Refresh diff',
   'git.diff.loading': 'Loading diff…',
   'git.diff.empty': 'No changes in this comparison.',
+  'git.diff.empty.eol':
+    'No content differences: this file only has line-ending (LF/CRLF) or core.autocrlf normalization differences.',
   'git.diff.fileUnchanged': 'File has no changes.',
   'git.diff.binary': 'Binary file differences cannot be shown as text.',
   'git.diff.conflictUnsupported': 'This file has merge conflicts; combined diffs are not shown here.',

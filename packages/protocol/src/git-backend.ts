@@ -5,6 +5,7 @@ import type {
   GitBranchInfo,
   GitCommitInfo,
   GitCommitResult,
+  GitDiffEmptyReason,
   GitDiffFile,
   GitDiffOptions,
   GitLogOptions,
@@ -58,6 +59,17 @@ export function createTauriGitBackend(): GitBackend {
         projectId,
         staged: options.staged,
         paths: options.relPaths ?? [],
+      })
+    },
+
+    async diffEmptyReason(
+      projectId: string,
+      options: { staged: boolean; relPath: string },
+    ): Promise<GitDiffEmptyReason> {
+      return invoke<GitDiffEmptyReason>('git_diff_empty_reason', {
+        projectId,
+        staged: options.staged,
+        relPath: options.relPath,
       })
     },
 
@@ -753,6 +765,10 @@ export function createMockGitBackend(): GitBackend {
         })
       }
       return files
+    },
+
+    async diffEmptyReason(): Promise<GitDiffEmptyReason> {
+      return null
     },
 
     async readBlob(projectId: string, rev: GitBlobRev, relPath: string): Promise<string | null> {

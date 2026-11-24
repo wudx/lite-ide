@@ -198,6 +198,9 @@ export interface GitDiffOptions {
   relPaths?: string[]
 }
 
+/** Diagnostic reason why `diff` returned no hunks for a modified file. */
+export type GitDiffEmptyReason = 'eol' | null
+
 /**
  * Which snapshot a blob read targets: the HEAD commit, the index (stage 0,
  * the "staged" content), the worktree file on disk, or a commit SHA (optionally
@@ -273,6 +276,15 @@ export interface GitBackend {
   push(projectId: string): Promise<void>
   /** Unified per-file patches for staged or worktree changes (empty when clean). */
   diff(projectId: string, options: GitDiffOptions): Promise<GitDiffFile[]>
+  /**
+   * Diagnoses why `diff` returned an empty patch for a single path that
+   * `status` still reports as modified (e.g. `'eol'` for line-ending /
+   * `core.autocrlf` normalization).
+   */
+  diffEmptyReason?(
+    projectId: string,
+    options: { staged: boolean; relPath: string },
+  ): Promise<GitDiffEmptyReason>
   /**
    * Raw file bytes (base64) from the requested snapshot. Resolves to null
    * when the path does not exist there (e.g. a file added in the worktree

@@ -230,6 +230,17 @@ async fn git_diff(
 }
 
 #[tauri::command]
+async fn git_diff_empty_reason(
+    manager: State<'_, Arc<ProjectManager>>,
+    project_id: String,
+    staged: bool,
+    rel_path: String,
+) -> Result<Option<String>, AppError> {
+    let root = manager.get_canonical_root(&project_id)?;
+    git::diff_empty_reason(&root, staged, &rel_path).await
+}
+
+#[tauri::command]
 async fn ai_chat(request: ai::AiChatRequest) -> Result<ai::AiChatResult, AppError> {
     ai::chat(request).await
 }
@@ -521,6 +532,7 @@ pub fn run() {
             git_pull,
             git_push,
             git_diff,
+            git_diff_empty_reason,
             git_branches,
             git_checkout_branch,
             git_reset_mixed,

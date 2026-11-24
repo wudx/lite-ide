@@ -405,6 +405,105 @@ pub async fn diff(
     Ok(parse_diff_files(raw))
 }
 
+fn parse_ls_files_eol(output: &str) -> Option<(&str, &str)> {
+    let line = output.lines().find(|l| !l.trim().is_empty())?;
+    let meta = line.split('\t').next().unwrap_or(line);
+    let mut index_eol = None;
+    let mut worktree_eol = None;
+    for token in meta.split_whitespace() {
+        if let Some(v) = token.strip_prefix("i/") {
+            index_eol = Some(v);
+        } else if let Some(v) = token.strip_prefix("w/") {
+            worktree_eol = Some(v);
+        }
+    }
+    Some((index_eol?, worktree_eol?))
+}
+
+/// Diagnoses why `diff` returned an empty patch for a single tracked path that
+/// `git status` still reports as modified. Currently identifies line-ending /
+/// `core.autocrlf` normalization cases (`Some("eol")`).
+pub async fn diff_empty_reason(
+    canonical_root: &Path,
+    staged: bool,
+    rel_path: &str,
+) -> Result<Option<String>, AppError> {
+    if !is_repo_root(canonical_root).await? {
+        return Ok(None);
+    }
+    validate_pathspecs(&[rel_path.to_string()])?;
+
+    if staged {
+        let has_head = run_git(canonical_root, &["rev-parse", "-q", "--verify", "HEAD"])
+            .await
+            .is_ok();
+        if !has_head {
+            return Ok(None);
+        }
+    }
+
+    // Disabling `core.autocrlf` reveals whether index/worktree/HEAD differ only
+    // by line-ending conversion.
+    let mut raw_diff_args = vec![
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "core.autocrlf=false",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+    ];
+    if staged {
+        raw_diff_args.push("--staged");
+    }
+    raw_diff_args.push("--");
+    raw_diff_args.push(rel_path);
+    if let Ok(raw_diff) = run_git(canonical_root, &raw_diff_args).await {
+        if !raw_diff.trim().is_empty() {
+            return Ok(Some("eol".to_string()));
+        }
+    }
+
+    // For worktree changes, `core.autocrlf` (e.g. `true` with an `LF` file on
+    // disk) can make `git status` flag `M` even when index and worktree bytes
+    // are identical.
+    if !staged {
+        if let Ok(eol_out) = run_git(
+            canonical_root,
+            &["-c", "core.quotepath=false", "ls-files", "--eol", "--", rel_path],
+        )
+        .await
+        {
+            if let Some((index_eol, worktree_eol)) = parse_ls_files_eol(&eol_out) {
+                if index_eol != worktree_eol
+                    && index_eol != "none"
+                    && worktree_eol != "none"
+                    && index_eol != "-text"
+                    && worktree_eol != "-text"
+                {
+                    return Ok(Some("eol".to_string()));
+                }
+                if worktree_eol == "lf" || worktree_eol == "mixed" || worktree_eol == "crlf" {
+                    let autocrlf = run_git(canonical_root, &["config", "--get", "core.autocrlf"])
+                        .await
+                        .unwrap_or_default()
+                        .trim()
+                        .to_ascii_lowercase();
+                    let mismatches_autocrlf = (autocrlf == "true"
+                        && (worktree_eol == "lf" || worktree_eol == "mixed"))
+                        || (autocrlf == "input"
+                            && (worktree_eol == "crlf" || worktree_eol == "mixed"));
+                    if mismatches_autocrlf {
+                        return Ok(Some("eol".to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn truncate_at_char_boundary(s: &str, max_chars: usize) -> &str {
     if s.len() <= max_chars {
         return s;
@@ -2352,5 +2451,35 @@ detached
         let st_aborted = status(&root).await.unwrap();
         assert!(!st_aborted.merging);
         assert!(st_aborted.entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn diff_empty_reason_detects_eol_and_autocrlf_mismatch() {
+        let dir = tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        git_ok(&root, &["init", "-q"]).await;
+        git_ok(&root, &["config", "user.email", "test@example.com"]).await;
+        git_ok(&root, &["config", "user.name", "Test"]).await;
+        git_ok(&root, &["config", "core.autocrlf", "false"]).await;
+
+        std::fs::write(root.join("clean.txt"), "hello\nworld\n").unwrap();
+        std::fs::write(root.join("eol.txt"), "line1\nline2\n").unwrap();
+        git_ok(&root, &["add", "--", "clean.txt", "eol.txt"]).await;
+        git_ok(&root, &["commit", "-q", "-m", "init"]).await;
+
+        // With autocrlf=false and identical LF bytes, no empty-diff EOL reason.
+        assert_eq!(
+            diff_empty_reason(&root, false, "clean.txt").await.unwrap(),
+            None
+        );
+
+        // Switching core.autocrlf=true while keeping LF on disk triggers the
+        // classic "LF will be replaced by CRLF" empty-diff worktree state.
+        git_ok(&root, &["config", "core.autocrlf", "true"]).await;
+        std::fs::write(root.join("eol.txt"), "line1\nline2\n").unwrap();
+        assert_eq!(
+            diff_empty_reason(&root, false, "eol.txt").await.unwrap().as_deref(),
+            Some("eol")
+        );
     }
 }

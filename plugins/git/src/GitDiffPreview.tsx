@@ -1,5 +1,5 @@
 import type { PreviewProps } from '@lite-ide/kernel'
-import { formatErrorMessage } from '@lite-ide/protocol'
+import { formatErrorMessage, type GitDiffEmptyReason } from '@lite-ide/protocol'
 import { formatBytes, getI18n, WorkspaceBackendKey } from '@lite-ide/workbench'
 import Loader2 from 'lucide-solid/icons/loader-circle'
 import RotateCw from 'lucide-solid/icons/rotate-cw'
@@ -205,6 +205,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
     }
   }
   const [rawDiff, setRawDiff] = createSignal<string | null>(null)
+  const [emptyReason, setEmptyReason] = createSignal<GitDiffEmptyReason>(null)
   const [imageBlobs, setImageBlobs] = createSignal<{
     oldBase64: string | null
     newBase64: string | null
@@ -255,6 +256,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setSection(initialSection())
       setRev(initialRev())
       setRawDiff(null)
+      setEmptyReason(null)
       setImageBlobs(null)
       setSvgUseText(false)
       setError(null)
@@ -284,6 +286,7 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
       setError(null)
       try {
         let text = ''
+        let nextEmptyReason: GitDiffEmptyReason = null
         let nextImageBlobs: { oldBase64: string | null; newBase64: string | null } | null = null
 
         if (!commitSha && current && isUnmergedEntry(current)) {
@@ -374,13 +377,26 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
             relPaths: [props.file.relPath],
           })
           text = files.find((f) => f.relPath === props.file.relPath)?.patch ?? ''
+          if (
+            !text &&
+            backendRef.diffEmptyReason &&
+            current &&
+            (staged ? hasStagedChanges(current) : hasUnstagedChanges(current))
+          ) {
+            nextEmptyReason = await backendRef.diffEmptyReason(props.file.projectId, {
+              staged,
+              relPath: props.file.relPath,
+            })
+          }
         }
         if (seq !== fetchSeq) return
         setImageBlobs(nextImageBlobs)
+        setEmptyReason(nextEmptyReason)
         setRawDiff(text)
       } catch (err) {
         if (seq !== fetchSeq) return
         setImageBlobs(null)
+        setEmptyReason(null)
         setRawDiff(null)
         setError(formatErrorMessage(err))
       } finally {
@@ -656,7 +672,9 @@ export const GitDiffPreview: Component<PreviewProps> = (props) => {
                   class="flex-1 flex items-center justify-center px-6 text-center text-xs text-[var(--text-muted)]"
                   data-testid="git-diff-empty"
                 >
-                  {i18n.t('git.diff.empty')}
+                  {emptyReason() === 'eol'
+                    ? i18n.t('git.diff.empty.eol')
+                    : i18n.t('git.diff.empty')}
                 </div>
               </Match>
               <Match when={parsed()}>
