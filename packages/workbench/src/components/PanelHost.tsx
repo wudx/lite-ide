@@ -71,7 +71,10 @@ export function PanelHost(props: PanelHostProps) {
           session keeps buffering output even when the panel is collapsed. */}
       <div
         class="shrink-0 min-h-0 flex flex-col"
-        style={{ display: visible() ? 'flex' : 'none' }}
+        style={{
+          display: visible() ? 'flex' : 'none',
+          height: `${panelState.height() + 8}px`,
+        }}
       >
         <div
           role="separator"
