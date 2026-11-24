@@ -100,7 +100,7 @@ export function PanelHost(props: PanelHostProps) {
           <Show
             when={sortedViews().length > 1}
             fallback={
-              <Show when={currentView()}>
+              <Show when={currentView() && !currentView()!.customHeader ? currentView() : undefined}>
                 {(view) => (
                   <div
                     data-testid="panel-header"

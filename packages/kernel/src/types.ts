@@ -35,6 +35,8 @@ export interface ContributionMap {
     titleKey?: string
     order: number
     icon?: Component
+    /** 视图自绘集成页签栏：仅存在单个 panel.view 时跳过 PanelHost 默认标题栏 */
+    customHeader?: boolean
     component: Component<{ scope: ProjectScope }>
   }
   'previewer.provider': {

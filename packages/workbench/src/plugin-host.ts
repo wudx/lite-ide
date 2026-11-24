@@ -26,6 +26,7 @@ import {
   WorkspaceSearchLauncherKey,
 } from './services'
 import { SymbolIndexKey } from './symbol-index'
+import { createTabDragReorder } from './tab-drag'
 
 /**
  * Host plugin API version implemented by this LiteIDE build. Plugins whose
@@ -84,6 +85,7 @@ export function buildHostRequire(liteide: LiteideHostApi): HostRequire {
       SettingsDialogKey,
       WorkspaceSearchLauncherKey,
       // Helpers & shared components.
+      createTabDragReorder,
       getI18n,
       formatBytes,
       DEFAULT_BUFFER_MAX_BYTES,

@@ -1,7 +1,11 @@
 import type { TerminalEvent, TerminalSessionHandle, TerminalSpawnOptions } from '@lite-ide/protocol'
 import { createPanelState } from '@lite-ide/workbench'
 import { describe, expect, it } from 'vitest'
-import { createTerminalStore, toggleTerminalPanel } from '../src/terminal-store'
+import {
+  createTerminalManager,
+  createTerminalStore,
+  toggleTerminalPanel,
+} from '../src/terminal-store'
 
 interface FakeBackendCalls {
   spawnCols: number[]
@@ -262,5 +266,142 @@ describe('toggleTerminalPanel', () => {
     toggleTerminalPanel(state)
     expect(state.visible()).toBe(true)
     expect(state.activePanelId()).toBe('terminal')
+  })
+
+  it('ensures a default terminal tab when opening after all tabs were closed', () => {
+    const { backend } = createFakeBackend()
+    const state = createPanelState()
+    const manager = createTerminalManager('p1', backend)
+    const first = manager.tabs()[0]
+    manager.closeTab(first.id)
+    expect(manager.tabs().length).toBe(0)
+
+    toggleTerminalPanel(state, 'terminal', manager)
+    expect(state.visible()).toBe(true)
+    expect(manager.tabs().length).toBe(1)
+    expect(manager.tabs()[0].index).toBe(1)
+  })
+})
+
+describe('TerminalManagerStore', () => {
+  it('starts with one idle tab and reflects backend capability', () => {
+    const supported = createFakeBackend()
+    const manager = createTerminalManager('p1', supported.backend)
+    expect(manager.supported).toBe(true)
+    expect(manager.tabs().length).toBe(1)
+    expect(manager.tabs()[0].index).toBe(1)
+    expect(manager.tabs()[0].store.status()).toBe('idle')
+    expect(manager.activeTab()?.id).toBe(manager.tabs()[0].id)
+
+    const unsupported = createFakeBackend({ noCapability: true })
+    const manager2 = createTerminalManager('p1', unsupported.backend)
+    expect(manager2.supported).toBe(false)
+    expect(manager2.tabs()[0].store.status()).toBe('unsupported')
+  })
+
+  it('creates multiple tabs with incrementing indices and selects the new tab', async () => {
+    const { backend } = createFakeBackend()
+    const manager = createTerminalManager('p1', backend)
+    const t1 = manager.tabs()[0]
+    const t2 = manager.createTab()
+    const t3 = manager.createTab()
+
+    expect(manager.tabs().map((t) => t.index)).toEqual([1, 2, 3])
+    expect(manager.activeTabId()).toBe(t3.id)
+
+    manager.selectTab(t1.id)
+    expect(manager.activeTabId()).toBe(t1.id)
+    manager.selectTab('non-existent')
+    expect(manager.activeTabId()).toBe(t1.id)
+
+    // Each tab keeps an isolated store & session.
+    await t1.store.start(80, 24)
+    await t2.store.start(90, 24)
+    expect(t1.store.status()).toBe('ready')
+    expect(t2.store.status()).toBe('ready')
+    expect(t3.store.status()).toBe('idle')
+  })
+
+  it('handles closing inactive, active, middle, tail, and last tabs cleanly', async () => {
+    const { backend, calls } = createFakeBackend()
+    const manager = createTerminalManager('p1', backend)
+    const t1 = manager.tabs()[0]
+    const t2 = manager.createTab()
+    const t3 = manager.createTab()
+
+    await t1.store.start(80, 24)
+    await t2.store.start(80, 24)
+    await t3.store.start(80, 24)
+
+    // Active is t3; closing inactive t1 keeps t3 active and kills term-1.
+    manager.closeTab(t1.id)
+    expect(manager.tabs().map((t) => t.id)).toEqual([t2.id, t3.id])
+    expect(manager.activeTabId()).toBe(t3.id)
+    expect(calls.kills).toEqual(['term-1'])
+
+    // Add t4 (index 4); select t2 and close it -> falls back to next tab t3.
+    const t4 = manager.createTab()
+    expect(t4.index).toBe(4)
+    manager.selectTab(t2.id)
+    manager.closeTab(t2.id)
+    expect(manager.tabs().map((t) => t.id)).toEqual([t3.id, t4.id])
+    expect(manager.activeTabId()).toBe(t3.id)
+
+    // Select tail tab t4 and close it -> falls back to previous tab t3.
+    manager.selectTab(t4.id)
+    manager.closeTab(t4.id)
+    expect(manager.tabs().map((t) => t.id)).toEqual([t3.id])
+    expect(manager.activeTabId()).toBe(t3.id)
+
+    // Close the last remaining tab -> empty list and null activeTabId.
+    manager.closeTab(t3.id)
+    expect(manager.tabs()).toEqual([])
+    expect(manager.activeTabId()).toBeNull()
+    expect(calls.kills).toEqual(['term-1', 'term-2', 'term-3'])
+
+    // Next ensureDefaultTab resets numbering to 1.
+    const reopened = manager.ensureDefaultTab()
+    expect(reopened.index).toBe(1)
+    expect(manager.tabs().map((t) => t.index)).toEqual([1])
+    expect(manager.activeTabId()).toBe(reopened.id)
+  })
+
+  it('reorders tabs via moveTab without changing the active tab', () => {
+    const { backend } = createFakeBackend()
+    const manager = createTerminalManager('p1', backend)
+    const t1 = manager.tabs()[0]
+    const t2 = manager.createTab()
+    const t3 = manager.createTab()
+    manager.selectTab(t2.id)
+
+    manager.moveTab(2, 0)
+    expect(manager.tabs().map((t) => t.id)).toEqual([t3.id, t1.id, t2.id])
+    expect(manager.activeTabId()).toBe(t2.id)
+
+    // No-op on invalid/same index.
+    manager.moveTab(1, 1)
+    expect(manager.tabs().map((t) => t.id)).toEqual([t3.id, t1.id, t2.id])
+  })
+
+  it('disposes all spawned sessions on manager.dispose()', async () => {
+    const { backend, calls } = createFakeBackend()
+    const manager = createTerminalManager('p1', backend)
+    const t1 = manager.tabs()[0]
+    const t2 = manager.createTab()
+    const t3 = manager.createTab()
+
+    await t1.store.start(80, 24)
+    await t3.store.start(80, 24)
+    // t2 stayed idle so only 2 PTYs were started.
+    expect(t2.store.status()).toBe('idle')
+
+    manager.dispose()
+    expect(calls.kills).toEqual(['term-1', 'term-2'])
+    expect(manager.tabs()).toEqual([])
+    expect(manager.activeTabId()).toBeNull()
+
+    // Idempotent second dispose.
+    manager.dispose()
+    expect(calls.kills).toEqual(['term-1', 'term-2'])
   })
 })

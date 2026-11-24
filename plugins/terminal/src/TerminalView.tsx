@@ -1,11 +1,15 @@
 import type { ProjectScope } from '@lite-ide/kernel'
-import { getI18n, PanelStateKey, ThemeStateKey } from '@lite-ide/workbench'
+import { createTabDragReorder, getI18n, PanelStateKey, ThemeStateKey } from '@lite-ide/workbench'
+import ChevronDown from 'lucide-solid/icons/chevron-down'
+import Plus from 'lucide-solid/icons/plus'
 import RotateCcw from 'lucide-solid/icons/rotate-ccw'
+import TerminalIcon from 'lucide-solid/icons/terminal'
 import TriangleAlert from 'lucide-solid/icons/triangle-exclamation-point'
-import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js'
+import X from 'lucide-solid/icons/x'
+import { batch, createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { TERMINAL_PANEL_ID, TerminalStoreKey } from './terminal-store'
+import { TERMINAL_PANEL_ID, TerminalStoreKey, type TerminalTabSession } from './terminal-store'
 
 /** Neutral ANSI palettes; fg/bg/cursor/accent follow the active theme vars. */
 const DARK_ANSI = {
@@ -94,19 +98,26 @@ function buildTerminalTheme(themeId: string, appearance: 'dark' | 'light') {
   }
 }
 
-/**
- * Bottom-panel terminal view. Owns the xterm.js instance for the project's
- * TerminalStore; the PTY session outlives visibility toggles because the
- * host keeps this component mounted (display:none) while the project is warm.
- */
-export function TerminalView(props: { scope: ProjectScope }) {
-  const i18n = getI18n(props.scope)
-  const store = props.scope.get(TerminalStoreKey)
-  const panelState = props.scope.get(PanelStateKey)
-  const themeState = props.scope.tryGet(ThemeStateKey)
+const MIN_TERM_COLS = 20
+const MIN_TERM_ROWS = 6
 
-  const themeId = () => themeState?.theme() ?? 'dark'
-  const appearance = () => themeState?.appearance() ?? 'dark'
+interface TerminalPaneProps {
+  scope: ProjectScope
+  tab: TerminalTabSession
+  active: boolean
+  panelVisible: boolean
+  isPanelActive: boolean
+  themeId: string
+  appearance: 'dark' | 'light'
+}
+
+/**
+ * Single terminal session pane: owns one xterm.js instance bound to a
+ * TerminalTabSession. Kept mounted with display:none while inactive so
+ * running PTY output and scrollback survive tab switches.
+ */
+function TerminalPane(props: TerminalPaneProps) {
+  const i18n = getI18n(props.scope)
 
   let hostRef: HTMLDivElement | undefined
   const [termReady, setTermReady] = createSignal(false)
@@ -114,20 +125,29 @@ export function TerminalView(props: { scope: ProjectScope }) {
   let fitAddon: FitAddon | null = null
   let observer: ResizeObserver | null = null
 
-  function fitIfVisible(): void {
-    if (!term || !fitAddon || !hostRef) return
-    if (hostRef.clientWidth === 0 || hostRef.clientHeight === 0) return
+  function startSession(currentTerm: Terminal): void {
+    void props.tab.store.start(
+      Math.max(currentTerm.cols, MIN_TERM_COLS),
+      Math.max(currentTerm.rows, MIN_TERM_ROWS),
+    )
+  }
+
+  function fitIfVisible(): boolean {
+    if (!term || !fitAddon || !hostRef) return false
+    if (!props.panelVisible || !props.active) return false
+    if (hostRef.clientWidth === 0 || hostRef.clientHeight === 0) return false
     try {
       fitAddon.fit()
-      store.resize(term.cols, term.rows)
-      // 懒启动：只有面板真实可见（有布局尺寸）才拉起 shell——热项目在后台
-      // display:none 保活时挂载本视图但不占 shell 进程；ResizeObserver 在
-      // 面板首次展示时触发这里的 start。
-      if (store.status() === 'idle') {
-        void store.start(Math.max(term.cols, 20), Math.max(term.rows, 6))
+      props.tab.store.resize(term.cols, term.rows)
+      // 懒启动：只有面板与当前页签均可见（有布局尺寸）才拉起 shell，
+      // 后台热项目与未激活页签不占空闲 shell 进程。
+      if (props.tab.store.status() === 'idle') {
+        startSession(term)
       }
+      return true
     } catch {
       // fit() can throw while the host is mid-layout; the observer retries.
+      return false
     }
   }
 
@@ -138,7 +158,7 @@ export function TerminalView(props: { scope: ProjectScope }) {
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 2000,
-      theme: buildTerminalTheme(themeId(), appearance()),
+      theme: buildTerminalTheme(props.themeId, props.appearance),
     })
     term = created
     fitAddon = new FitAddon()
@@ -146,26 +166,20 @@ export function TerminalView(props: { scope: ProjectScope }) {
     created.open(hostRef!)
     setTermReady(true)
 
-    const unsubOutput = store.onOutput((bytes) => {
+    const unsubOutput = props.tab.store.onOutput((bytes) => {
       created.write(bytes)
     })
-    const unsubExit = store.onExit((code) => {
+    const unsubExit = props.tab.store.onExit((code) => {
       created.write(`\r\n\x1b[2m${i18n.t('terminal.restartHint', { code })}\x1b[0m\r\n`)
     })
     created.onData((data) => {
-      store.write(data)
-    })
-
-    // First layout pass: fit and lazily spawn when the panel is visible.
-    const spawnRaf = requestAnimationFrame(() => {
-      fitIfVisible()
+      props.tab.store.write(data)
     })
 
     observer = new ResizeObserver(() => fitIfVisible())
     observer.observe(hostRef!)
 
     onCleanup(() => {
-      cancelAnimationFrame(spawnRaf)
       unsubOutput()
       unsubExit()
       observer?.disconnect()
@@ -176,19 +190,22 @@ export function TerminalView(props: { scope: ProjectScope }) {
     })
   })
 
-  // Re-fit after the panel reopens (display:none → flex invalidates layout);
-  // while hidden the fit is skipped, so the session keeps its cell geometry.
+  // Re-fit & focus whenever this pane becomes visible (panel reopen or tab switch).
   createEffect(() => {
-    const visible = panelState.visible()
-    if (!termReady() || !visible) return
-    const rafId = requestAnimationFrame(() => fitIfVisible())
+    const shown = props.panelVisible && props.active
+    if (!termReady() || !shown) return
+    const rafId = requestAnimationFrame(() => {
+      if (fitIfVisible() && props.isPanelActive) {
+        term?.focus()
+      }
+    })
     onCleanup(() => cancelAnimationFrame(rafId))
   })
 
   // Track theme id & appearance so terminal colors follow every theme switch.
   createEffect(() => {
-    const nextThemeId = themeId()
-    const nextAppearance = appearance()
+    const nextThemeId = props.themeId
+    const nextAppearance = props.appearance
     if (!termReady() || !term) return
     term.options.theme = buildTerminalTheme(nextThemeId, nextAppearance)
   })
@@ -197,33 +214,31 @@ export function TerminalView(props: { scope: ProjectScope }) {
     if (!term) return
     term.reset()
     fitIfVisible()
-    void store.start(Math.max(term.cols, 20), Math.max(term.rows, 6))
+    startSession(term)
   }
 
   function retrySpawn() {
     if (!term) return
-    // Spawn failed (status back to idle + error banner): clear the error and
-    // try again with the current fitted geometry.
-    void store.start(Math.max(term.cols, 20), Math.max(term.rows, 6))
+    startSession(term)
   }
-
-  const isTerminalActive = () => panelState.activePanelId() === TERMINAL_PANEL_ID
 
   return (
     <div
       class="relative flex-1 min-h-0 flex"
-      data-testid={`panel-view-${TERMINAL_PANEL_ID}`}
+      style={{ display: props.active ? 'flex' : 'none' }}
+      data-testid={`terminal-pane-${props.tab.index}`}
+      data-terminal-tab-id={props.tab.id}
+      data-active={props.active ? 'true' : 'false'}
       onMouseUp={() => {
-        // Click selects text by default; focus the shell when nothing is selected.
         const selection = window.getSelection()
         if (!selection || selection.isCollapsed) {
-          if (isTerminalActive()) term?.focus()
+          if (props.isPanelActive && props.active) term?.focus()
         }
       }}
     >
       <div ref={(el) => (hostRef = el)} class="liteide-terminal-host" />
 
-      <Show when={store.status() === 'starting'}>
+      <Show when={props.tab.store.status() === 'starting'}>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span class="text-xs text-[var(--text-muted)] animate-pulse">
             {i18n.t('terminal.starting')}
@@ -231,11 +246,11 @@ export function TerminalView(props: { scope: ProjectScope }) {
         </div>
       </Show>
 
-      <Show when={store.status() === 'exited'}>
+      <Show when={props.tab.store.status() === 'exited'}>
         <button
           type="button"
           data-testid="terminal-restart"
-          title={i18n.t('terminal.restartHint', { code: store.exitCode() ?? -1 })}
+          title={i18n.t('terminal.restartHint', { code: props.tab.store.exitCode() ?? -1 })}
           class="absolute top-1.5 right-3 z-10 flex items-center gap-1 px-2 py-1 rounded-md text-[11px] bg-[var(--bg-surface)] border border-[var(--border-panel)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] shadow-sm transition-all duration-150"
           onClick={restart}
         >
@@ -244,7 +259,7 @@ export function TerminalView(props: { scope: ProjectScope }) {
         </button>
       </Show>
 
-      <Show when={store.status() === 'unsupported'}>
+      <Show when={props.tab.store.status() === 'unsupported'}>
         <div class="absolute inset-0 flex items-center justify-center p-4">
           <div class="flex items-start gap-2 max-w-md text-xs text-[var(--text-secondary)]">
             <TriangleAlert class="w-4 h-4 shrink-0 text-[var(--warning-icon)]" />
@@ -253,7 +268,7 @@ export function TerminalView(props: { scope: ProjectScope }) {
         </div>
       </Show>
 
-      <Show when={store.error()}>
+      <Show when={props.tab.store.error()}>
         {(errMsg) => (
           <div class="absolute top-1.5 left-3 right-3 z-10 p-2 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] text-[var(--danger-text)] text-[11px] flex items-center gap-2">
             <TriangleAlert class="w-3.5 h-3.5 shrink-0" />
@@ -270,6 +285,213 @@ export function TerminalView(props: { scope: ProjectScope }) {
           </div>
         )}
       </Show>
+    </div>
+  )
+}
+
+/**
+ * Bottom-panel terminal view with integrated multi-terminal tab strip.
+ * Each tab keeps its own xterm.js & PTY session alive across tab switches
+ * and panel visibility toggles while the project scope remains warm.
+ */
+export function TerminalView(props: { scope: ProjectScope }) {
+  const i18n = getI18n(props.scope)
+  const manager = props.scope.get(TerminalStoreKey)
+  const panelState = props.scope.get(PanelStateKey)
+  const themeState = props.scope.tryGet(ThemeStateKey)
+
+  const themeId = () => themeState?.theme() ?? 'dark'
+  const appearance = () => themeState?.appearance() ?? 'dark'
+  const isTerminalActive = () => {
+    const id = panelState.activePanelId()
+    return id === TERMINAL_PANEL_ID || id === null
+  }
+
+  let tabStrip: HTMLDivElement | undefined
+
+  const tabDrag = createTabDragReorder({
+    getStrip: () => tabStrip,
+    reorder: (fromIndex, toIndex) => manager.moveTab(fromIndex, toIndex),
+  })
+
+  // Ensure a fresh default tab whenever the panel opens after all tabs were closed.
+  createEffect((wasVisible: boolean) => {
+    const visible = panelState.visible()
+    if (visible && !wasVisible && manager.tabs().length === 0) {
+      manager.ensureDefaultTab()
+    }
+    return visible
+  }, false)
+
+  // Reveal the active terminal tab inside the scrollable tab strip.
+  createEffect(() => {
+    const activeId = manager.activeTab()?.id
+    if (!activeId || !tabStrip || !panelState.visible() || tabDrag.draggingId()) return
+    if (tabStrip.scrollWidth <= tabStrip.clientWidth) return
+    const els = tabStrip.querySelectorAll<HTMLElement>('[data-tab-drag-id]')
+    for (const el of els) {
+      if (el.dataset.tabDragId === activeId) {
+        el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+        break
+      }
+    }
+  })
+
+  function handleTabStripWheel(event: WheelEvent) {
+    const strip = event.currentTarget as HTMLElement
+    if (event.ctrlKey) return
+    if (strip.scrollWidth <= strip.clientWidth) return
+    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1
+    const dominant = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+    const delta = dominant * scale
+    if (delta === 0) return
+    event.preventDefault()
+    strip.scrollLeft += delta
+  }
+
+  function closeTerminalTab(id: string) {
+    batch(() => {
+      manager.closeTab(id)
+      if (manager.tabs().length === 0) {
+        panelState.setVisible(false)
+      }
+    })
+  }
+
+  return (
+    <div
+      class="flex-1 min-h-0 flex flex-col"
+      data-testid={`panel-view-${TERMINAL_PANEL_ID}`}
+    >
+      <div class="h-[34px] shrink-0 flex items-end bg-[var(--bg-editor-chrome)] border-b border-[var(--border-subtle)] select-none">
+        <div
+          ref={(el) => (tabStrip = el)}
+          role="tablist"
+          aria-label={i18n.t('terminal.tabsAria')}
+          data-testid="terminal-tabs"
+          onWheel={handleTabStripWheel}
+          class="flex-1 min-w-0 h-full px-2 pt-1 flex items-end gap-1 overflow-x-auto no-scrollbar"
+        >
+          <For each={manager.tabs()}>
+            {(tab) => {
+              const isActive = () => manager.activeTab()?.id === tab.id
+              const isExited = () => tab.store.status() === 'exited'
+              const isDragging = () => tabDrag.draggingId() === tab.id
+              const tabTitle = () => i18n.t('terminal.tabTitle', { index: tab.index })
+              const tabTooltip = () => {
+                const label = tab.store.shellLabel()
+                const base = label ? `${tabTitle()} (${label})` : tabTitle()
+                return isExited() ? `${base} - ${i18n.t('terminal.exitedBadge')}` : base
+              }
+              return (
+                <div
+                  role="tab"
+                  aria-selected={isActive()}
+                  title={tabTooltip()}
+                  data-testid={`terminal-tab-${tab.index}`}
+                  data-tab-drag-id={tab.id}
+                  {...tabDrag.tabHandlers(tab.id)}
+                  class={`group relative flex items-center gap-1.5 min-w-[88px] max-w-[180px] text-xs transition-colors duration-150 shrink-0 cursor-pointer ${
+                    isDragging() ? 'opacity-70 z-20' : ''
+                  } ${
+                    isActive()
+                      ? 'h-[28px] rounded-t-lg px-2.5 bg-[var(--bg-sidebar)] text-[var(--text-primary)] border-t border-x border-[var(--border-subtle)] -mb-px z-10'
+                      : 'h-[26px] mb-[2px] rounded-lg px-2 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+                  }`}
+                  onClick={() => manager.selectTab(tab.id)}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault()
+                      closeTerminalTab(tab.id)
+                    }
+                  }}
+                >
+                  <TerminalIcon
+                    class={`w-3.5 h-3.5 shrink-0 ${
+                      isExited()
+                        ? 'opacity-50 text-[var(--text-muted)]'
+                        : isActive()
+                          ? 'text-[var(--accent)]'
+                          : 'text-[var(--text-muted)]'
+                    }`}
+                  />
+
+                  <span
+                    class={`truncate leading-normal ${
+                      isExited() ? 'opacity-65' : isActive() ? 'font-medium' : ''
+                    }`}
+                  >
+                    {tabTitle()}
+                  </span>
+
+                  <Show when={isExited()}>
+                    <span class="text-[10px] text-[var(--text-muted)] shrink-0">
+                      {i18n.t('terminal.exitedBadge')}
+                    </span>
+                  </Show>
+
+                  <button
+                    type="button"
+                    data-testid={`terminal-tab-close-${tab.index}`}
+                    title={i18n.t('terminal.closeTab')}
+                    aria-label={i18n.t('terminal.closeTab')}
+                    class={`ml-auto p-0.5 rounded-md hover:bg-[var(--bg-hover-strong)] transition-all duration-150 shrink-0 ${
+                      isActive()
+                        ? 'opacity-65 hover:opacity-100'
+                        : 'opacity-0 group-hover:opacity-80 hover:opacity-100'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTerminalTab(tab.id)
+                    }}
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
+              )
+            }}
+          </For>
+        </div>
+
+        <div class="shrink-0 h-full flex items-center gap-0.5 px-1.5">
+          <button
+            type="button"
+            data-testid="terminal-new-tab"
+            title={i18n.t('terminal.newTab')}
+            aria-label={i18n.t('terminal.newTab')}
+            class="p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors duration-150"
+            onClick={() => manager.createTab()}
+          >
+            <Plus class="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid="terminal-hide-panel"
+            title={i18n.t('terminal.hidePanel')}
+            aria-label={i18n.t('terminal.hidePanel')}
+            class="p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors duration-150"
+            onClick={() => panelState.setVisible(false)}
+          >
+            <ChevronDown class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <div class="relative flex-1 min-h-0 flex">
+        <For each={manager.tabs()}>
+          {(tab) => (
+            <TerminalPane
+              scope={props.scope}
+              tab={tab}
+              active={manager.activeTab()?.id === tab.id}
+              panelVisible={panelState.visible()}
+              isPanelActive={isTerminalActive()}
+              themeId={themeId()}
+              appearance={appearance()}
+            />
+          )}
+        </For>
+      </div>
     </div>
   )
 }

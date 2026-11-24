@@ -1,7 +1,7 @@
-import { createServiceKey } from '@lite-ide/kernel'
+import { createServiceKey, moveWithin } from '@lite-ide/kernel'
 import type { PanelStateService } from '@lite-ide/workbench'
 import type { TerminalEvent, WorkspaceBackend } from '@lite-ide/protocol'
-import { createSignal, type Accessor } from 'solid-js'
+import { batch, createMemo, createSignal, type Accessor } from 'solid-js'
 
 export type TerminalStatus =
   /** Backend has no terminal capability (custom backends). */
@@ -32,7 +32,26 @@ export interface TerminalStore {
   dispose(): void
 }
 
-export const TerminalStoreKey = createServiceKey<TerminalStore>('plugin.terminal.store')
+export interface TerminalTabSession {
+  readonly id: string
+  readonly index: number
+  readonly store: TerminalStore
+}
+
+export interface TerminalManagerStore {
+  readonly tabs: Accessor<readonly TerminalTabSession[]>
+  readonly activeTabId: Accessor<string | null>
+  readonly activeTab: Accessor<TerminalTabSession | undefined>
+  readonly supported: boolean
+  createTab(): TerminalTabSession
+  selectTab(id: string): void
+  closeTab(id: string): void
+  moveTab(fromIndex: number, toIndex: number): void
+  ensureDefaultTab(): TerminalTabSession
+  dispose(): void
+}
+
+export const TerminalStoreKey = createServiceKey<TerminalManagerStore>('plugin.terminal.store')
 
 export const TERMINAL_PANEL_ID = 'terminal'
 
@@ -174,13 +193,118 @@ export function createTerminalStore(projectId: string, backend: WorkspaceBackend
   return store
 }
 
+export function createTerminalManager(
+  projectId: string,
+  backend: WorkspaceBackend,
+): TerminalManagerStore {
+  let idSeq = 0
+  let nextIndex = 1
+  let disposed = false
+
+  function makeTab(currentLength: number): TerminalTabSession {
+    const index = currentLength === 0 ? (nextIndex = 1) : ++nextIndex
+    return {
+      id: `term-tab-${++idSeq}`,
+      index,
+      store: createTerminalStore(projectId, backend),
+    }
+  }
+
+  // 默认预置 1 个 idle 页签：热项目保活期间不拉起 PTY，展开面板时再由视图懒启动。
+  const initialTab = makeTab(0)
+  const [tabs, setTabs] = createSignal<readonly TerminalTabSession[]>([initialTab])
+  const [activeTabId, setActiveTabId] = createSignal<string | null>(initialTab.id)
+  const activeTab = createMemo(() => {
+    const id = activeTabId()
+    return tabs().find((tab) => tab.id === id) ?? tabs()[0]
+  })
+
+  function createTab(): TerminalTabSession {
+    const current = tabs()
+    const tab = makeTab(current.length)
+    if (disposed) {
+      tab.store.dispose()
+      return tab
+    }
+    batch(() => {
+      setTabs([...current, tab])
+      setActiveTabId(tab.id)
+    })
+    return tab
+  }
+
+  return {
+    tabs,
+    activeTabId,
+    activeTab,
+    supported: Boolean(backend.terminalSpawn),
+
+    createTab,
+
+    selectTab(id: string) {
+      if (disposed) return
+      if (tabs().some((tab) => tab.id === id)) {
+        setActiveTabId(id)
+      }
+    },
+
+    closeTab(id: string) {
+      if (disposed) return
+      const current = tabs()
+      const idx = current.findIndex((tab) => tab.id === id)
+      if (idx === -1) return
+
+      const target = current[idx]
+      const nextTabs = current.filter((tab) => tab.id !== id)
+      batch(() => {
+        setTabs(nextTabs)
+        if (activeTabId() === id) {
+          const fallback = nextTabs[idx] ?? nextTabs[idx - 1]
+          setActiveTabId(fallback ? fallback.id : null)
+        }
+      })
+      target.store.dispose()
+    },
+
+    moveTab(fromIndex: number, toIndex: number) {
+      if (disposed) return
+      setTabs((prev) => moveWithin(prev, fromIndex, toIndex) ?? prev)
+    },
+
+    ensureDefaultTab(): TerminalTabSession {
+      const existing = activeTab()
+      if (existing) return existing
+      return createTab()
+    },
+
+    dispose() {
+      if (disposed) return
+      disposed = true
+      const current = tabs()
+      batch(() => {
+        setTabs([])
+        setActiveTabId(null)
+      })
+      for (const tab of current) {
+        tab.store.dispose()
+      }
+    },
+  }
+}
+
 /**
  * Shared toggle semantics for the status bar item and the `terminal.toggle`
- * command: opening always focuses the terminal tab; toggling hides only when
- * the terminal tab is the active panel.
+ * command: opening always focuses the terminal tab (and ensures at least one
+ * terminal session tab exists); toggling hides only when the terminal panel
+ * is already active.
  */
-export function toggleTerminalPanel(panelState: PanelStateService, panelId = TERMINAL_PANEL_ID): void {
+export function toggleTerminalPanel(
+  panelState: PanelStateService,
+  panelId = TERMINAL_PANEL_ID,
+  manager?: TerminalManagerStore,
+): void {
   if (!panelState.visible()) {
+    manager?.ensureDefaultTab()
     panelState.setVisible(true)
     panelState.setActivePanelId(panelId)
     return
@@ -189,5 +313,6 @@ export function toggleTerminalPanel(panelState: PanelStateService, panelId = TER
     panelState.setVisible(false)
     return
   }
+  manager?.ensureDefaultTab()
   panelState.setActivePanelId(panelId)
 }
