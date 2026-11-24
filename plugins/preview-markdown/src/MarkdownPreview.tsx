@@ -12,7 +12,7 @@ import MarkdownIt from 'markdown-it'
 import { createEffect, createMemo, createSignal, Show } from 'solid-js'
 
 function isExternalOrSpecialHref(raw: string): boolean {
-  return /^(https?:|mailto:|tel:|data:|blob:|#)/i.test(raw.trim())
+  return /^(https?:|mailto:|tel:|data:|blob:|workspace:|#)/i.test(raw.trim())
 }
 
 function resolveRelativePath(currentFileRel: string, targetHref: string): string {
@@ -85,49 +85,42 @@ export default function MarkdownPreview(props: PreviewProps) {
 
     const currentRel = props.file.relPath
     const md = new MarkdownIt({
-      html: false,
+      html: true,
       linkify: true,
       typographer: true,
     })
 
-    const defaultImageRule =
-      md.renderer.rules.image ??
-      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
-
-    md.renderer.rules.image = (tokens, idx, options, env, self) => {
-      const token = tokens[idx]
-      const src = token.attrGet('src')
-      if (src && !isExternalOrSpecialHref(src)) {
-        const rel = resolveRelativePath(currentRel, src)
-        token.attrSet('src', getWorkspaceFileUrl(props.scope.id, rel, backend))
-      }
-      return defaultImageRule(tokens, idx, options, env, self)
-    }
-
-    const defaultLinkOpen =
-      md.renderer.rules.link_open ??
-      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
-
-    md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-      const token = tokens[idx]
-      const href = token.attrGet('href')
-      if (href && !isExternalOrSpecialHref(href)) {
-        const rel = resolveRelativePath(currentRel, href)
-        token.attrSet('data-rel-href', rel)
-        token.attrSet('href', `#${encodeURIComponent(rel)}`)
-      } else if (href && /^https?:/i.test(href)) {
-        token.attrSet('target', '_blank')
-        token.attrSet('rel', 'noopener noreferrer')
-      }
-      return defaultLinkOpen(tokens, idx, options, env, self)
-    }
-
     const unsafeHtml = md.render(raw)
-    return DOMPurify.sanitize(unsafeHtml, {
+    const fragment = DOMPurify.sanitize(unsafeHtml, {
+      RETURN_DOM_FRAGMENT: true,
       ADD_ATTR: ['target', 'rel', 'data-rel-href'],
       ALLOWED_URI_REGEXP:
         /^(?:(?:https?|mailto|tel|data|blob|workspace):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
     })
+
+    for (const img of fragment.querySelectorAll('img[src]')) {
+      const src = img.getAttribute('src')
+      if (src && !isExternalOrSpecialHref(src)) {
+        const rel = resolveRelativePath(currentRel, src)
+        img.setAttribute('src', getWorkspaceFileUrl(props.scope.id, rel, backend))
+      }
+    }
+
+    for (const anchor of fragment.querySelectorAll('a[href]')) {
+      const href = anchor.getAttribute('href')
+      if (href && !isExternalOrSpecialHref(href)) {
+        const rel = resolveRelativePath(currentRel, href)
+        anchor.setAttribute('data-rel-href', rel)
+        anchor.setAttribute('href', `#${encodeURIComponent(rel)}`)
+      } else if (href && /^https?:/i.test(href)) {
+        anchor.setAttribute('target', '_blank')
+        anchor.setAttribute('rel', 'noopener noreferrer')
+      }
+    }
+
+    const container = document.createElement('div')
+    container.appendChild(fragment)
+    return container.innerHTML
   })
 
   function handleContainerClick(e: MouseEvent) {
